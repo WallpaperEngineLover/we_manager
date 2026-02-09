@@ -22,7 +22,7 @@ import {
   Eraser
 } from 'lucide-react'
 import WallpaperCard from './WallpaperCard'
-import type { LibraryFilters, WallpaperFolder } from '@shared/types'
+import type { LibraryFilters, WallpaperFolder, LweStatus } from '@shared/types'
 import clsx from 'clsx'
 import { WE_TYPES, WE_AGE_RATINGS } from '../../constants/weFilters'
 
@@ -394,6 +394,11 @@ export default function LibraryView() {
   const { data: availableTags = [] } = useQuery({
     queryKey: ['library-tags'],
     queryFn: () => window.electronAPI.library.distinctTags()
+  })
+
+  const { data: lweStatus } = useQuery({
+    queryKey: ['lwe-status'],
+    queryFn: () => window.electronAPI.lwe.status()
   })
 
   async function handleScan() {
@@ -1051,6 +1056,7 @@ export default function LibraryView() {
                 key={wallpaper.id}
                 wallpaper={wallpaper}
                 selected={selectedIds.has(wallpaper.id)}
+                lweInstalled={lweStatus?.installed ?? false}
                 onApplied={() =>
                   queryClient.invalidateQueries({ queryKey: ['library'] })
                 }

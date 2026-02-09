@@ -6,6 +6,7 @@ import clsx from 'clsx'
 interface WallpaperCardProps {
   wallpaper: WallpaperMeta
   selected?: boolean
+  lweInstalled?: boolean
   onApplied?: () => void
   onSelect?: (e: React.MouseEvent) => void
   onContextMenu?: (e: React.MouseEvent) => void
@@ -14,6 +15,7 @@ interface WallpaperCardProps {
 export default function WallpaperCard({
   wallpaper,
   selected,
+  lweInstalled,
   onApplied,
   onSelect,
   onContextMenu
@@ -103,9 +105,14 @@ export default function WallpaperCard({
       <div className="absolute right-2 top-2">
         <button
           onClick={handleApply}
-          disabled={isApplying}
-          title="Apply as wallpaper"
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity hover:bg-indigo-600 group-hover:opacity-100 disabled:cursor-not-allowed"
+          disabled={isApplying || !lweInstalled}
+          title={!lweInstalled ? 'Install linux-wallpaperengine in Settings first' : 'Play wallpaper'}
+          className={clsx(
+            'flex h-7 w-7 items-center justify-center rounded-full transition-opacity disabled:cursor-not-allowed',
+            !lweInstalled
+              ? 'bg-black/60 text-gray-500 opacity-0 group-hover:opacity-100'
+              : 'bg-black/60 text-white opacity-0 hover:bg-indigo-600 group-hover:opacity-100'
+          )}
         >
           {isApplying ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
         </button>

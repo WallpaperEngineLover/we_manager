@@ -35,3 +35,16 @@ export function isCommandAvailable(cmd: string): boolean {
     return false
   }
 }
+
+export function invalidateCommandCache(cmd: string): void {
+  commandCache.delete(cmd)
+}
+
+export function whichCommand(cmd: string): string | undefined {
+  try {
+    const checker = process.platform === 'win32' ? 'where' : 'which'
+    return execSync(`${checker} ${cmd}`, { encoding: 'utf8' }).trim()
+  } catch {
+    return undefined
+  }
+}

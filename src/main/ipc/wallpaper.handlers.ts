@@ -2,8 +2,10 @@ import { ipcMain } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import { applyWallpaper, detectEnvironment } from '../services/wallpaper.service'
 import { getWallpaper, updateWallpaper } from '../services/library.service'
+import { getLweStatus, launchLwe } from '../services/lwe.service'
 import type { ApplyWallpaperOptions } from '@shared/types'
 import Store from 'electron-store'
+import * as os from 'os'
 
 interface StoreSchema {
   activeWallpaperId?: string
@@ -27,11 +29,26 @@ export function registerWallpaperHandlers(): void {
     if (!wallpaper) throw new Error(`Wallpaper ${options.wallpaperId} not found in library`)
     if (!wallpaper.localPath) throw new Error(`Wallpaper ${options.wallpaperId} has no local path`)
 
-    // Find an image file in the wallpaper directory
+    const isAnimated = wallpaper.type === 'scene' || wallpaper.type === 'web'
+    const lwe = getLweStatus()
+
+    // Use linux-wallpaperengine for animated wallpapers on Linux if available
+    if (isAnimated && os.platform() === 'linux' && lwe.installed) {
+      launchLwe(wallpaper.localPath)
+
+      store.set('activeWallpaperId', options.wallpaperId)
+      updateWallpaper(options.wallpaperId, {
+        appliedCount: (wallpaper.appliedCount ?? 0) + 1,
+        lastAppliedAt: Date.now()
+      })
+
+      return { ok: true, appliedPath: wallpaper.localPath }
+    }
+
+    // Static wallpaper fallback — find an image file
     const imagePath = await findWallpaperImage(wallpaper.localPath)
     await applyWallpaper(imagePath, options.backend)
 
-    // Update metadata
     store.set('activeWallpaperId', options.wallpaperId)
     updateWallpaper(options.wallpaperId, {
       appliedCount: (wallpaper.appliedCount ?? 0) + 1,
