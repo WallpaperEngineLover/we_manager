@@ -237,6 +237,10 @@ export function scanLibrary(): { imported: number; skipped: number } {
   }
 
   console.log(`[Library] Scan complete: ${imported} imported, ${skipped} skipped`)
+
+  // Auto-cleanup folder items that reference non-existent wallpapers
+  cleanupFolders()
+
   return { imported, skipped }
 }
 
@@ -287,6 +291,30 @@ export function removeItemsFromFolder(folderId: string, itemIds: string[]): Wall
   folder.items = folder.items.filter((id) => !remove.has(id))
   store.set('folders', folders)
   return folder
+}
+
+/**
+ * Remove folder item IDs that don't exist in the wallpapers store.
+ * Returns the number of stale IDs removed.
+ */
+export function cleanupFolders(): number {
+  const wallpapers = store.get('wallpapers')
+  const validIds = new Set(Object.keys(wallpapers))
+  const folders = store.get('folders')
+  let removed = 0
+
+  for (const folder of folders) {
+    const before = folder.items.length
+    folder.items = folder.items.filter((id) => validIds.has(id))
+    removed += before - folder.items.length
+  }
+
+  if (removed > 0) {
+    store.set('folders', folders)
+    console.log(`[Library] Folder cleanup: removed ${removed} stale item(s)`)
+  }
+
+  return removed
 }
 
 export function importWEConfig(configPath: string): { folders: number; playlists: number } {

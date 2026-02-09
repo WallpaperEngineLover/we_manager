@@ -87,7 +87,9 @@ const api = {
     removeItems: (folderId: string, itemIds: string[]): Promise<WallpaperFolder | null> =>
       ipcRenderer.invoke(IpcChannels.FOLDERS_REMOVE_ITEMS, folderId, itemIds),
     importWEConfig: (configPath: string): Promise<{ folders: number; playlists: number }> =>
-      ipcRenderer.invoke(IpcChannels.FOLDERS_IMPORT_WE_CONFIG, configPath)
+      ipcRenderer.invoke(IpcChannels.FOLDERS_IMPORT_WE_CONFIG, configPath),
+    cleanup: (): Promise<{ removed: number }> =>
+      ipcRenderer.invoke(IpcChannels.FOLDERS_CLEANUP)
   },
 
   wallpaper: {
@@ -105,7 +107,9 @@ const api = {
     openWithDefault: (filePath: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke(IpcChannels.SHELL_OPEN_WITH_DEFAULT, filePath),
     openPath: (targetPath: string): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke(IpcChannels.SHELL_OPEN_PATH, targetPath)
+      ipcRenderer.invoke(IpcChannels.SHELL_OPEN_PATH, targetPath),
+    openExternal: (url: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke(IpcChannels.SHELL_OPEN_EXTERNAL, url)
   },
 
   on: {
