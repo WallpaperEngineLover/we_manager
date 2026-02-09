@@ -1,5 +1,5 @@
 export const IpcChannels = {
-  // Workshop browsing (main proxies Steam Web API)
+  // Workshop browsing (steamworks.js)
   WORKSHOP_QUERY: 'workshop:query',
   WORKSHOP_GET_ITEM: 'workshop:get-item',
 
@@ -54,10 +54,19 @@ export const IpcChannels = {
   SHELL_OPEN_WITH_DEFAULT: 'shell:open-with-default',
   SHELL_OPEN_EXTERNAL: 'shell:open-external',
 
+  // linux-wallpaperengine
+  LWE_STATUS: 'lwe:status',
+  LWE_DETECT_DISTRO: 'lwe:detect-distro',
+  LWE_INSTALL_DEPS: 'lwe:install-deps',
+  LWE_INSTALL: 'lwe:install',
+  LWE_LAUNCH: 'lwe:launch',
+  LWE_STOP: 'lwe:stop',
+
   // Events pushed from main to renderer
   EVENT_DOWNLOAD_PROGRESS: 'event:download-progress',
   EVENT_WALLPAPER_IMPORTED: 'event:wallpaper-imported',
-  EVENT_STEAM_STATUS: 'event:steam-status'
+  EVENT_STEAM_STATUS: 'event:steam-status',
+  EVENT_LWE_INSTALL_PROGRESS: 'event:lwe-install-progress'
 } as const
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]

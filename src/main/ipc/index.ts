@@ -6,6 +6,7 @@ import { registerWallpaperHandlers } from './wallpaper.handlers'
 import { registerConfigHandlers } from './config.handlers'
 import { registerFolderHandlers } from './folders.handlers'
 import { registerShellHandlers } from './shell.handlers'
+import { registerLweHandlers } from './lwe.handlers'
 
 export function registerAllHandlers(win: BrowserWindow): void {
   registerSteamHandlers(win)
@@ -15,4 +16,5 @@ export function registerAllHandlers(win: BrowserWindow): void {
   registerConfigHandlers()
   registerFolderHandlers()
   registerShellHandlers()
+  registerLweHandlers(win)
 }

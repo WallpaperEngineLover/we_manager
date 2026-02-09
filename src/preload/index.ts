@@ -9,7 +9,10 @@ import type {
   LibraryFilters,
   ApplyWallpaperOptions,
   DownloadProgressEvent,
-  WallpaperEnvironment
+  WallpaperEnvironment,
+  LweStatus,
+  LweInstallProgress,
+  LinuxDistro
 } from '../shared/types'
 
 const api = {
@@ -101,6 +104,21 @@ const api = {
       ipcRenderer.invoke(IpcChannels.WALLPAPER_DETECT_ENV)
   },
 
+  lwe: {
+    status: (): Promise<LweStatus> =>
+      ipcRenderer.invoke(IpcChannels.LWE_STATUS),
+    detectDistro: (): Promise<LinuxDistro> =>
+      ipcRenderer.invoke(IpcChannels.LWE_DETECT_DISTRO),
+    installDeps: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.LWE_INSTALL_DEPS),
+    install: (): Promise<LweStatus> =>
+      ipcRenderer.invoke(IpcChannels.LWE_INSTALL),
+    launch: (wallpaperPath: string, options?: { screenRoot?: string; fps?: number }): Promise<{ ok: boolean; running: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.LWE_LAUNCH, wallpaperPath, options),
+    stop: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.LWE_STOP)
+  },
+
   shell: {
     openInFileManager: (folderPath: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke(IpcChannels.SHELL_OPEN_IN_FILE_MANAGER, folderPath),
@@ -127,6 +145,11 @@ const api = {
       const listener = (_: Electron.IpcRendererEvent, running: boolean) => cb(running)
       ipcRenderer.on(IpcChannels.EVENT_STEAM_STATUS, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_STEAM_STATUS, listener)
+    },
+    lweInstallProgress: (cb: (progress: LweInstallProgress) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, progress: LweInstallProgress) => cb(progress)
+      ipcRenderer.on(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, listener)
     }
   }
 }
