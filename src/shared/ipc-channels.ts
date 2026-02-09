@@ -33,6 +33,7 @@ export const IpcChannels = {
   FOLDERS_ADD_ITEMS: 'folders:add-items',
   FOLDERS_REMOVE_ITEMS: 'folders:remove-items',
   FOLDERS_IMPORT_WE_CONFIG: 'folders:import-we-config',
+  FOLDERS_CLEANUP: 'folders:cleanup',
 
   // Wallpaper application
   WALLPAPER_APPLY: 'wallpaper:apply',
@@ -51,6 +52,7 @@ export const IpcChannels = {
   SHELL_OPEN_PATH: 'shell:open-path',
   SHELL_OPEN_IN_FILE_MANAGER: 'shell:open-in-file-manager',
   SHELL_OPEN_WITH_DEFAULT: 'shell:open-with-default',
+  SHELL_OPEN_EXTERNAL: 'shell:open-external',
 
   // Events pushed from main to renderer
   EVENT_DOWNLOAD_PROGRESS: 'event:download-progress',

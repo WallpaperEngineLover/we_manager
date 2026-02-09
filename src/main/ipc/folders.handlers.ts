@@ -31,4 +31,9 @@ export function registerFolderHandlers(): void {
   ipcMain.handle(IpcChannels.FOLDERS_IMPORT_WE_CONFIG, (_e, configPath: string) => {
     return lib.importWEConfig(configPath)
   })
+
+  ipcMain.handle(IpcChannels.FOLDERS_CLEANUP, () => {
+    const removed = lib.cleanupFolders()
+    return { removed }
+  })
 }

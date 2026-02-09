@@ -18,7 +18,8 @@ import {
   FolderInput,
   Eye,
   ThumbsUp,
-  ThumbsDown
+  ThumbsDown,
+  Eraser
 } from 'lucide-react'
 import WallpaperCard from './WallpaperCard'
 import type { LibraryFilters, WallpaperFolder } from '@shared/types'
@@ -183,27 +184,37 @@ function FolderMenu({
   onRename: () => void
   onDelete: () => void
 }) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [onClose])
+
   return (
-    <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div
-        className="fixed z-50 min-w-[140px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
-        style={{ left: x, top: y }}
+    <div
+      ref={ref}
+      className="fixed z-50 min-w-[140px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
+      style={{ left: x, top: y }}
+    >
+      <button
+        onClick={onRename}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
       >
-        <button
-          onClick={onRename}
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-        >
-          <Pencil size={12} /> Rename
-        </button>
-        <button
-          onClick={onDelete}
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
-        >
-          <Trash2 size={12} /> Delete
-        </button>
-      </div>
-    </>
+        <Pencil size={12} /> Rename
+      </button>
+      <button
+        onClick={onDelete}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
+      >
+        <Trash2 size={12} /> Delete
+      </button>
+    </div>
   )
 }
 
@@ -254,6 +265,19 @@ export default function LibraryView() {
     ids: string[]
     showFolderSub: boolean
   } | null>(null)
+  const ctxMenuRef = useRef<HTMLDivElement>(null)
+
+  // Close wallpaper context menu on outside click (mousedown so right-click on another card works)
+  useEffect(() => {
+    if (!ctxMenu) return
+    function onMouseDown(e: MouseEvent) {
+      if (ctxMenuRef.current && !ctxMenuRef.current.contains(e.target as Node)) {
+        setCtxMenu(null)
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [ctxMenu])
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filterState))
@@ -310,18 +334,35 @@ export default function LibraryView() {
     })
   }, [allWallpapers, filterState])
 
-  // Set of all IDs that belong to at least one folder
+  // Set of all existing library wallpaper IDs (for cross-referencing)
+  const existingIds = useMemo(
+    () => new Set(allWallpapers.map((w) => w.id)),
+    [allWallpapers]
+  )
+
+  // Set of all IDs that belong to at least one folder AND exist in the library
   const allFolderItemIds = useMemo(() => {
     const set = new Set<string>()
     for (const f of folders) {
-      for (const id of f.items) set.add(id)
+      for (const id of f.items) {
+        if (existingIds.has(id)) set.add(id)
+      }
     }
     return set
-  }, [folders])
+  }, [folders, existingIds])
+
+  // Real item count per folder (only items that exist in the library)
+  const folderCounts = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const f of folders) {
+      map.set(f.id, f.items.filter((id) => existingIds.has(id)).length)
+    }
+    return map
+  }, [folders, existingIds])
 
   // Folder filtering:
-  // "All" = everything NOT inside any folder (unsorted)
-  // Specific folder = only that folder's items
+  // Default (null) = everything NOT inside any folder (unsorted)
+  // Specific folder = only that folder's items (wallpapers can be in multiple folders)
   const allWallpapersForView = useMemo(() => {
     if (!activeFolder) {
       return filtered.filter((w) => !allFolderItemIds.has(w.id))
@@ -396,6 +437,16 @@ export default function LibraryView() {
   }
 
   const [importStatus, setImportStatus] = useState<string | null>(null)
+
+  async function handleCleanupFolders() {
+    const { removed } = await window.electronAPI.folders.cleanup()
+    refetchFolders()
+    setImportStatus(
+      removed > 0
+        ? `Cleaned up ${removed} non-existent wallpaper(s) from folders.`
+        : 'All folder items are valid — nothing to clean up.'
+    )
+  }
 
   async function handleRename(id: string) {
     if (!renameValue.trim()) return
@@ -608,20 +659,15 @@ export default function LibraryView() {
     return wallpapers.filter((w) => idSet.has(w.id))
   }, [ctxMenu, wallpapers])
 
-  async function ctxSubscribe() {
-    if (!ctxMenu) return
-    for (const id of ctxMenu.ids) {
-      try { await window.electronAPI.steam.subscribe(id) } catch {}
-    }
-    closeCtxMenu()
-  }
-
   async function ctxUnsubscribe() {
     if (!ctxMenu) return
     for (const id of ctxMenu.ids) {
       try { await window.electronAPI.steam.unsubscribe(id) } catch {}
+      try { await window.electronAPI.library.delete(id) } catch {}
     }
     closeCtxMenu()
+    queryClient.invalidateQueries({ queryKey: ['library'] })
+    refetchFolders()
   }
 
   async function ctxVote(up: boolean) {
@@ -635,17 +681,17 @@ export default function LibraryView() {
   function ctxOpenInSteam() {
     if (!ctxMenu) return
     for (const id of ctxMenu.ids) {
-      window.open(`https://steamcommunity.com/sharedfiles/filedetails/?id=${id}`)
+      window.electronAPI.shell.openExternal(`steam://url/CommunityFilePage/${id}`)
     }
     closeCtxMenu()
   }
 
   async function ctxOpenLocally() {
     if (!ctxMenu) return
-    // Open the first item's local folder in the file manager
-    const w = ctxWallpapers[0]
-    if (w?.localPath) {
-      await window.electronAPI.shell.openInFileManager(w.localPath)
+    for (const w of ctxWallpapers) {
+      if (w.localPath) {
+        await window.electronAPI.shell.openPath(w.localPath)
+      }
     }
     closeCtxMenu()
   }
@@ -663,6 +709,19 @@ export default function LibraryView() {
   async function ctxMoveToFolder(folderId: string) {
     if (!ctxMenu) return
     await window.electronAPI.folders.addItems(folderId, ctxMenu.ids)
+    refetchFolders()
+    closeCtxMenu()
+  }
+
+  async function ctxMoveToDefault() {
+    if (!ctxMenu) return
+    // Remove from every folder that contains these items
+    for (const folder of folders) {
+      const overlap = ctxMenu.ids.filter((id) => folder.items.includes(id))
+      if (overlap.length > 0) {
+        await window.electronAPI.folders.removeItems(folder.id, overlap)
+      }
+    }
     refetchFolders()
     closeCtxMenu()
   }
@@ -814,6 +873,13 @@ export default function LibraryView() {
                 <Upload size={12} />
               </button>
               <button
+                onClick={handleCleanupFolders}
+                title="Clean up folders (remove non-existent wallpapers)"
+                className="rounded p-0.5 text-gray-600 hover:text-gray-300"
+              >
+                <Eraser size={12} />
+              </button>
+              <button
                 onClick={() => { setCreatingFolder(true); setNewFolderName('') }}
                 title="Create folder"
                 className="rounded p-0.5 text-gray-600 hover:text-gray-300"
@@ -829,7 +895,7 @@ export default function LibraryView() {
             </div>
           )}
 
-          {/* All */}
+          {/* Default */}
           <button
             onClick={() => setActiveFolder(null)}
             className={clsx(
@@ -840,7 +906,7 @@ export default function LibraryView() {
             )}
           >
             <Folder size={14} />
-            <span className="flex-1 text-left truncate">All</span>
+            <span className="flex-1 text-left truncate">Default</span>
             <span className="text-gray-600">{unsortedCount}</span>
           </button>
 
@@ -905,7 +971,7 @@ export default function LibraryView() {
               ) : (
                 <span className="flex-1 truncate text-left">{folder.title}</span>
               )}
-              <span className="text-gray-600">{folder.items.length}</span>
+              <span className="text-gray-600">{folderCounts.get(folder.id) ?? 0}</span>
             </button>
           ))}
         </div>
@@ -971,7 +1037,7 @@ export default function LibraryView() {
                       {folder.title}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {folder.items.length} items
+                      {folderCounts.get(folder.id) ?? 0} items
                     </p>
                   </div>
                 </div>
@@ -1050,33 +1116,25 @@ export default function LibraryView() {
 
       {/* Wallpaper context menu */}
       {ctxMenu && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={closeCtxMenu} />
-          <div
-            className="fixed z-50 min-w-[200px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
-            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        <div
+          ref={ctxMenuRef}
+          className="fixed z-50 min-w-[200px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        >
+          {ctxMenu.ids.length > 1 && (
+            <div className="px-3 py-1 text-xs text-gray-600 border-b border-white/5 mb-1">
+              {ctxMenu.ids.length} items selected
+            </div>
+          )}
+
+          <button
+            onClick={ctxUnsubscribe}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
           >
-            {ctxMenu.ids.length > 1 && (
-              <div className="px-3 py-1 text-xs text-gray-600 border-b border-white/5 mb-1">
-                {ctxMenu.ids.length} items selected
-              </div>
-            )}
+            Unsubscribe
+          </button>
 
-            {/* Steam actions */}
-            <button
-              onClick={ctxSubscribe}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              Subscribe
-            </button>
-            <button
-              onClick={ctxUnsubscribe}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              Unsubscribe
-            </button>
-
-            <div className="my-1 border-t border-white/5" />
+          <div className="my-1 border-t border-white/5" />
 
             <button
               onClick={() => ctxVote(true)}
@@ -1130,9 +1188,13 @@ export default function LibraryView() {
               </button>
               {ctxMenu.showFolderSub && (
                 <div className="absolute left-full top-0 ml-1 min-w-[160px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl">
-                  {folders.length === 0 && (
-                    <p className="px-3 py-1.5 text-xs text-gray-500">No folders yet</p>
-                  )}
+                  <button
+                    onClick={ctxMoveToDefault}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+                  >
+                    <Folder size={12} /> Default
+                  </button>
+                  {folders.length > 0 && <div className="my-1 border-t border-white/5" />}
                   {folders.map((f) => (
                     <button
                       key={f.id}
@@ -1155,8 +1217,7 @@ export default function LibraryView() {
                 <Trash2 size={12} /> Remove from folder
               </button>
             )}
-          </div>
-        </>
+        </div>
       )}
     </div>
   )

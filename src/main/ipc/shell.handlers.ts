@@ -26,4 +26,14 @@ export function registerShellHandlers(): void {
     const result = await shell.openPath(resolved)
     return { ok: !result, error: result || undefined }
   })
+
+  // Open a URL or protocol link (e.g. steam://, https://) with the OS handler
+  ipcMain.handle(IpcChannels.SHELL_OPEN_EXTERNAL, async (_e, url: string) => {
+    try {
+      await shell.openExternal(url)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
 }
