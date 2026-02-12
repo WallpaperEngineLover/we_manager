@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import { applyWallpaper, detectEnvironment } from '../services/wallpaper.service'
 import { getWallpaper, updateWallpaper } from '../services/library.service'
-import { getLweStatus, launchLwe } from '../services/lwe.service'
+import { getLweStatus, launchLweAsync } from '../services/lwe.service'
 import type { ApplyWallpaperOptions } from '@shared/types'
 import Store from 'electron-store'
 import * as os from 'os'
@@ -29,12 +29,12 @@ export function registerWallpaperHandlers(): void {
     if (!wallpaper) throw new Error(`Wallpaper ${options.wallpaperId} not found in library`)
     if (!wallpaper.localPath) throw new Error(`Wallpaper ${options.wallpaperId} has no local path`)
 
-    const isAnimated = wallpaper.type === 'scene' || wallpaper.type === 'web'
+    const isAnimated = wallpaper.type === 'scene' || wallpaper.type === 'web' || wallpaper.type === 'video'
     const lwe = getLweStatus()
 
     // Use linux-wallpaperengine for animated wallpapers on Linux if available
     if (isAnimated && os.platform() === 'linux' && lwe.installed) {
-      launchLwe(wallpaper.localPath)
+      await launchLweAsync(wallpaper.localPath)
 
       store.set('activeWallpaperId', options.wallpaperId)
       updateWallpaper(options.wallpaperId, {
