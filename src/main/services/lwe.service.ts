@@ -1,4 +1,4 @@
-import { execFile, spawn, type ChildProcess } from 'child_process'
+import { execFile, execFileSync, spawn, type ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -6,7 +6,7 @@ import * as os from 'os'
 import type { BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import type { LweStatus, LweInstallProgress, LinuxDistro } from '@shared/types'
-import { isCommandAvailable, invalidateCommandCache, whichCommand } from '../utils/platform'
+import { isCommandAvailable, invalidateCommandCache, whichCommand, getConnectedScreens } from '../utils/platform'
 import { getWorkshopPath } from '../utils/paths'
 
 const execFileAsync = promisify(execFile)
@@ -78,7 +78,7 @@ const DEPS_DEBIAN = [
   'libxxf86vm-dev', 'libglm-dev', 'libglfw3-dev',
   'libmpv-dev', 'mpv', 'libpulse-dev', 'libpulse0', 'libfftw3-dev',
   'libwayland-dev', 'wayland-protocols', 'libegl1-mesa-dev',
-  'libgmp-dev'
+  'libgmp-dev', 'patchelf'
 ]
 
 // Fedora/Nobara: do not add 'ffmpeg' — conflicts with ffmpeg-free; use ffmpeg-free-devel only
@@ -90,7 +90,7 @@ const DEPS_FEDORA = [
   'libXxf86vm-devel', 'glm-devel', 'glfw-devel',
   'mpv-devel', 'pulseaudio-libs-devel', 'fftw-devel',
   'wayland-devel', 'wayland-protocols-devel', 'mesa-libEGL-devel',
-  'gmp-devel'
+  'gmp-devel', 'patchelf'
 ]
 
 const DEPS_ARCH = [
@@ -99,7 +99,7 @@ const DEPS_ARCH = [
   'glm', 'glfw', 'mpv', 'libpulse', 'fftw',
   'libxrandr', 'libxinerama', 'libxcursor', 'libxi', 'libxxf86vm',
   'wayland', 'wayland-protocols', 'mesa',
-  'gmp'
+  'gmp', 'patchelf'
 ]
 
 export async function installLweDeps(win: BrowserWindow): Promise<void> {
@@ -238,7 +238,9 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     // pkexec often runs the command in a different cwd (e.g. / or root's home), so run install
     // inside a shell that cd's to the build dir first; PATH preserved for make
     const pathEnv = process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'
-    const installScript = `cd ${JSON.stringify(cmakeBuild)} && export PATH=${JSON.stringify(pathEnv)} && make install && ldconfig`
+    // After install, fix RUNPATH to avoid CEF's libEGL.so shadowing the system Mesa EGL,
+    // and run ldconfig so the linker cache picks up the new shared libs.
+    const installScript = `cd ${JSON.stringify(cmakeBuild)} && export PATH=${JSON.stringify(pathEnv)} && make install && patchelf --set-rpath /usr/local/lib64:/usr/local/lib /usr/local/linux-wallpaperengine 2>/dev/null; ldconfig`
     await execFileAsync(installTool, ['bash', '-c', installScript], {
       timeout: 120_000,
       maxBuffer: 2 * 1024 * 1024,
@@ -409,9 +411,10 @@ function getLweLibDir(): string {
 /** LD_LIBRARY_PATH value so the loader finds LWE's .so files. */
 function getLweLdLibraryPath(): string {
   const binDir = getLweLibDir()
-  // Cover all possible lib locations: binary dir itself, lib/, lib64/, and the /usr/local standard paths
+  // IMPORTANT: Do NOT include binDir itself (e.g. /usr/local) because CEF installs its own
+  // libEGL.so / libGLESv2.so there which shadow the system Mesa EGL and break Wayland rendering.
+  // Only include proper lib subdirectories where LWE's own libs (libkissfft, etc.) live.
   const candidates = [
-    binDir,
     path.join(binDir, 'lib'),
     path.join(binDir, 'lib64'),
     '/usr/local/lib',
@@ -437,6 +440,73 @@ function getLweBinaryPath(): string {
   }
 }
 
+/** Detect Wayland display from the session if Electron doesn't have it (Electron often runs under XWayland). */
+function getWaylandDisplay(): string | undefined {
+  if (process.env.WAYLAND_DISPLAY) return process.env.WAYLAND_DISPLAY
+
+  // Check XDG_SESSION_TYPE to see if we're in a Wayland session
+  if (process.env.XDG_SESSION_TYPE === 'wayland') return 'wayland-0'
+
+  // Try to detect from loginctl
+  try {
+    const sessionType = execFileSync('bash', ['-c',
+      'loginctl show-session $(loginctl 2>/dev/null | grep $USER | head -1 | awk \'{print $1}\') -p Type --value 2>/dev/null'
+    ], { encoding: 'utf8', timeout: 3000 }).trim()
+    if (sessionType === 'wayland') return 'wayland-0'
+  } catch { /* ignore */ }
+
+  return undefined
+}
+
+/** Build env vars that must be set for LWE, as KEY=VALUE strings for use with `env` command. */
+function buildLweEnvVars(): string[] {
+  const vars: string[] = []
+
+  vars.push(`LD_LIBRARY_PATH=${getLweLdLibraryPath()}`)
+
+  // CEF bundles its own libEGL.so alongside the LWE binary and the RUNPATH baked into the
+  // binary causes the dynamic linker to pick it up instead of Mesa's system EGL. CEF's EGL
+  // doesn't support eglGetPlatformDisplayEXT for Wayland, breaking --screen-root mode.
+  // Force the system EGL via LD_PRELOAD so Mesa's implementation is used.
+  const systemEgl = ['/lib64/libEGL.so.1', '/usr/lib64/libEGL.so.1', '/usr/lib/libEGL.so.1']
+    .find(p => fs.existsSync(p))
+  if (systemEgl) vars.push(`LD_PRELOAD=${systemEgl}`)
+
+  // Electron may run under XWayland and lack WAYLAND_DISPLAY.
+  // LWE needs it to use Wayland layer-shell for desktop rendering.
+  const waylandDisplay = process.env.WAYLAND_DISPLAY || getWaylandDisplay()
+  if (waylandDisplay) vars.push(`WAYLAND_DISPLAY=${waylandDisplay}`)
+
+  // Ensure DISPLAY is passed (for X11 fallback)
+  if (process.env.DISPLAY) vars.push(`DISPLAY=${process.env.DISPLAY}`)
+
+  // Ensure XDG_RUNTIME_DIR is set (needed for Wayland socket)
+  const xdgRuntime = process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid?.() ?? 1000}`
+  vars.push(`XDG_RUNTIME_DIR=${xdgRuntime}`)
+
+  return vars
+}
+
+/** Build the common LWE args (assets dir, screen roots, fps). */
+function buildLweArgs(
+  wallpaperPath: string,
+  options: { screenRoot?: string; fps?: number }
+): string[] {
+  const args: string[] = []
+  const assetsDir = findWeAssetsDir()
+  if (assetsDir) args.push('--assets-dir', assetsDir)
+  // --screen-root is required to render as desktop wallpaper (otherwise opens in a window)
+  if (options.screenRoot) {
+    args.push('--screen-root', options.screenRoot)
+  } else {
+    const screens = getConnectedScreens()
+    for (const s of screens) args.push('--screen-root', s)
+  }
+  if (options.fps) args.push('--fps', String(options.fps))
+  args.push(wallpaperPath)
+  return args
+}
+
 /** Launch LWE and resolve after 2s if still running; reject if it exits with error (so UI can show message). */
 export function launchLweAsync(
   wallpaperPath: string,
@@ -444,18 +514,13 @@ export function launchLweAsync(
 ): Promise<void> {
   stopLwe()
 
-  const args: string[] = []
-  const assetsDir = findWeAssetsDir()
-  if (assetsDir) args.push('--assets-dir', assetsDir)
-  if (options.screenRoot) args.push('--screen-root', options.screenRoot)
-  if (options.fps) args.push('--fps', String(options.fps))
-  args.push(wallpaperPath)
-
-  // Run via 'env' so LD_LIBRARY_PATH is set for the dynamic linker (some environments don't pass our env to the child)
-  const ldPath = getLweLdLibraryPath()
   const binaryPath = getLweBinaryPath()
-  const spawnArgs = [`LD_LIBRARY_PATH=${ldPath}`, binaryPath, ...args]
+  const lweArgs = buildLweArgs(wallpaperPath, options)
+  const envVars = buildLweEnvVars()
 
+  // Spawn via `env` to set env vars explicitly — matches how LWE works from the terminal.
+  // Using the env option on spawn can lose vars when combined with detached/setsid.
+  const spawnArgs = [...envVars, binaryPath, ...lweArgs]
   return new Promise((resolve, reject) => {
     const child = spawn('env', spawnArgs, {
       stdio: ['ignore', 'ignore', 'pipe'],
@@ -512,15 +577,10 @@ export function launchLwe(
   options: { screenRoot?: string; fps?: number } = {}
 ): ChildProcess {
   stopLwe()
-  const args: string[] = []
-  const assetsDir = findWeAssetsDir()
-  if (assetsDir) args.push('--assets-dir', assetsDir)
-  if (options.screenRoot) args.push('--screen-root', options.screenRoot)
-  if (options.fps) args.push('--fps', String(options.fps))
-  args.push(wallpaperPath)
-  const ldPath = getLweLdLibraryPath()
   const binaryPath = getLweBinaryPath()
-  activeProcess = spawn('env', [`LD_LIBRARY_PATH=${ldPath}`, binaryPath, ...args], { stdio: 'ignore', detached: true })
+  const lweArgs = buildLweArgs(wallpaperPath, options)
+  const envVars = buildLweEnvVars()
+  activeProcess = spawn('env', [...envVars, binaryPath, ...lweArgs], { stdio: 'ignore', detached: true })
   activeProcess.on('exit', () => { activeProcess = null })
   activeProcess.unref()
   return activeProcess

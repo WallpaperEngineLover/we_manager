@@ -20,6 +20,63 @@ export function detectDesktopEnv(): DesktopEnvironment {
   return 'other'
 }
 
+/** Detect connected screen/output names for use with linux-wallpaperengine --screen-root. */
+export function getConnectedScreens(): string[] {
+  if (process.platform !== 'linux') return []
+
+  const isWayland = !!process.env.WAYLAND_DISPLAY
+
+  // On Wayland, we MUST use native Wayland output names (not xrandr/XWayland names)
+  if (isWayland) {
+    // wlr-randr (wlroots compositors: hyprland, sway, etc.)
+    try {
+      const output = execSync('wlr-randr 2>/dev/null', { encoding: 'utf8', timeout: 5000 })
+      const screens = output
+        .split('\n')
+        .filter(line => /^[A-Za-z]/.test(line) && !line.startsWith(' '))
+        .map(line => line.split(/\s+/)[0])
+        .filter(Boolean)
+      if (screens.length > 0) return screens
+    } catch { /* not available */ }
+
+    // KDE Plasma Wayland: kscreen-doctor
+    try {
+      const output = execSync('kscreen-doctor --outputs 2>/dev/null', { encoding: 'utf8', timeout: 5000 })
+      const screens = output
+        .split('\n')
+        .map(line => {
+          const m = line.match(/Output:\s+\d+\s+(\S+)/)
+          return m ? m[1] : null
+        })
+        .filter((s): s is string => s !== null)
+      if (screens.length > 0) return screens
+    } catch { /* not available */ }
+
+    // GNOME Wayland: gnome-randr or mutter output names via gdbus
+    try {
+      const output = execSync(
+        "gdbus call --session --dest org.gnome.Mutter.DisplayConfig --object-path /org/gnome/Mutter/DisplayConfig --method org.gnome.Mutter.DisplayConfig.GetCurrentState 2>/dev/null",
+        { encoding: 'utf8', timeout: 5000 }
+      )
+      const screens = [...output.matchAll(/connector:\s*'([^']+)'/gi)].map(m => m[1])
+      if (screens.length > 0) return screens
+    } catch { /* not available */ }
+  }
+
+  // X11: use xrandr
+  try {
+    const output = execSync('xrandr --query 2>/dev/null', { encoding: 'utf8', timeout: 5000 })
+    const screens = output
+      .split('\n')
+      .filter(line => / connected/i.test(line))
+      .map(line => line.split(/\s+/)[0])
+      .filter(Boolean)
+    if (screens.length > 0) return screens
+  } catch { /* xrandr not available */ }
+
+  return []
+}
+
 // Cache results so we only call which/where once per session
 const commandCache = new Map<string, boolean>()
 
