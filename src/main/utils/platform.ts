@@ -24,7 +24,9 @@ export function detectDesktopEnv(): DesktopEnvironment {
 export function getConnectedScreens(): string[] {
   if (process.platform !== 'linux') return []
 
-  const isWayland = !!process.env.WAYLAND_DISPLAY
+  // Electron often runs under XWayland, so WAYLAND_DISPLAY may be unset even on Wayland sessions.
+  // Check XDG_SESSION_TYPE as well to detect the real session type.
+  const isWayland = !!process.env.WAYLAND_DISPLAY || process.env.XDG_SESSION_TYPE === 'wayland'
 
   // On Wayland, we MUST use native Wayland output names (not xrandr/XWayland names)
   if (isWayland) {
@@ -42,7 +44,9 @@ export function getConnectedScreens(): string[] {
     // KDE Plasma Wayland: kscreen-doctor
     try {
       const output = execSync('kscreen-doctor --outputs 2>/dev/null', { encoding: 'utf8', timeout: 5000 })
-      const screens = output
+      // Strip ANSI color/escape codes before parsing
+      const clean = output.replace(/\x1b\[[0-9;]*m/g, '')
+      const screens = clean
         .split('\n')
         .map(line => {
           const m = line.match(/Output:\s+\d+\s+(\S+)/)
