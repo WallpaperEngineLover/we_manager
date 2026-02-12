@@ -113,6 +113,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LWE_INSTALL_DEPS),
     install: (): Promise<LweStatus> =>
       ipcRenderer.invoke(IpcChannels.LWE_INSTALL),
+    uninstall: (): Promise<{ ok: boolean; message: string }> =>
+      ipcRenderer.invoke(IpcChannels.LWE_UNINSTALL),
     launch: (wallpaperPath: string, options?: { screenRoot?: string; fps?: number }): Promise<{ ok: boolean; running: boolean }> =>
       ipcRenderer.invoke(IpcChannels.LWE_LAUNCH, wallpaperPath, options),
     stop: (): Promise<{ ok: boolean }> =>

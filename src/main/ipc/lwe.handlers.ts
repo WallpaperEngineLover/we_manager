@@ -1,6 +1,6 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
-import { getLweStatus, detectDistro, installLweDeps, installLwe, launchLwe, stopLwe, isLweRunning } from '../services/lwe.service'
+import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLwe, stopLwe, isLweRunning } from '../services/lwe.service'
 import { invalidateEnvCache } from '../services/wallpaper.service'
 
 export function registerLweHandlers(win: BrowserWindow): void {
@@ -21,6 +21,12 @@ export function registerLweHandlers(win: BrowserWindow): void {
     await installLwe(win)
     invalidateEnvCache()
     return getLweStatus()
+  })
+
+  ipcMain.handle(IpcChannels.LWE_UNINSTALL, async () => {
+    const result = await uninstallLwe()
+    invalidateEnvCache()
+    return result
   })
 
   ipcMain.handle(IpcChannels.LWE_LAUNCH, (_e, wallpaperPath: string, options?: { screenRoot?: string; fps?: number }) => {

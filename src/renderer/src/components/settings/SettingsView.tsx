@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package } from 'lucide-react'
+import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2 } from 'lucide-react'
 import type { LweStatus, LweInstallProgress, LinuxDistro } from '../../../../shared/types'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
@@ -20,6 +20,8 @@ export default function SettingsView() {
   const [lweProgress, setLweProgress] = useState<LweInstallProgress | null>(null)
   const [distro, setDistro] = useState<LinuxDistro | null>(null)
   const [depsInstalling, setDepsInstalling] = useState(false)
+  const [uninstalling, setUninstalling] = useState(false)
+  const [uninstallMsg, setUninstallMsg] = useState<string | null>(null)
 
   useEffect(() => {
     window.electronAPI.config.get().then((cfg) => {
@@ -100,7 +102,22 @@ export default function SettingsView() {
     }
   }
 
-  const isBusy = lweInstalling || depsInstalling
+  async function handleUninstallLwe() {
+    if (!confirm('Are you sure you want to uninstall linux-wallpaperengine?')) return
+    setUninstalling(true)
+    setUninstallMsg(null)
+    try {
+      const result = await window.electronAPI.lwe.uninstall()
+      setUninstallMsg(result.message)
+      window.electronAPI.lwe.status().then(setLweStatus)
+    } catch (err) {
+      setUninstallMsg(`Uninstall failed: ${(err as Error).message}`)
+    } finally {
+      setUninstalling(false)
+    }
+  }
+
+  const isBusy = lweInstalling || depsInstalling || uninstalling
 
   return (
     <div className="p-6 overflow-y-auto h-full">
@@ -178,13 +195,28 @@ export default function SettingsView() {
           {lweStatus === null ? (
             <p className="mt-3 text-xs text-gray-500">Checking...</p>
           ) : lweStatus.installed ? (
-            <div className="mt-3 space-y-1">
+            <div className="mt-3 space-y-3">
               <div className="flex items-center gap-2 text-sm text-green-400">
                 <CheckCircle size={16} />
                 Installed
               </div>
               {lweStatus.path && (
-                <p className="text-xs text-gray-500">{lweStatus.path}</p>
+                <p className="text-xs text-gray-500">Path: {lweStatus.path}</p>
+              )}
+              <button
+                onClick={handleUninstallLwe}
+                disabled={isBusy}
+                className="flex items-center gap-2 rounded-lg bg-red-600/20 px-4 py-2 text-sm text-red-400 hover:bg-red-600/30 disabled:opacity-50"
+              >
+                {uninstalling ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Trash2 size={14} />
+                )}
+                {uninstalling ? 'Uninstalling...' : 'Uninstall'}
+              </button>
+              {uninstallMsg && (
+                <p className="text-xs text-gray-400">{uninstallMsg}</p>
               )}
             </div>
           ) : (
