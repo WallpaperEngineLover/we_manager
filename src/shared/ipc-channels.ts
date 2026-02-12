@@ -59,6 +59,7 @@ export const IpcChannels = {
   LWE_DETECT_DISTRO: 'lwe:detect-distro',
   LWE_INSTALL_DEPS: 'lwe:install-deps',
   LWE_INSTALL: 'lwe:install',
+  LWE_UNINSTALL: 'lwe:uninstall',
   LWE_LAUNCH: 'lwe:launch',
   LWE_STOP: 'lwe:stop',
 

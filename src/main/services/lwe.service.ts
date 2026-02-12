@@ -7,6 +7,7 @@ import type { BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import type { LweStatus, LweInstallProgress, LinuxDistro } from '@shared/types'
 import { isCommandAvailable, invalidateCommandCache, whichCommand } from '../utils/platform'
+import { getWorkshopPath } from '../utils/paths'
 
 const execFileAsync = promisify(execFile)
 
@@ -14,16 +15,48 @@ const LWE_BINARY = 'linux-wallpaperengine'
 const LWE_REPO = 'https://github.com/Almamu/linux-wallpaperengine.git'
 const BUILD_DIR = path.join(os.tmpdir(), 'lwe-build')
 
+/** Common paths where linux-wallpaperengine may be installed outside $PATH. */
+const LWE_SEARCH_PATHS = [
+  '/usr/local/bin/linux-wallpaperengine',
+  '/usr/local/linux-wallpaperengine',
+  '/usr/bin/linux-wallpaperengine',
+  path.join(os.homedir(), '.local', 'bin', 'linux-wallpaperengine'),
+  path.join(os.homedir(), 'bin', 'linux-wallpaperengine'),
+  '/opt/linux-wallpaperengine/linux-wallpaperengine'
+]
+
 let activeProcess: ChildProcess | null = null
 
-export function getLweStatus(): LweStatus {
-  const installed = isCommandAvailable(LWE_BINARY)
-  if (!installed) return { installed: false }
+/** Find the LWE binary — first via $PATH, then by scanning common install locations. */
+function findLweBinary(): string | undefined {
+  // 1. Check $PATH
+  const inPath = whichCommand(LWE_BINARY)
+  if (inPath) return inPath
 
-  return {
-    installed: true,
-    path: whichCommand(LWE_BINARY)
+  // 2. Scan common locations
+  for (const p of LWE_SEARCH_PATHS) {
+    try {
+      fs.accessSync(p, fs.constants.X_OK)
+      return p
+    } catch { /* not here */ }
   }
+
+  return undefined
+}
+
+export function getLweStatus(): LweStatus {
+  // Try $PATH first (fast, cached)
+  if (isCommandAvailable(LWE_BINARY)) {
+    return { installed: true, path: whichCommand(LWE_BINARY) }
+  }
+
+  // Scan common paths for existing installs not on $PATH
+  const found = findLweBinary()
+  if (found) {
+    return { installed: true, path: found }
+  }
+
+  return { installed: false }
 }
 
 export function detectDistro(): LinuxDistro {
@@ -205,7 +238,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     // pkexec often runs the command in a different cwd (e.g. / or root's home), so run install
     // inside a shell that cd's to the build dir first; PATH preserved for make
     const pathEnv = process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'
-    const installScript = `cd ${JSON.stringify(cmakeBuild)} && export PATH=${JSON.stringify(pathEnv)} && make install`
+    const installScript = `cd ${JSON.stringify(cmakeBuild)} && export PATH=${JSON.stringify(pathEnv)} && make install && ldconfig`
     await execFileAsync(installTool, ['bash', '-c', installScript], {
       timeout: 120_000,
       maxBuffer: 2 * 1024 * 1024,
@@ -288,9 +321,82 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
   }
 }
 
+export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> {
+  const status = getLweStatus()
+  if (!status.installed || !status.path) {
+    return { ok: false, message: 'linux-wallpaperengine is not installed.' }
+  }
+
+  // Stop any running instance first
+  stopLwe()
+
+  const elevate = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
+  const binaryPath = status.path
+
+  // Resolve symlink to find the real binary location
+  let realPath: string
+  try {
+    realPath = fs.realpathSync(binaryPath)
+  } catch {
+    realPath = binaryPath
+  }
+
+  // Collect all files to remove (binary, symlink if different, known lib dir)
+  const filesToRemove: string[] = [realPath]
+  if (realPath !== binaryPath) filesToRemove.push(binaryPath)
+
+  // Check for LWE lib directory next to the real binary (cmake install puts libs there)
+  const binDir = path.dirname(realPath)
+  const libDir = path.join(binDir, 'lib')
+  if (fs.existsSync(libDir)) {
+    // Only remove if it looks like it belongs to LWE (contains libcef or similar)
+    try {
+      const entries = fs.readdirSync(libDir)
+      if (entries.some(e => e.includes('cef') || e.includes('wallpaper'))) {
+        filesToRemove.push(libDir)
+      }
+    } catch { /* ignore */ }
+  }
+
+  try {
+    await execFileAsync(elevate, ['rm', '-rf', ...filesToRemove], {
+      timeout: 30_000,
+      encoding: 'utf8'
+    })
+
+    // Invalidate caches
+    invalidateCommandCache(LWE_BINARY)
+
+    return { ok: true, message: 'linux-wallpaperengine has been uninstalled.' }
+  } catch (err) {
+    return { ok: false, message: `Uninstall failed: ${(err as Error).message}` }
+  }
+}
+
+/** Find the Wallpaper Engine assets directory from the Steam install. */
+function findWeAssetsDir(): string | undefined {
+  const workshopPath = getWorkshopPath()
+  // Workshop path looks like: .../steamapps/workshop/content/431960
+  // Assets are at:            .../steamapps/common/wallpaper_engine/assets
+  const steamappsIdx = workshopPath.lastIndexOf(path.join('steamapps', 'workshop'))
+  if (steamappsIdx !== -1) {
+    const steamappsRoot = workshopPath.substring(0, steamappsIdx + 'steamapps'.length)
+    const assetsDir = path.join(steamappsRoot, 'common', 'wallpaper_engine', 'assets')
+    if (fs.existsSync(assetsDir)) return assetsDir
+  }
+
+  // Fallback: scan common Steam locations
+  const home = os.homedir()
+  const candidates = [
+    path.join(home, '.steam', 'steam', 'steamapps', 'common', 'wallpaper_engine', 'assets'),
+    path.join(home, '.local', 'share', 'Steam', 'steamapps', 'common', 'wallpaper_engine', 'assets')
+  ]
+  return candidates.find(p => fs.existsSync(p))
+}
+
 /** Directory containing the LWE binary; used for LD_LIBRARY_PATH. */
 function getLweLibDir(): string {
-  const p = whichCommand(LWE_BINARY)
+  const p = findLweBinary()
   if (!p) return '/usr/local'
   try {
     const resolved = fs.realpathSync(p)
@@ -300,10 +406,21 @@ function getLweLibDir(): string {
   }
 }
 
-/** LD_LIBRARY_PATH value so the loader finds LWE's .so files (binary dir + lib subdir). */
+/** LD_LIBRARY_PATH value so the loader finds LWE's .so files. */
 function getLweLdLibraryPath(): string {
-  const libDir = getLweLibDir()
-  const paths = [libDir, path.join(libDir, 'lib')]
+  const binDir = getLweLibDir()
+  // Cover all possible lib locations: binary dir itself, lib/, lib64/, and the /usr/local standard paths
+  const candidates = [
+    binDir,
+    path.join(binDir, 'lib'),
+    path.join(binDir, 'lib64'),
+    '/usr/local/lib',
+    '/usr/local/lib64'
+  ]
+  // Only include paths that actually exist
+  const paths = candidates.filter(p => {
+    try { return fs.statSync(p).isDirectory() } catch { return false }
+  })
   const existing = process.env.LD_LIBRARY_PATH
   if (existing) paths.push(existing)
   return paths.join(':')
@@ -311,7 +428,7 @@ function getLweLdLibraryPath(): string {
 
 /** Full path to LWE binary (resolved symlink). */
 function getLweBinaryPath(): string {
-  const p = whichCommand(LWE_BINARY)
+  const p = findLweBinary()
   if (!p) return LWE_BINARY
   try {
     return fs.realpathSync(p)
@@ -328,6 +445,8 @@ export function launchLweAsync(
   stopLwe()
 
   const args: string[] = []
+  const assetsDir = findWeAssetsDir()
+  if (assetsDir) args.push('--assets-dir', assetsDir)
   if (options.screenRoot) args.push('--screen-root', options.screenRoot)
   if (options.fps) args.push('--fps', String(options.fps))
   args.push(wallpaperPath)
@@ -394,6 +513,8 @@ export function launchLwe(
 ): ChildProcess {
   stopLwe()
   const args: string[] = []
+  const assetsDir = findWeAssetsDir()
+  if (assetsDir) args.push('--assets-dir', assetsDir)
   if (options.screenRoot) args.push('--screen-root', options.screenRoot)
   if (options.fps) args.push('--fps', String(options.fps))
   args.push(wallpaperPath)
