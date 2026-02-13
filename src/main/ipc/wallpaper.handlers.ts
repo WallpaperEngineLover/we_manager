@@ -32,8 +32,14 @@ export function registerWallpaperHandlers(): void {
     const isAnimated = wallpaper.type === 'scene' || wallpaper.type === 'web' || wallpaper.type === 'video'
     const lwe = getLweStatus()
 
+    // Check if we're on KDE Wayland - LWE has GLEW 2.3.0+ compatibility issues
+    const isWayland = !!(process.env.WAYLAND_DISPLAY || 
+      (process.env.XDG_SESSION_TYPE === 'wayland') ||
+      (process.env.XDG_CURRENT_DESKTOP?.toLowerCase().includes('kde')))
+    
     // Use linux-wallpaperengine for animated wallpapers on Linux if available
-    if (isAnimated && os.platform() === 'linux' && lwe.installed) {
+    // Skip on KDE Wayland due to GLEW 2.3.0+ compatibility issues
+    if (isAnimated && os.platform() === 'linux' && lwe.installed && !isWayland) {
       await launchLweAsync(wallpaper.localPath)
 
       store.set('activeWallpaperId', options.wallpaperId)

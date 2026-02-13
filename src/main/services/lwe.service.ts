@@ -414,11 +414,12 @@ function getLweLdLibraryPath(): string {
   // IMPORTANT: Do NOT include binDir itself (e.g. /usr/local) because CEF installs its own
   // libEGL.so / libGLESv2.so there which shadow the system Mesa EGL and break Wayland rendering.
   // Only include proper lib subdirectories where LWE's own libs (libkissfft, etc.) live.
+  // Ensure lib64 comes first as it contains critical libraries like libkissfft
   const candidates = [
-    path.join(binDir, 'lib'),
-    path.join(binDir, 'lib64'),
+    '/usr/local/lib64',  // Prioritize lib64 for critical LWE dependencies
     '/usr/local/lib',
-    '/usr/local/lib64'
+    path.join(binDir, 'lib64'),
+    path.join(binDir, 'lib')
   ]
   // Only include paths that actually exist
   const paths = candidates.filter(p => {
@@ -468,14 +469,27 @@ function buildLweEnvVars(): string[] {
   // binary causes the dynamic linker to pick it up instead of Mesa's system EGL. CEF's EGL
   // doesn't support eglGetPlatformDisplayEXT for Wayland, breaking --screen-root mode.
   // Force the system EGL via LD_PRELOAD so Mesa's implementation is used.
-  const systemEgl = ['/lib64/libEGL.so.1', '/usr/lib64/libEGL.so.1', '/usr/lib/libEGL.so.1']
-    .find(p => fs.existsSync(p))
-  if (systemEgl) vars.push(`LD_PRELOAD=${systemEgl}`)
-
-  // Electron may run under XWayland and lack WAYLAND_DISPLAY.
-  // LWE needs it to use Wayland layer-shell for desktop rendering.
+  const systemEglPaths = [
+    '/usr/lib64/libEGL.so.1',
+    '/usr/lib/libEGL.so.1',
+    '/lib64/libEGL.so.1',
+    '/usr/local/lib64/libEGL.so.1',
+    '/usr/local/lib/libEGL.so.1'
+  ]
+  // Detect Wayland display once and reuse
   const waylandDisplay = process.env.WAYLAND_DISPLAY || getWaylandDisplay()
-  if (waylandDisplay) vars.push(`WAYLAND_DISPLAY=${waylandDisplay}`)
+
+  if (waylandDisplay) {
+    // For Wayland, use minimal environment to avoid EGL conflicts
+    vars.push(`WAYLAND_DISPLAY=${waylandDisplay}`)
+    vars.push('EGL_PLATFORM=wayland')
+  } else {
+    // X11 fallback - use LD_PRELOAD for EGL
+    const systemEgl = systemEglPaths.find(p => fs.existsSync(p))
+    if (systemEgl) {
+      vars.push(`LD_PRELOAD=${systemEgl}`)
+    }
+  }
 
   // Ensure DISPLAY is passed (for X11 fallback)
   if (process.env.DISPLAY) vars.push(`DISPLAY=${process.env.DISPLAY}`)
