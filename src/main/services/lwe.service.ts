@@ -17,6 +17,7 @@ const BUILD_DIR = path.join(os.tmpdir(), 'lwe-build')
 
 /** Common paths where linux-wallpaperengine may be installed outside $PATH. */
 const LWE_SEARCH_PATHS = [
+  '/home/uwu/projects/linux-wallpaperengine-fork/build/output/linux-wallpaperengine',
   '/usr/local/bin/linux-wallpaperengine',
   '/usr/local/linux-wallpaperengine',
   '/usr/bin/linux-wallpaperengine',
@@ -27,13 +28,9 @@ const LWE_SEARCH_PATHS = [
 
 let activeProcess: ChildProcess | null = null
 
-/** Find the LWE binary — first via $PATH, then by scanning common install locations. */
+/** Find the LWE binary — preferred paths first, then $PATH as fallback. */
 function findLweBinary(): string | undefined {
-  // 1. Check $PATH
-  const inPath = whichCommand(LWE_BINARY)
-  if (inPath) return inPath
-
-  // 2. Scan common locations
+  // 1. Scan preferred locations first (fork builds, custom installs)
   for (const p of LWE_SEARCH_PATHS) {
     try {
       fs.accessSync(p, fs.constants.X_OK)
@@ -41,16 +38,15 @@ function findLweBinary(): string | undefined {
     } catch { /* not here */ }
   }
 
+  // 2. Fall back to $PATH
+  const inPath = whichCommand(LWE_BINARY)
+  if (inPath) return inPath
+
   return undefined
 }
 
 export function getLweStatus(): LweStatus {
-  // Try $PATH first (fast, cached)
-  if (isCommandAvailable(LWE_BINARY)) {
-    return { installed: true, path: whichCommand(LWE_BINARY) }
-  }
-
-  // Scan common paths for existing installs not on $PATH
+  // Scan preferred paths first, then $PATH
   const found = findLweBinary()
   if (found) {
     return { installed: true, path: found }
@@ -411,15 +407,13 @@ function getLweLibDir(): string {
 /** LD_LIBRARY_PATH value so the loader finds LWE's .so files. */
 function getLweLdLibraryPath(): string {
   const binDir = getLweLibDir()
-  // IMPORTANT: Do NOT include binDir itself (e.g. /usr/local) because CEF installs its own
-  // libEGL.so / libGLESv2.so there which shadow the system Mesa EGL and break Wayland rendering.
-  // Only include proper lib subdirectories where LWE's own libs (libkissfft, etc.) live.
-  // Ensure lib64 comes first as it contains critical libraries like libkissfft
   const candidates = [
-    '/usr/local/lib64',  // Prioritize lib64 for critical LWE dependencies
-    '/usr/local/lib',
+    // For local/fork builds, the .so files live next to the binary
+    binDir,
     path.join(binDir, 'lib64'),
-    path.join(binDir, 'lib')
+    path.join(binDir, 'lib'),
+    '/usr/local/lib64',
+    '/usr/local/lib'
   ]
   // Only include paths that actually exist
   const paths = candidates.filter(p => {
@@ -465,33 +459,22 @@ function buildLweEnvVars(): string[] {
 
   vars.push(`LD_LIBRARY_PATH=${getLweLdLibraryPath()}`)
 
-  // CEF bundles its own libEGL.so alongside the LWE binary and the RUNPATH baked into the
-  // binary causes the dynamic linker to pick it up instead of Mesa's system EGL. CEF's EGL
-  // doesn't support eglGetPlatformDisplayEXT for Wayland, breaking --screen-root mode.
-  // Force the system EGL via LD_PRELOAD so Mesa's implementation is used.
-  const systemEglPaths = [
-    '/usr/lib64/libEGL.so.1',
-    '/usr/lib/libEGL.so.1',
-    '/lib64/libEGL.so.1',
-    '/usr/local/lib64/libEGL.so.1',
-    '/usr/local/lib/libEGL.so.1'
-  ]
-  // Detect Wayland display once and reuse
+  // CEF bundles its own libEGL.so alongside the LWE binary. LD_LIBRARY_PATH includes the
+  // binary's directory so CEF's EGL shadows Mesa's system EGL, breaking Wayland rendering.
+  // Force the system EGL via LD_PRELOAD so Mesa's implementation is always used.
+  const systemEgl = ['/lib64/libEGL.so.1', '/usr/lib64/libEGL.so.1', '/usr/lib/libEGL.so.1']
+    .find(p => fs.existsSync(p))
+  if (systemEgl) vars.push(`LD_PRELOAD=${systemEgl}`)
+
+  // Wayland display — Electron often runs under XWayland and lacks WAYLAND_DISPLAY.
   const waylandDisplay = process.env.WAYLAND_DISPLAY || getWaylandDisplay()
+  if (waylandDisplay) vars.push(`WAYLAND_DISPLAY=${waylandDisplay}`)
 
-  if (waylandDisplay) {
-    // For Wayland, use minimal environment to avoid EGL conflicts
-    vars.push(`WAYLAND_DISPLAY=${waylandDisplay}`)
-    vars.push('EGL_PLATFORM=wayland')
-  } else {
-    // X11 fallback - use LD_PRELOAD for EGL
-    const systemEgl = systemEglPaths.find(p => fs.existsSync(p))
-    if (systemEgl) {
-      vars.push(`LD_PRELOAD=${systemEgl}`)
-    }
-  }
+  // XDG_SESSION_TYPE is how LWE decides between X11 and Wayland drivers
+  const sessionType = process.env.XDG_SESSION_TYPE
+  if (sessionType) vars.push(`XDG_SESSION_TYPE=${sessionType}`)
 
-  // Ensure DISPLAY is passed (for X11 fallback)
+  // Ensure DISPLAY is passed (for X11/XWayland)
   if (process.env.DISPLAY) vars.push(`DISPLAY=${process.env.DISPLAY}`)
 
   // Ensure XDG_RUNTIME_DIR is set (needed for Wayland socket)
@@ -509,16 +492,39 @@ function buildLweArgs(
   const args: string[] = []
   const assetsDir = findWeAssetsDir()
   if (assetsDir) args.push('--assets-dir', assetsDir)
-  // --screen-root is required to render as desktop wallpaper (otherwise opens in a window)
+
+  // --screen-root uses layer-shell (Wayland) or root-window overlay (X11)
   if (options.screenRoot) {
     args.push('--screen-root', options.screenRoot)
   } else {
     const screens = getConnectedScreens()
     for (const s of screens) args.push('--screen-root', s)
   }
+
   if (options.fps) args.push('--fps', String(options.fps))
   args.push(wallpaperPath)
   return args
+}
+
+/** Get the control file path used for hot-reload signalling. */
+function getControlFilePath(): string {
+  const xdgRuntime = process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid?.() ?? 1000}`
+  return path.join(xdgRuntime, 'lwe-control')
+}
+
+/** Hot-reload: write new wallpaper path to control file and send SIGUSR1. */
+function hotReloadLwe(wallpaperPath: string): boolean {
+  if (!activeProcess || activeProcess.exitCode !== null) return false
+
+  try {
+    fs.writeFileSync(getControlFilePath(), wallpaperPath + '\n')
+    activeProcess.kill('SIGUSR1')
+    console.log('[LWE] Hot-reload signal sent for:', wallpaperPath)
+    return true
+  } catch (err) {
+    console.error('[LWE] Hot-reload failed:', err)
+    return false
+  }
 }
 
 /** Launch LWE and resolve after 2s if still running; reject if it exits with error (so UI can show message). */
@@ -526,6 +532,11 @@ export function launchLweAsync(
   wallpaperPath: string,
   options: { screenRoot?: string; fps?: number } = {}
 ): Promise<void> {
+  // Hot-reload if already running
+  if (isLweRunning() && hotReloadLwe(wallpaperPath)) {
+    return Promise.resolve()
+  }
+
   stopLwe()
 
   const binaryPath = getLweBinaryPath()
@@ -535,14 +546,23 @@ export function launchLweAsync(
   // Spawn via `env` to set env vars explicitly — matches how LWE works from the terminal.
   // Using the env option on spawn can lose vars when combined with detached/setsid.
   const spawnArgs = [...envVars, binaryPath, ...lweArgs]
+  console.log('[LWE] Binary:', binaryPath)
+  console.log('[LWE] Args:', lweArgs.join(' '))
+  console.log('[LWE] Env:', envVars.join(' '))
   return new Promise((resolve, reject) => {
     const child = spawn('env', spawnArgs, {
-      stdio: ['ignore', 'ignore', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'],
       detached: true
     })
     activeProcess = child
 
     const stderrChunks: Buffer[] = []
+    if (child.stdout) {
+      child.stdout.on('data', (chunk: Buffer) => {
+        const msg = chunk.toString('utf8').trim()
+        if (msg) console.log('[LWE stdout]', msg)
+      })
+    }
     if (child.stderr) {
       child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk))
     }

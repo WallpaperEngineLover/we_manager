@@ -121,6 +121,13 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LWE_STOP)
   },
 
+  desktopIcons: {
+    setEnabled: (enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_SET_ENABLED, enabled),
+    getEnabled: (): Promise<boolean> =>
+      ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_GET_ENABLED)
+  },
+
   shell: {
     openInFileManager: (folderPath: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke(IpcChannels.SHELL_OPEN_IN_FILE_MANAGER, folderPath),
