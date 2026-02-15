@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2 } from 'lucide-react'
+import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor } from 'lucide-react'
 import type { LweStatus, LweInstallProgress, LinuxDistro } from '../../../../shared/types'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
@@ -23,12 +23,16 @@ export default function SettingsView() {
   const [uninstalling, setUninstalling] = useState(false)
   const [uninstallMsg, setUninstallMsg] = useState<string | null>(null)
 
+  // Desktop icons overlay
+  const [desktopIconsEnabled, setDesktopIconsEnabled] = useState(false)
+
   useEffect(() => {
     window.electronAPI.config.get().then((cfg) => {
       setWorkshopPath(cfg.workshopPath ?? cfg.defaultWorkshopPath)
     })
     window.electronAPI.lwe.status().then(setLweStatus)
     window.electronAPI.lwe.detectDistro().then(setDistro)
+    window.electronAPI.desktopIcons.getEnabled().then(setDesktopIconsEnabled)
   }, [])
 
   // Listen for install progress events
@@ -115,6 +119,12 @@ export default function SettingsView() {
     } finally {
       setUninstalling(false)
     }
+  }
+
+  async function handleDesktopIconsToggle() {
+    const newVal = !desktopIconsEnabled
+    setDesktopIconsEnabled(newVal)
+    await window.electronAPI.desktopIcons.setEnabled(newVal)
   }
 
   const isBusy = lweInstalling || depsInstalling || uninstalling
@@ -304,6 +314,35 @@ export default function SettingsView() {
               )}
             </div>
           )}
+        </div>
+
+        {/* Desktop icons overlay */}
+        <div>
+          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+            Desktop Icons
+          </label>
+          <p className="mt-1 text-xs text-gray-600">
+            Show desktop icons on top of the animated wallpaper. Uses a transparent overlay
+            that reads your KDE Folder View layout. Clicks pass through to the desktop underneath.
+          </p>
+          <label className="mt-3 flex items-center gap-3 cursor-pointer">
+            <button
+              onClick={handleDesktopIconsToggle}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                desktopIconsEnabled ? 'bg-indigo-600' : 'bg-white/10'
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  desktopIconsEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+            <span className="flex items-center gap-2 text-sm text-gray-300">
+              <Monitor size={16} />
+              {desktopIconsEnabled ? 'Desktop icons visible' : 'Desktop icons hidden'}
+            </span>
+          </label>
         </div>
       </div>
     </div>

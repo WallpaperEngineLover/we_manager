@@ -63,6 +63,10 @@ export const IpcChannels = {
   LWE_LAUNCH: 'lwe:launch',
   LWE_STOP: 'lwe:stop',
 
+  // Desktop icons overlay
+  DESKTOP_ICONS_SET_ENABLED: 'desktop-icons:set-enabled',
+  DESKTOP_ICONS_GET_ENABLED: 'desktop-icons:get-enabled',
+
   // Events pushed from main to renderer
   EVENT_DOWNLOAD_PROGRESS: 'event:download-progress',
   EVENT_WALLPAPER_IMPORTED: 'event:wallpaper-imported',
