@@ -12,6 +12,8 @@ export const IpcChannels = {
   STEAM_INSTALL_INFO: 'steam:install-info',
   STEAM_IS_RUNNING: 'steam:is-running',
   STEAM_VOTE: 'steam:vote',
+  STEAM_OPEN_WORKSHOP: 'steam:open-workshop',
+  STEAM_GET_VOTED_IDS: 'steam:get-voted-ids',
 
   // Library management
   LIBRARY_GET_ALL: 'library:get-all',

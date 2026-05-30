@@ -564,7 +564,11 @@ export function launchLweAsync(
       })
     }
     if (child.stderr) {
-      child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk))
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderrChunks.push(chunk)
+        const msg = chunk.toString('utf8').trim()
+        if (msg) console.log('[LWE stderr]', msg)
+      })
     }
 
     let settled = false
