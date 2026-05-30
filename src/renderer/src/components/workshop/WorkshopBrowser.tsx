@@ -143,6 +143,18 @@ export default function WorkshopBrowser() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
 
+  // Close context menu on outside click (mousedown so right-click on another card works)
+  useEffect(() => {
+    if (!ctxMenu) return
+    function onMouseDown(e: MouseEvent) {
+      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) {
+        setCtxMenu(null)
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [ctxMenu])
+
   useEffect(() => {
     saveFilters(filters)
   }, [filters])
@@ -248,7 +260,7 @@ export default function WorkshopBrowser() {
   function ctxOpenInSteam() {
     if (!ctxMenu) return
     for (const id of ctxMenu.ids) {
-      window.open(`https://steamcommunity.com/sharedfiles/filedetails/?id=${id}`)
+      window.electronAPI.shell.openExternal(`steam://url/CommunityFilePage/${id}`)
     }
     closeCtxMenu()
   }
@@ -342,7 +354,7 @@ export default function WorkshopBrowser() {
         <select
           value={queryType}
           onChange={(e) => setQueryType(e.target.value as WorkshopQueryType)}
-          className="rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+          className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 [&>option]:bg-[#1a1a1a] [&>option]:text-gray-200"
         >
           <option value="RankedByVote">Top Rated</option>
           <option value="RankedByPublicationDate">Newest</option>
@@ -572,7 +584,7 @@ export default function WorkshopBrowser() {
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="rounded bg-white/5 px-2 py-1 text-gray-300 outline-none"
+                  className="rounded bg-[#1a1a1a] px-2 py-1 text-gray-300 outline-none [&>option]:bg-[#1a1a1a] [&>option]:text-gray-300"
                 >
                   <option value={50}>50</option>
                   <option value={100}>100</option>
@@ -605,52 +617,49 @@ export default function WorkshopBrowser() {
 
       {/* Context menu */}
       {ctxMenu && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={closeCtxMenu} />
-          <div
-            ref={ctxRef}
-            className="fixed z-50 min-w-[180px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
-            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        <div
+          ref={ctxRef}
+          className="fixed z-50 min-w-[180px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        >
+          {ctxMenu.ids.length > 1 && (
+            <div className="px-3 py-1 text-xs text-gray-600 border-b border-white/5 mb-1">
+              {ctxMenu.ids.length} items selected
+            </div>
+          )}
+          <button
+            onClick={ctxSubscribe}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
           >
-            {ctxMenu.ids.length > 1 && (
-              <div className="px-3 py-1 text-xs text-gray-600 border-b border-white/5 mb-1">
-                {ctxMenu.ids.length} items selected
-              </div>
-            )}
-            <button
-              onClick={ctxSubscribe}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              Subscribe
-            </button>
-            <button
-              onClick={ctxUnsubscribe}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              Unsubscribe
-            </button>
-            <div className="my-1 border-t border-white/5" />
-            <button
-              onClick={() => ctxVote(true)}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              👍 Like
-            </button>
-            <button
-              onClick={() => ctxVote(false)}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              👎 Dislike
-            </button>
-            <div className="my-1 border-t border-white/5" />
-            <button
-              onClick={ctxOpenInSteam}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              Open in Steam Workshop
-            </button>
-          </div>
-        </>
+            Subscribe
+          </button>
+          <button
+            onClick={ctxUnsubscribe}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+          >
+            Unsubscribe
+          </button>
+          <div className="my-1 border-t border-white/5" />
+          <button
+            onClick={() => ctxVote(true)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+          >
+            Like
+          </button>
+          <button
+            onClick={() => ctxVote(false)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+          >
+            Dislike
+          </button>
+          <div className="my-1 border-t border-white/5" />
+          <button
+            onClick={ctxOpenInSteam}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+          >
+            Open in Steam Workshop
+          </button>
+        </div>
       )}
     </div>
   )
