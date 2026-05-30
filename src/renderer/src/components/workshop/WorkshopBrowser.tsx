@@ -354,7 +354,7 @@ export default function WorkshopBrowser() {
         <select
           value={queryType}
           onChange={(e) => setQueryType(e.target.value as WorkshopQueryType)}
-          className="rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+          className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 [&>option]:bg-[#1a1a1a] [&>option]:text-gray-200"
         >
           <option value="RankedByVote">Top Rated</option>
           <option value="RankedByPublicationDate">Newest</option>
@@ -584,7 +584,7 @@ export default function WorkshopBrowser() {
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="rounded bg-white/5 px-2 py-1 text-gray-300 outline-none"
+                  className="rounded bg-[#1a1a1a] px-2 py-1 text-gray-300 outline-none [&>option]:bg-[#1a1a1a] [&>option]:text-gray-300"
                 >
                   <option value={50}>50</option>
                   <option value={100}>100</option>

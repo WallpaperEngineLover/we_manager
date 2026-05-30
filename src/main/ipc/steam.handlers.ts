@@ -1,6 +1,8 @@
 import { ipcMain, BrowserWindow } from 'electron'
+import * as fs from 'fs'
 import { IpcChannels } from '@shared/ipc-channels'
 import * as steam from '../services/steam.service'
+import * as library from '../services/library.service'
 
 export function registerSteamHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.STEAM_IS_RUNNING, () => {
@@ -31,13 +33,27 @@ export function registerSteamHandlers(win: BrowserWindow): void {
   })
 
   ipcMain.handle(IpcChannels.STEAM_UNSUBSCRIBE, async (_e, itemId: string) => {
+    const wallpaper = library.getWallpaper(itemId)
     await steam.unsubscribeFromItem(BigInt(itemId))
+    if (wallpaper?.localPath) {
+      try { fs.rmSync(wallpaper.localPath, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+    library.deleteWallpaper(itemId)
     return { ok: true }
   })
 
-  ipcMain.handle(IpcChannels.STEAM_VOTE, async (_e, itemId: string, voteUp: boolean) => {
-    await steam.voteItem(BigInt(itemId), voteUp)
+  ipcMain.handle(IpcChannels.STEAM_VOTE, (_e, itemId: string, voteUp: boolean) => {
+    steam.voteOnItem(BigInt(itemId), voteUp)
     return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.STEAM_OPEN_WORKSHOP, (_e, itemId: string) => {
+    steam.openWorkshopItemOverlay(BigInt(itemId))
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.STEAM_GET_VOTED_IDS, async () => {
+    return steam.getVotedUpItemIds()
   })
 
   ipcMain.handle(IpcChannels.STEAM_GET_SUBSCRIBED, () => {

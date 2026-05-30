@@ -235,6 +235,7 @@ export default function LibraryView() {
   const [scanResult, setScanResult] = useState<{
     imported: number
     skipped: number
+    removed: number
   } | null>(null)
 
   // Pagination
@@ -400,6 +401,13 @@ export default function LibraryView() {
     queryKey: ['lwe-status'],
     queryFn: () => window.electronAPI.lwe.status()
   })
+
+  const { data: votedIds } = useQuery({
+    queryKey: ['steam-voted-ids'],
+    queryFn: () => window.electronAPI.steam.getVotedIds(),
+    staleTime: Infinity
+  })
+  const votedSet = useMemo(() => new Set(votedIds ?? []), [votedIds])
 
   async function handleScan() {
     setScanning(true)
@@ -668,7 +676,6 @@ export default function LibraryView() {
     if (!ctxMenu) return
     for (const id of ctxMenu.ids) {
       try { await window.electronAPI.steam.unsubscribe(id) } catch {}
-      try { await window.electronAPI.library.delete(id) } catch {}
     }
     closeCtxMenu()
     queryClient.invalidateQueries({ queryKey: ['library'] })
@@ -680,6 +687,7 @@ export default function LibraryView() {
     for (const id of ctxMenu.ids) {
       try { await window.electronAPI.steam.vote(id, up) } catch {}
     }
+    queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })
     closeCtxMenu()
   }
 
@@ -761,7 +769,7 @@ export default function LibraryView() {
         <select
           value={sortBy ?? 'updatedAt'}
           onChange={(e) => setSortBy(e.target.value as LibraryFilters['sortBy'])}
-          className="rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+          className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 [&>option]:bg-[#1a1a1a] [&>option]:text-gray-200"
         >
           <option value="title">Name</option>
           <option value="updatedAt">Date Updated</option>
@@ -780,7 +788,7 @@ export default function LibraryView() {
         <select
           value={pageSize}
           onChange={(e) => setPageSize(Number(e.target.value))}
-          className="rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+          className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 [&>option]:bg-[#1a1a1a] [&>option]:text-gray-200"
         >
           <option value={50}>50 / page</option>
           <option value={100}>100 / page</option>
@@ -857,7 +865,7 @@ export default function LibraryView() {
 
       {scanResult && (
         <div className="border-b border-white/5 px-4 py-2 text-xs text-gray-400">
-          Scan complete — {scanResult.imported} wallpapers imported
+          Scan complete — {scanResult.imported} imported{scanResult.removed > 0 ? `, ${scanResult.removed} removed` : ''}
         </div>
       )}
 
@@ -1057,9 +1065,20 @@ export default function LibraryView() {
                 wallpaper={wallpaper}
                 selected={selectedIds.has(wallpaper.id)}
                 lweInstalled={lweStatus?.installed ?? false}
+                isLiked={votedSet.has(wallpaper.id)}
                 onApplied={() =>
                   queryClient.invalidateQueries({ queryKey: ['library'] })
                 }
+                onLiked={() => {
+                  queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
+                    old ? [...old, wallpaper.id] : [wallpaper.id]
+                  )
+                  queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })
+                }}
+                onUnsubscribed={() => {
+                  queryClient.invalidateQueries({ queryKey: ['library'] })
+                  refetchFolders()
+                }}
                 onSelect={(e) => handleCardSelect(wallpaper.id, e)}
                 onContextMenu={(e) => openWallpaperCtxMenu(e, wallpaper.id)}
               />

@@ -42,6 +42,7 @@ export interface WallpaperMeta {
   source: 'workshop' | 'local'
   tags: string[]
   categories: string[]
+  downloading?: boolean
 }
 
 export interface WorkshopItem {

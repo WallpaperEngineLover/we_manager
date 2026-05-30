@@ -36,7 +36,11 @@ const api = {
     itemState: (itemId: string): Promise<number> =>
       ipcRenderer.invoke(IpcChannels.STEAM_ITEM_STATE, itemId),
     vote: (itemId: string, voteUp: boolean): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke(IpcChannels.STEAM_VOTE, itemId, voteUp)
+      ipcRenderer.invoke(IpcChannels.STEAM_VOTE, itemId, voteUp),
+    openWorkshopItem: (itemId: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.STEAM_OPEN_WORKSHOP, itemId),
+    getVotedIds: (): Promise<string[]> =>
+      ipcRenderer.invoke(IpcChannels.STEAM_GET_VOTED_IDS)
   },
 
   library: {
@@ -55,7 +59,7 @@ const api = {
     getTags: (): Promise<string[]> => ipcRenderer.invoke(IpcChannels.LIBRARY_GET_TAGS),
     search: (query: string): Promise<WallpaperMeta[]> =>
       ipcRenderer.invoke(IpcChannels.LIBRARY_SEARCH, query),
-    scan: (): Promise<{ imported: number; skipped: number }> =>
+    scan: (): Promise<{ imported: number; skipped: number; removed: number }> =>
       ipcRenderer.invoke(IpcChannels.LIBRARY_SCAN),
     distinctTags: (): Promise<string[]> =>
       ipcRenderer.invoke(IpcChannels.LIBRARY_DISTINCT_TAGS)
