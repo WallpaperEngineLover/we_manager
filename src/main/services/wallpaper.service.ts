@@ -3,11 +3,16 @@ import { promisify } from 'util'
 import * as os from 'os'
 import { detectDisplayServer, detectDesktopEnv, isCommandAvailable } from '../utils/platform'
 import type { WallpaperBackend, WallpaperEnvironment } from '@shared/types'
+import { getLweStatus } from './lwe.service'
 
 const execFileAsync = promisify(execFile)
 
-// Cache environment detection — it never changes during a session
+// Cache environment detection
 let envCache: WallpaperEnvironment | null = null
+
+export function invalidateEnvCache(): void {
+  envCache = null
+}
 
 export function detectEnvironment(): WallpaperEnvironment {
   if (envCache) return envCache
@@ -38,7 +43,13 @@ export function detectEnvironment(): WallpaperEnvironment {
   else if (displayServer === 'wayland' && available.includes('swww')) recommended = 'swww'
   else if (available.includes('feh')) recommended = 'feh'
 
-  envCache = { displayServer, desktopEnv, availableBackends: available, recommendedBackend: recommended }
+  envCache = {
+    displayServer,
+    desktopEnv,
+    availableBackends: available,
+    recommendedBackend: recommended,
+    linuxWallpaperEngine: getLweStatus()
+  }
   return envCache
 }
 

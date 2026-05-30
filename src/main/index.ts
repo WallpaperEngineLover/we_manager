@@ -4,6 +4,7 @@ import { initSteam } from './services/steam.service'
 import { initDatabase } from './services/library.service'
 import { startWatcher } from './services/watcher.service'
 import { registerAllHandlers } from './ipc'
+import { initDesktopIcons, cleanupDesktopIcons } from './services/desktop-icons.service'
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -53,9 +54,11 @@ app.whenReady().then(() => {
   const win = createWindow()
   registerAllHandlers(win)
   startWatcher(win)
+  initDesktopIcons()
 })
 
 app.on('window-all-closed', () => {
+  cleanupDesktopIcons()
   if (process.platform !== 'darwin') app.quit()
 })
 

@@ -1,5 +1,5 @@
 export const IpcChannels = {
-  // Workshop browsing (main proxies Steam Web API)
+  // Workshop browsing (steamworks.js)
   WORKSHOP_QUERY: 'workshop:query',
   WORKSHOP_GET_ITEM: 'workshop:get-item',
 
@@ -12,6 +12,8 @@ export const IpcChannels = {
   STEAM_INSTALL_INFO: 'steam:install-info',
   STEAM_IS_RUNNING: 'steam:is-running',
   STEAM_VOTE: 'steam:vote',
+  STEAM_OPEN_WORKSHOP: 'steam:open-workshop',
+  STEAM_GET_VOTED_IDS: 'steam:get-voted-ids',
 
   // Library management
   LIBRARY_GET_ALL: 'library:get-all',
@@ -33,6 +35,7 @@ export const IpcChannels = {
   FOLDERS_ADD_ITEMS: 'folders:add-items',
   FOLDERS_REMOVE_ITEMS: 'folders:remove-items',
   FOLDERS_IMPORT_WE_CONFIG: 'folders:import-we-config',
+  FOLDERS_CLEANUP: 'folders:cleanup',
 
   // Wallpaper application
   WALLPAPER_APPLY: 'wallpaper:apply',
@@ -51,11 +54,26 @@ export const IpcChannels = {
   SHELL_OPEN_PATH: 'shell:open-path',
   SHELL_OPEN_IN_FILE_MANAGER: 'shell:open-in-file-manager',
   SHELL_OPEN_WITH_DEFAULT: 'shell:open-with-default',
+  SHELL_OPEN_EXTERNAL: 'shell:open-external',
+
+  // linux-wallpaperengine
+  LWE_STATUS: 'lwe:status',
+  LWE_DETECT_DISTRO: 'lwe:detect-distro',
+  LWE_INSTALL_DEPS: 'lwe:install-deps',
+  LWE_INSTALL: 'lwe:install',
+  LWE_UNINSTALL: 'lwe:uninstall',
+  LWE_LAUNCH: 'lwe:launch',
+  LWE_STOP: 'lwe:stop',
+
+  // Desktop icons overlay
+  DESKTOP_ICONS_SET_ENABLED: 'desktop-icons:set-enabled',
+  DESKTOP_ICONS_GET_ENABLED: 'desktop-icons:get-enabled',
 
   // Events pushed from main to renderer
   EVENT_DOWNLOAD_PROGRESS: 'event:download-progress',
   EVENT_WALLPAPER_IMPORTED: 'event:wallpaper-imported',
-  EVENT_STEAM_STATUS: 'event:steam-status'
+  EVENT_STEAM_STATUS: 'event:steam-status',
+  EVENT_LWE_INSTALL_PROGRESS: 'event:lwe-install-progress'
 } as const
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]

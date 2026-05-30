@@ -168,6 +168,21 @@ function normalizeRating(raw?: string): ContentRating {
   }
 }
 
+function getDirSize(dirPath: string): number {
+  let total = 0
+  try {
+    for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+      const full = path.join(dirPath, entry.name)
+      if (entry.isDirectory()) {
+        total += getDirSize(full)
+      } else if (entry.isFile()) {
+        try { total += fs.statSync(full).size } catch { /* skip */ }
+      }
+    }
+  } catch { /* skip unreadable dirs */ }
+  return total
+}
+
 function buildMeta(
   workshopId: string,
   localPath: string,
@@ -175,8 +190,9 @@ function buildMeta(
   existing?: WallpaperMeta
 ): WallpaperMeta {
   const now = Date.now()
+  const { downloading: _d, ...existingRest } = existing ?? { appliedCount: 0, categories: [] }
   return {
-    ...(existing ?? { appliedCount: 0, categories: [] }),
+    ...existingRest,
     id: workshopId,
     title: pj?.title ?? `Wallpaper ${workshopId}`,
     type: normalizeType(pj?.type),
@@ -186,6 +202,7 @@ function buildMeta(
     previewUrl: undefined,
     localPath,
     file: pj?.file,
+    fileSize: getDirSize(localPath),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     subscribed: true,
@@ -203,41 +220,80 @@ export function importWallpaperById(workshopId: string): WallpaperMeta | null {
   return meta
 }
 
-export function scanLibrary(): { imported: number; skipped: number } {
+export function scanLibrary(): { imported: number; skipped: number; removed: number } {
   const workshopPath = getWorkshopPath()
-  if (!fs.existsSync(workshopPath)) return { imported: 0, skipped: 0 }
+  if (!fs.existsSync(workshopPath)) return { imported: 0, skipped: 0, removed: 0 }
 
   const entries = fs.readdirSync(workshopPath, { withFileTypes: true })
+  const onDisk = new Set(entries.filter(e => e.isDirectory()).map(e => e.name))
 
   // Load entire store once, mutate in memory, write once at the end
   const wallpapers = store.get('wallpapers')
   let imported = 0
   let skipped = 0
+  let removed = 0
+
+  // Remove wallpapers whose directories no longer exist on disk
+  for (const id of Object.keys(wallpapers)) {
+    if (!onDisk.has(id)) {
+      delete wallpapers[id]
+      removed++
+    }
+  }
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
 
+    const localPath = path.join(workshopPath, entry.name)
+    const pj = readProjectJson(localPath)
+
+    if (!pj) {
+      // No project.json — directory exists but download is incomplete
+      if (!wallpapers[entry.name]) {
+        const now = Date.now()
+        wallpapers[entry.name] = {
+          id: entry.name,
+          title: `Wallpaper ${entry.name}`,
+          type: 'scene',
+          contentRating: 'everyone',
+          localPath,
+          createdAt: now,
+          updatedAt: now,
+          subscribed: true,
+          appliedCount: 0,
+          source: 'workshop',
+          tags: [],
+          categories: [],
+          downloading: true
+        }
+        imported++
+      } else {
+        skipped++
+      }
+      continue
+    }
+
     // Skip already-imported entries that have all required fields (cache hit)
     const existing = wallpapers[entry.name]
-    if (existing?.previewLocal !== undefined && existing?.contentRating !== undefined) {
+    if (!existing?.downloading && existing?.previewLocal !== undefined && existing?.contentRating !== undefined && existing?.fileSize !== undefined) {
       skipped++
       continue
     }
 
-    const localPath = path.join(workshopPath, entry.name)
-    const pj = readProjectJson(localPath)
-    if (!pj) { skipped++; continue }
-
-    wallpapers[entry.name] = buildMeta(entry.name, localPath, pj)
+    wallpapers[entry.name] = buildMeta(entry.name, localPath, pj, existing ?? undefined)
     imported++
   }
 
-  if (imported > 0) {
+  if (imported > 0 || removed > 0) {
     store.set('wallpapers', wallpapers) // single write
   }
 
-  console.log(`[Library] Scan complete: ${imported} imported, ${skipped} skipped`)
-  return { imported, skipped }
+  console.log(`[Library] Scan complete: ${imported} imported, ${skipped} skipped, ${removed} removed`)
+
+  // Auto-cleanup folder items that reference non-existent wallpapers
+  cleanupFolders()
+
+  return { imported, skipped, removed }
 }
 
 // ── Folder CRUD ──
@@ -287,6 +343,30 @@ export function removeItemsFromFolder(folderId: string, itemIds: string[]): Wall
   folder.items = folder.items.filter((id) => !remove.has(id))
   store.set('folders', folders)
   return folder
+}
+
+/**
+ * Remove folder item IDs that don't exist in the wallpapers store.
+ * Returns the number of stale IDs removed.
+ */
+export function cleanupFolders(): number {
+  const wallpapers = store.get('wallpapers')
+  const validIds = new Set(Object.keys(wallpapers))
+  const folders = store.get('folders')
+  let removed = 0
+
+  for (const folder of folders) {
+    const before = folder.items.length
+    folder.items = folder.items.filter((id) => validIds.has(id))
+    removed += before - folder.items.length
+  }
+
+  if (removed > 0) {
+    store.set('folders', folders)
+    console.log(`[Library] Folder cleanup: removed ${removed} stale item(s)`)
+  }
+
+  return removed
 }
 
 export function importWEConfig(configPath: string): { folders: number; playlists: number } {

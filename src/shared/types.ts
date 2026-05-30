@@ -42,6 +42,7 @@ export interface WallpaperMeta {
   source: 'workshop' | 'local'
   tags: string[]
   categories: string[]
+  downloading?: boolean
 }
 
 export interface WorkshopItem {
@@ -109,4 +110,19 @@ export interface WallpaperEnvironment {
   desktopEnv: 'gnome' | 'kde' | 'hyprland' | 'sway' | 'other'
   availableBackends: WallpaperBackend[]
   recommendedBackend: WallpaperBackend
+  linuxWallpaperEngine: LweStatus
+}
+
+export interface LweStatus {
+  installed: boolean
+  path?: string
+  version?: string
+}
+
+export type LinuxDistro = 'fedora' | 'arch' | 'debian' | 'unknown'
+
+export interface LweInstallProgress {
+  stage: 'installing-deps' | 'cloning' | 'building' | 'installing' | 'done' | 'error'
+  message: string
+  percentage: number
 }

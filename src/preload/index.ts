@@ -9,7 +9,10 @@ import type {
   LibraryFilters,
   ApplyWallpaperOptions,
   DownloadProgressEvent,
-  WallpaperEnvironment
+  WallpaperEnvironment,
+  LweStatus,
+  LweInstallProgress,
+  LinuxDistro
 } from '../shared/types'
 
 const api = {
@@ -33,7 +36,11 @@ const api = {
     itemState: (itemId: string): Promise<number> =>
       ipcRenderer.invoke(IpcChannels.STEAM_ITEM_STATE, itemId),
     vote: (itemId: string, voteUp: boolean): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke(IpcChannels.STEAM_VOTE, itemId, voteUp)
+      ipcRenderer.invoke(IpcChannels.STEAM_VOTE, itemId, voteUp),
+    openWorkshopItem: (itemId: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.STEAM_OPEN_WORKSHOP, itemId),
+    getVotedIds: (): Promise<string[]> =>
+      ipcRenderer.invoke(IpcChannels.STEAM_GET_VOTED_IDS)
   },
 
   library: {
@@ -52,7 +59,7 @@ const api = {
     getTags: (): Promise<string[]> => ipcRenderer.invoke(IpcChannels.LIBRARY_GET_TAGS),
     search: (query: string): Promise<WallpaperMeta[]> =>
       ipcRenderer.invoke(IpcChannels.LIBRARY_SEARCH, query),
-    scan: (): Promise<{ imported: number; skipped: number }> =>
+    scan: (): Promise<{ imported: number; skipped: number; removed: number }> =>
       ipcRenderer.invoke(IpcChannels.LIBRARY_SCAN),
     distinctTags: (): Promise<string[]> =>
       ipcRenderer.invoke(IpcChannels.LIBRARY_DISTINCT_TAGS)
@@ -87,7 +94,9 @@ const api = {
     removeItems: (folderId: string, itemIds: string[]): Promise<WallpaperFolder | null> =>
       ipcRenderer.invoke(IpcChannels.FOLDERS_REMOVE_ITEMS, folderId, itemIds),
     importWEConfig: (configPath: string): Promise<{ folders: number; playlists: number }> =>
-      ipcRenderer.invoke(IpcChannels.FOLDERS_IMPORT_WE_CONFIG, configPath)
+      ipcRenderer.invoke(IpcChannels.FOLDERS_IMPORT_WE_CONFIG, configPath),
+    cleanup: (): Promise<{ removed: number }> =>
+      ipcRenderer.invoke(IpcChannels.FOLDERS_CLEANUP)
   },
 
   wallpaper: {
@@ -99,13 +108,39 @@ const api = {
       ipcRenderer.invoke(IpcChannels.WALLPAPER_DETECT_ENV)
   },
 
+  lwe: {
+    status: (): Promise<LweStatus> =>
+      ipcRenderer.invoke(IpcChannels.LWE_STATUS),
+    detectDistro: (): Promise<LinuxDistro> =>
+      ipcRenderer.invoke(IpcChannels.LWE_DETECT_DISTRO),
+    installDeps: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.LWE_INSTALL_DEPS),
+    install: (): Promise<LweStatus> =>
+      ipcRenderer.invoke(IpcChannels.LWE_INSTALL),
+    uninstall: (): Promise<{ ok: boolean; message: string }> =>
+      ipcRenderer.invoke(IpcChannels.LWE_UNINSTALL),
+    launch: (wallpaperPath: string, options?: { screenRoot?: string; fps?: number }): Promise<{ ok: boolean; running: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.LWE_LAUNCH, wallpaperPath, options),
+    stop: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.LWE_STOP)
+  },
+
+  desktopIcons: {
+    setEnabled: (enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_SET_ENABLED, enabled),
+    getEnabled: (): Promise<boolean> =>
+      ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_GET_ENABLED)
+  },
+
   shell: {
     openInFileManager: (folderPath: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke(IpcChannels.SHELL_OPEN_IN_FILE_MANAGER, folderPath),
     openWithDefault: (filePath: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke(IpcChannels.SHELL_OPEN_WITH_DEFAULT, filePath),
     openPath: (targetPath: string): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke(IpcChannels.SHELL_OPEN_PATH, targetPath)
+      ipcRenderer.invoke(IpcChannels.SHELL_OPEN_PATH, targetPath),
+    openExternal: (url: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke(IpcChannels.SHELL_OPEN_EXTERNAL, url)
   },
 
   on: {
@@ -123,6 +158,11 @@ const api = {
       const listener = (_: Electron.IpcRendererEvent, running: boolean) => cb(running)
       ipcRenderer.on(IpcChannels.EVENT_STEAM_STATUS, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_STEAM_STATUS, listener)
+    },
+    lweInstallProgress: (cb: (progress: LweInstallProgress) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, progress: LweInstallProgress) => cb(progress)
+      ipcRenderer.on(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, listener)
     }
   }
 }
