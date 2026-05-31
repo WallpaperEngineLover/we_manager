@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor } from 'lucide-react'
+import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw } from 'lucide-react'
 import type { LweStatus, LweInstallProgress, LinuxDistro } from '../../../../shared/types'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
@@ -13,6 +13,10 @@ export default function SettingsView() {
   const [workshopPath, setWorkshopPath] = useState('')
   const [saved, setSaved] = useState(false)
   const [importStatus, setImportStatus] = useState<string | null>(null)
+  const [defaultFps, setDefaultFps] = useState<string>('')
+  const [fpsSaved, setFpsSaved] = useState(false)
+  const [resetFpsConfirm, setResetFpsConfirm] = useState(false)
+  const [resetFpsMsg, setResetFpsMsg] = useState<string | null>(null)
 
   // linux-wallpaperengine state
   const [lweStatus, setLweStatus] = useState<LweStatus | null>(null)
@@ -29,6 +33,7 @@ export default function SettingsView() {
   useEffect(() => {
     window.electronAPI.config.get().then((cfg) => {
       setWorkshopPath(cfg.workshopPath ?? cfg.defaultWorkshopPath)
+      setDefaultFps(cfg.defaultFps != null ? String(cfg.defaultFps) : '')
     })
     window.electronAPI.lwe.status().then(setLweStatus)
     window.electronAPI.lwe.detectDistro().then(setDistro)
@@ -121,6 +126,22 @@ export default function SettingsView() {
     }
   }
 
+  async function handleSaveDefaultFps() {
+    const parsed = defaultFps.trim() === '' ? null : parseInt(defaultFps, 10)
+    if (parsed !== null && (isNaN(parsed) || parsed < 1)) return
+    await window.electronAPI.config.setDefaultFps(parsed)
+    setFpsSaved(true)
+    setTimeout(() => setFpsSaved(false), 2000)
+  }
+
+  async function handleResetFpsOverrides() {
+    if (!resetFpsConfirm) { setResetFpsConfirm(true); return }
+    setResetFpsConfirm(false)
+    const result = await window.electronAPI.library.resetFpsOverrides()
+    setResetFpsMsg(`Reset FPS for ${result.count} wallpaper${result.count !== 1 ? 's' : ''}.`)
+    setTimeout(() => setResetFpsMsg(null), 3000)
+  }
+
   async function handleDesktopIconsToggle() {
     const newVal = !desktopIconsEnabled
     setDesktopIconsEnabled(newVal)
@@ -168,6 +189,77 @@ export default function SettingsView() {
             <Save size={14} />
             {saved ? 'Saved!' : 'Save'}
           </button>
+        </div>
+
+        {/* LWE launch options */}
+        <div>
+          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+            Wallpaper Engine Options
+          </label>
+          <p className="mt-1 text-xs text-gray-600">
+            Launch options passed to linux-wallpaperengine.
+          </p>
+          <div className="mt-3 space-y-3">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Default FPS limit</label>
+              <p className="text-xs text-gray-600 mb-2">
+                Limits frame rate for all wallpapers. Leave empty for unlimited. Can be overridden per wallpaper.
+              </p>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="number"
+                  min={1}
+                  max={360}
+                  placeholder="unlimited"
+                  value={defaultFps}
+                  onChange={(e) => { setDefaultFps(e.target.value); setFpsSaved(false) }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveDefaultFps()}
+                  className="w-28 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <button
+                  onClick={handleSaveDefaultFps}
+                  className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+                >
+                  <Save size={14} />
+                  {fpsSaved ? 'Saved!' : 'Save'}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Reset per-wallpaper FPS</label>
+              <p className="text-xs text-gray-600 mb-2">
+                Remove all per-wallpaper FPS overrides so they use the default.
+              </p>
+              {resetFpsConfirm ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400">Are you sure?</span>
+                  <button
+                    onClick={handleResetFpsOverrides}
+                    className="rounded-lg bg-red-600/80 px-3 py-1.5 text-xs text-white hover:bg-red-600"
+                  >
+                    Yes, reset all
+                  </button>
+                  <button
+                    onClick={() => setResetFpsConfirm(false)}
+                    className="rounded-lg bg-white/5 px-3 py-1.5 text-xs text-gray-400 hover:bg-white/10"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handleResetFpsOverrides}
+                  className="flex items-center gap-2 rounded-lg bg-white/5 px-4 py-2 text-sm text-gray-300 hover:bg-white/10"
+                >
+                  <RotateCcw size={14} />
+                  Reset all FPS overrides
+                </button>
+              )}
+              {resetFpsMsg && (
+                <p className="mt-2 text-xs text-gray-400">{resetFpsMsg}</p>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Import WE config */}

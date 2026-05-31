@@ -6,12 +6,14 @@ import { WE_APP_ID } from '@shared/constants'
 
 interface AppConfig {
   workshopPath: string | null
+  defaultFps: number | null
 }
 
 const store = new Store<AppConfig>({
   name: 'config',
   defaults: {
-    workshopPath: null
+    workshopPath: null,
+    defaultFps: null
   }
 })
 
@@ -25,6 +27,14 @@ export function setConfiguredWorkshopPath(p: string): void {
 
 export function isWorkshopPathConfigured(): boolean {
   return store.get('workshopPath') !== null
+}
+
+export function getDefaultFps(): number | null {
+  return store.get('defaultFps')
+}
+
+export function setDefaultFps(fps: number | null): void {
+  store.set('defaultFps', fps)
 }
 
 /** Path where we store our copy of config.json */

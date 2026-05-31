@@ -3,6 +3,7 @@ import { Play, Loader2, Check, ThumbsUp, Trash2, ExternalLink, Download } from '
 import type { WallpaperMeta } from '@shared/types'
 import clsx from 'clsx'
 
+
 interface WallpaperCardProps {
   wallpaper: WallpaperMeta
   selected?: boolean
@@ -30,6 +31,7 @@ export default function WallpaperCard({
   const [isLiking, setIsLiking] = useState(false)
   const [unsubState, setUnsubState] = useState<'idle' | 'confirm' | 'pending'>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [fpsInput, setFpsInput] = useState(wallpaper.fpsOverride != null ? String(wallpaper.fpsOverride) : '')
 
   async function handleApply(e: React.MouseEvent) {
     e.stopPropagation()
@@ -57,6 +59,15 @@ export default function WallpaperCard({
     } finally {
       setIsLiking(false)
     }
+  }
+
+  function handleFpsBlur() {
+    const trimmed = fpsInput.trim()
+    const parsed = trimmed === '' ? undefined : parseInt(trimmed, 10)
+    if (parsed !== undefined && (isNaN(parsed) || parsed < 1)) return
+    const current = wallpaper.fpsOverride
+    if ((parsed ?? undefined) === current) return
+    window.electronAPI.library.update(wallpaper.id, { fpsOverride: parsed })
   }
 
   async function handleUnsubscribeClick(e: React.MouseEvent) {
@@ -140,6 +151,20 @@ export default function WallpaperCard({
             ))}
           </div>
         )}
+        <div className="mt-2 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <span className="text-xs text-gray-500">FPS:</span>
+          <input
+            type="number"
+            min={1}
+            max={360}
+            placeholder="default"
+            value={fpsInput}
+            onChange={(e) => setFpsInput(e.target.value)}
+            onBlur={handleFpsBlur}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
+            className="w-16 rounded bg-white/5 px-1.5 py-0.5 text-xs text-gray-300 outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
+        </div>
         {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
         <div className="mt-2 flex items-center gap-2">
           <button

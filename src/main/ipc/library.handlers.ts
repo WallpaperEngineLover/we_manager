@@ -3,6 +3,7 @@ import { IpcChannels } from '@shared/ipc-channels'
 import * as library from '../services/library.service'
 import type { LibraryFilters, WallpaperMeta } from '@shared/types'
 
+
 export function registerLibraryHandlers(): void {
   ipcMain.handle(IpcChannels.LIBRARY_GET_ALL, (_e, filters?: LibraryFilters) => {
     return library.getAllWallpapers(filters)
@@ -46,5 +47,9 @@ export function registerLibraryHandlers(): void {
 
   ipcMain.handle(IpcChannels.LIBRARY_DISTINCT_TAGS, () => {
     return library.getDistinctTags()
+  })
+
+  ipcMain.handle(IpcChannels.LIBRARY_RESET_FPS_OVERRIDES, () => {
+    return library.resetAllFpsOverrides()
   })
 }
