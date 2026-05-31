@@ -3,6 +3,7 @@ import { IpcChannels } from '@shared/ipc-channels'
 import { applyWallpaper, detectEnvironment } from '../services/wallpaper.service'
 import { getWallpaper, updateWallpaper } from '../services/library.service'
 import { getLweStatus, launchLweAsync } from '../services/lwe.service'
+import { getDefaultFps } from '../services/config.service'
 import type { ApplyWallpaperOptions } from '@shared/types'
 import Store from 'electron-store'
 import * as os from 'os'
@@ -34,7 +35,8 @@ export function registerWallpaperHandlers(): void {
 
     // Use linux-wallpaperengine for animated wallpapers on Linux if available
     if (isAnimated && os.platform() === 'linux' && lwe.installed) {
-      await launchLweAsync(wallpaper.localPath)
+      const fps = wallpaper.fpsOverride ?? getDefaultFps() ?? undefined
+      await launchLweAsync(wallpaper.localPath, { fps })
 
       store.set('activeWallpaperId', options.wallpaperId)
       updateWallpaper(options.wallpaperId, {

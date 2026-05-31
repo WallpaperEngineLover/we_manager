@@ -4,6 +4,8 @@ import {
   getConfiguredWorkshopPath,
   setConfiguredWorkshopPath,
   isWorkshopPathConfigured,
+  getDefaultFps,
+  setDefaultFps,
   importWEConfigFile,
   createFreshConfig
 } from '../services/config.service'
@@ -15,8 +17,14 @@ export function registerConfigHandlers(): void {
   ipcMain.handle(IpcChannels.CONFIG_GET, () => ({
     workshopPath: getConfiguredWorkshopPath(),
     defaultWorkshopPath: getDefaultWorkshopPath(),
-    isConfigured: isWorkshopPathConfigured()
+    isConfigured: isWorkshopPathConfigured(),
+    defaultFps: getDefaultFps()
   }))
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_DEFAULT_FPS, (_e, fps: number | null) => {
+    setDefaultFps(fps)
+    return { ok: true }
+  })
 
   ipcMain.handle(IpcChannels.CONFIG_SET_WORKSHOP_PATH, (_e, newPath: string) => {
     setConfiguredWorkshopPath(newPath)

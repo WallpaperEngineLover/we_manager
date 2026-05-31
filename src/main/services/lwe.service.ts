@@ -17,7 +17,8 @@ const BUILD_DIR = path.join(os.tmpdir(), 'lwe-build')
 
 /** Common paths where linux-wallpaperengine may be installed outside $PATH. */
 const LWE_SEARCH_PATHS = [
-  '/home/uwu/projects/linux-wallpaperengine-fork/build/output/linux-wallpaperengine',
+  '/home/uwu/projects/private/linux-wallpaperengine/build/output/linux-wallpaperengine',
+  '/home/uwu/projects/linux-wallpaperengine/build/output/linux-wallpaperengine',
   '/usr/local/bin/linux-wallpaperengine',
   '/usr/local/linux-wallpaperengine',
   '/usr/bin/linux-wallpaperengine',

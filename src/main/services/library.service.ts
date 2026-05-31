@@ -97,6 +97,19 @@ export function deleteWallpaper(id: string): void {
   store.set('wallpapers', wallpapers)
 }
 
+export function resetAllFpsOverrides(): { count: number } {
+  const wallpapers = store.get('wallpapers')
+  let count = 0
+  for (const id of Object.keys(wallpapers)) {
+    if (wallpapers[id].fpsOverride !== undefined) {
+      delete wallpapers[id].fpsOverride
+      count++
+    }
+  }
+  store.set('wallpapers', wallpapers)
+  return { count }
+}
+
 export function addTag(wallpaperId: string, tagName: string): void {
   const wallpaper = getWallpaper(wallpaperId)
   if (!wallpaper) return

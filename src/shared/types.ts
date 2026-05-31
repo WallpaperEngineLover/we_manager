@@ -43,6 +43,7 @@ export interface WallpaperMeta {
   tags: string[]
   categories: string[]
   downloading?: boolean
+  fpsOverride?: number
 }
 
 export interface WorkshopItem {

@@ -62,14 +62,18 @@ const api = {
     scan: (): Promise<{ imported: number; skipped: number; removed: number }> =>
       ipcRenderer.invoke(IpcChannels.LIBRARY_SCAN),
     distinctTags: (): Promise<string[]> =>
-      ipcRenderer.invoke(IpcChannels.LIBRARY_DISTINCT_TAGS)
+      ipcRenderer.invoke(IpcChannels.LIBRARY_DISTINCT_TAGS),
+    resetFpsOverrides: (): Promise<{ count: number }> =>
+      ipcRenderer.invoke(IpcChannels.LIBRARY_RESET_FPS_OVERRIDES)
   },
 
   config: {
-    get: (): Promise<{ workshopPath: string | null; defaultWorkshopPath: string; isConfigured: boolean }> =>
+    get: (): Promise<{ workshopPath: string | null; defaultWorkshopPath: string; isConfigured: boolean; defaultFps: number | null }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_GET),
     setWorkshopPath: (p: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_WORKSHOP_PATH, p),
+    setDefaultFps: (fps: number | null): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_DEFAULT_FPS, fps),
     pickFolder: (): Promise<string | null> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_PICK_FOLDER),
     pickFile: (): Promise<string | null> =>

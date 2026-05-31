@@ -26,6 +26,7 @@ export const IpcChannels = {
   LIBRARY_SEARCH: 'library:search',
   LIBRARY_SCAN: 'library:scan',
   LIBRARY_DISTINCT_TAGS: 'library:distinct-tags',
+  LIBRARY_RESET_FPS_OVERRIDES: 'library:reset-fps-overrides',
 
   // Folders
   FOLDERS_GET_ALL: 'folders:get-all',
@@ -45,6 +46,7 @@ export const IpcChannels = {
   // Configuration
   CONFIG_GET: 'config:get',
   CONFIG_SET_WORKSHOP_PATH: 'config:set-workshop-path',
+  CONFIG_SET_DEFAULT_FPS: 'config:set-default-fps',
   CONFIG_PICK_FOLDER: 'config:pick-folder',
   CONFIG_PICK_FILE: 'config:pick-file',
   CONFIG_IMPORT_WE: 'config:import-we',
