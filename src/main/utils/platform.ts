@@ -20,6 +20,29 @@ export function detectDesktopEnv(): DesktopEnvironment {
   return 'other'
 }
 
+/**
+ * WAYLAND_DISPLAY of the user session. Electron often runs under XWayland
+ * without it set, so fall back to the session type and loginctl.
+ */
+export function getWaylandDisplay(): string | undefined {
+  if (process.env.WAYLAND_DISPLAY) return process.env.WAYLAND_DISPLAY
+  if (process.env.XDG_SESSION_TYPE === 'wayland') return 'wayland-0'
+
+  try {
+    const sessionType = execSync(
+      'loginctl show-session $(loginctl 2>/dev/null | grep $USER | head -1 | awk \'{print $1}\') -p Type --value 2>/dev/null',
+      { encoding: 'utf8', timeout: 3000 }
+    ).trim()
+    if (sessionType === 'wayland') return 'wayland-0'
+  } catch { /* loginctl not available */ }
+
+  return undefined
+}
+
+export function getXdgRuntimeDir(): string {
+  return process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid?.() ?? 1000}`
+}
+
 /** Detect connected screen/output names for use with linux-wallpaperengine --screen-root. */
 export function getConnectedScreens(): string[] {
   if (process.platform !== 'linux') return []

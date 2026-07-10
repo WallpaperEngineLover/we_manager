@@ -34,17 +34,24 @@ export function restartWatcher(): void {
   console.log('[Watcher] Watching', watchPath)
 
   activeWatcher = fs.watch(watchPath, { persistent: false }, (event, filename) => {
-    if (event === 'rename' && filename) {
-      const fullPath = path.join(watchPath, filename)
-      setTimeout(() => {
-        if (fs.existsSync(fullPath) && fs.statSync(fullPath).isDirectory()) {
-          console.log('[Watcher] New wallpaper detected:', filename)
-          const meta = importWallpaperById(filename)
-          if (meta && watcherWin) {
-            watcherWin.webContents.send(IpcChannels.EVENT_WALLPAPER_IMPORTED, meta)
-          }
-        }
-      }, 1000)
-    }
+    if (event !== 'rename' || !filename) return
+
+    // Give Steam a moment to finish creating the directory before importing
+    const fullPath = path.join(watchPath, filename)
+    setTimeout(() => {
+      let isDirectory = false
+      try {
+        isDirectory = fs.statSync(fullPath).isDirectory()
+      } catch {
+        return // deleted again in the meantime
+      }
+      if (!isDirectory) return
+
+      console.log('[Watcher] New wallpaper detected:', filename)
+      const meta = importWallpaperById(filename)
+      if (meta && watcherWin && !watcherWin.isDestroyed()) {
+        watcherWin.webContents.send(IpcChannels.EVENT_WALLPAPER_IMPORTED, meta)
+      }
+    }, 1000)
   })
 }

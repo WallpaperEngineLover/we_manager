@@ -21,7 +21,7 @@ export async function queryWorkshop(params: WorkshopQueryParams): Promise<Worksh
   const result = await client.workshop.getAllItems(
     page,
     queryType,
-    13, // UGCType.All — WE items span multiple subtypes
+    13, // UGCType.All, since WE items span multiple subtypes
     appId,
     appId,
     {

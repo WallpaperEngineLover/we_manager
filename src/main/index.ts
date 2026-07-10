@@ -1,7 +1,8 @@
-import { app, BrowserWindow, protocol, shell } from 'electron'
+import { app, BrowserWindow, net, protocol, shell } from 'electron'
 import path from 'path'
+import { pathToFileURL } from 'url'
 import { initSteam } from './services/steam.service'
-import { initDatabase } from './services/library.service'
+import { initLibrary } from './services/library.service'
 import { startWatcher } from './services/watcher.service'
 import { registerAllHandlers } from './ipc'
 import { initDesktopIcons, cleanupDesktopIcons } from './services/desktop-icons.service'
@@ -38,18 +39,17 @@ function createWindow(): BrowserWindow {
 
 app.whenReady().then(() => {
   // Serve local wallpaper files via custom protocol
-  protocol.registerFileProtocol('wallpaper', (request, callback) => {
+  protocol.handle('wallpaper', (request) => {
     const filePath = decodeURIComponent(request.url.replace('wallpaper://', ''))
-    callback({ path: filePath })
+    return net.fetch(pathToFileURL(filePath).toString())
   })
 
-  // Initialize services
   const steamOk = initSteam()
   if (!steamOk) {
-    console.warn('[App] Steam unavailable — subscription features will be disabled')
+    console.warn('[App] Steam unavailable, subscription features disabled')
   }
 
-  initDatabase()
+  initLibrary()
 
   const win = createWindow()
   registerAllHandlers(win)

@@ -12,8 +12,12 @@ export function registerSteamHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.STEAM_SUBSCRIBE, async (_e, itemId: string) => {
     await steam.subscribeToItem(BigInt(itemId))
 
-    // Poll download progress (1s is plenty for UI updates)
+    // Poll download progress until Steam reports the download is gone
     const pollInterval = setInterval(() => {
+      if (win.isDestroyed()) {
+        clearInterval(pollInterval)
+        return
+      }
       const info = steam.getDownloadInfo(BigInt(itemId))
       if (!info) {
         clearInterval(pollInterval)

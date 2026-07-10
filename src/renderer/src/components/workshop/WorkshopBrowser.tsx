@@ -168,7 +168,7 @@ export default function WorkshopBrowser() {
     setFilters((prev) => ({ ...prev, [key]: toggle(prev[key] as string[], tag) }))
   }
 
-  // "all selected" means no filter — treat as if nothing is selected for that category
+  // Having every option of a category selected means no filter for that category
   const effectiveTypes = filters.types.length === ALL_TYPES.length ? [] : filters.types
   const effectiveAssetTypes = filters.assetTypes.length === ALL_ASSET_TYPES.length ? [] : filters.assetTypes
   const effectiveAgeRatings = filters.ageRatings.length === ALL_AGE_RATINGS.length ? [] : filters.ageRatings
@@ -345,7 +345,7 @@ export default function WorkshopBrowser() {
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
           <input
             type="text"
-            placeholder="Search wallpapers…"
+            placeholder="Search wallpapers..."
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             className="w-full rounded-lg bg-white/5 py-2 pl-9 pr-3 text-sm text-gray-200 placeholder-gray-500 outline-none focus:ring-1 focus:ring-indigo-500"

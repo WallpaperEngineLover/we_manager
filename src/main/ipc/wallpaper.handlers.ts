@@ -7,6 +7,8 @@ import { getDefaultFps } from '../services/config.service'
 import type { ApplyWallpaperOptions } from '@shared/types'
 import Store from 'electron-store'
 import * as os from 'os'
+import * as fs from 'fs'
+import * as path from 'path'
 
 interface StoreSchema {
   activeWallpaperId?: string
@@ -21,8 +23,7 @@ export function registerWallpaperHandlers(): void {
 
   ipcMain.handle(IpcChannels.WALLPAPER_GET_ACTIVE, () => {
     const id = store.get('activeWallpaperId')
-    if (!id) return null
-    return getWallpaper(id as string)
+    return id ? getWallpaper(id) : null
   })
 
   ipcMain.handle(IpcChannels.WALLPAPER_APPLY, async (_e, options: ApplyWallpaperOptions) => {
@@ -33,23 +34,16 @@ export function registerWallpaperHandlers(): void {
     const isAnimated = wallpaper.type === 'scene' || wallpaper.type === 'web' || wallpaper.type === 'video'
     const lwe = getLweStatus()
 
-    // Use linux-wallpaperengine for animated wallpapers on Linux if available
+    let appliedPath: string
     if (isAnimated && os.platform() === 'linux' && lwe.installed) {
       const fps = wallpaper.fpsOverride ?? getDefaultFps() ?? undefined
       await launchLweAsync(wallpaper.localPath, { fps })
-
-      store.set('activeWallpaperId', options.wallpaperId)
-      updateWallpaper(options.wallpaperId, {
-        appliedCount: (wallpaper.appliedCount ?? 0) + 1,
-        lastAppliedAt: Date.now()
-      })
-
-      return { ok: true, appliedPath: wallpaper.localPath }
+      appliedPath = wallpaper.localPath
+    } else {
+      // Static fallback: set the preview image as a plain wallpaper
+      appliedPath = findWallpaperImage(wallpaper.localPath)
+      await applyWallpaper(appliedPath, options.backend)
     }
-
-    // Static wallpaper fallback — find an image file
-    const imagePath = await findWallpaperImage(wallpaper.localPath)
-    await applyWallpaper(imagePath, options.backend)
 
     store.set('activeWallpaperId', options.wallpaperId)
     updateWallpaper(options.wallpaperId, {
@@ -57,34 +51,24 @@ export function registerWallpaperHandlers(): void {
       lastAppliedAt: Date.now()
     })
 
-    return { ok: true, appliedPath: imagePath }
+    return { ok: true, appliedPath }
   })
 }
 
-async function findWallpaperImage(dirPath: string): Promise<string> {
-  const fs = await import('fs')
-  const path = await import('path')
-
+function findWallpaperImage(dirPath: string): string {
   if (!fs.existsSync(dirPath)) {
     throw new Error(`Directory not found: ${dirPath}`)
   }
-
-  const stat = fs.statSync(dirPath)
-  if (!stat.isDirectory()) {
-    // It IS the file
+  if (!fs.statSync(dirPath).isDirectory()) {
     return dirPath
   }
 
   const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
   const files = fs.readdirSync(dirPath)
 
-  // Prefer preview.png, then any image
   const preview = files.find((f) => f.toLowerCase().startsWith('preview'))
-  if (preview) {
-    const ext = path.extname(preview).toLowerCase()
-    if (imageExtensions.includes(ext)) {
-      return path.join(dirPath, preview)
-    }
+  if (preview && imageExtensions.includes(path.extname(preview).toLowerCase())) {
+    return path.join(dirPath, preview)
   }
 
   const image = files.find((f) => imageExtensions.includes(path.extname(f).toLowerCase()))

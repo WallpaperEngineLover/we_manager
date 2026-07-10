@@ -3,7 +3,6 @@ import { Play, Loader2, Check, ThumbsUp, Trash2, ExternalLink, Download } from '
 import type { WallpaperMeta } from '@shared/types'
 import clsx from 'clsx'
 
-
 interface WallpaperCardProps {
   wallpaper: WallpaperMeta
   selected?: boolean
@@ -133,7 +132,7 @@ export default function WallpaperCard({
         {wallpaper.downloading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/70">
             <Download size={20} className="text-indigo-400 animate-bounce" />
-            <span className="text-xs text-gray-300">Downloading…</span>
+            <span className="text-xs text-gray-300">Downloading...</span>
           </div>
         )}
       </div>

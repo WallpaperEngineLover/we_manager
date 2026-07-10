@@ -73,7 +73,7 @@ export function importWEConfigFile(sourcePath: string): string {
 
   const destPath = getWeConfigPath()
   fs.writeFileSync(destPath, content, 'utf8')
-  console.log(`[Config] Imported WE config from ${sourcePath} → ${destPath}`)
+  console.log(`[Config] Imported WE config from ${sourcePath} to ${destPath}`)
   return destPath
 }
 

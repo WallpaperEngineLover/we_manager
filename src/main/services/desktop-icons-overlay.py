@@ -5,7 +5,7 @@ Desktop icons overlay for we_manager.
 Renders desktop icons on a transparent layer-shell surface (LAYER_BOTTOM)
 so they appear on top of the linux-wallpaperengine wallpaper.
 
-The overlay is purely visual — input passes through via empty wl_region
+The overlay is purely visual: input passes through via an empty wl_region
 to plasmashell's Folder View underneath, which handles clicks normally.
 
 Launch with: LD_PRELOAD=/usr/lib64/libgtk4-layer-shell.so python3 this.py [MONITOR]
@@ -17,7 +17,7 @@ import json
 import subprocess
 import configparser
 
-import cairo as _cairo  # pycairo — needed for empty input region
+import cairo as _cairo  # pycairo, needed for the empty input region
 
 import gi
 gi.require_version('Gtk4LayerShell', '1.0')
@@ -186,7 +186,7 @@ def get_mime_icon(path):
 
 # --- KDE settings auto-detection ---
 
-# Kirigami icon size table (index → pixels), matching FolderTools.js
+# Kirigami icon size table (index to pixels), matching FolderTools.js
 _ICON_SIZE_TABLE = [22, 32, 48, 64, 96, 128, 256]
 
 # CSS font-weight mapping from KDE weight values (Qt::Weight)
@@ -371,7 +371,7 @@ def main():
         Gtk4LayerShell.set_exclusive_zone(window, -1)
         Gtk4LayerShell.set_keyboard_mode(window, Gtk4LayerShell.KeyboardMode.NONE)
 
-        # CSS — use auto-detected font settings
+        # CSS built from the auto-detected font settings
         font_style = 'italic' if _kde['font_italic'] else 'normal'
         font_weight = _kde['font_weight']
         css = Gtk.CssProvider()

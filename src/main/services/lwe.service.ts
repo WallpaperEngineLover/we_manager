@@ -1,4 +1,4 @@
-import { execFile, execFileSync, spawn, type ChildProcess } from 'child_process'
+import { execFile, spawn, type ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -6,7 +6,14 @@ import * as os from 'os'
 import type { BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import type { LweStatus, LweInstallProgress, LinuxDistro } from '@shared/types'
-import { isCommandAvailable, invalidateCommandCache, whichCommand, getConnectedScreens } from '../utils/platform'
+import {
+  isCommandAvailable,
+  invalidateCommandCache,
+  whichCommand,
+  getConnectedScreens,
+  getWaylandDisplay,
+  getXdgRuntimeDir
+} from '../utils/platform'
 import { getWorkshopPath } from '../utils/paths'
 
 const execFileAsync = promisify(execFile)
@@ -15,10 +22,11 @@ const LWE_BINARY = 'linux-wallpaperengine'
 const LWE_REPO = 'https://github.com/Almamu/linux-wallpaperengine.git'
 const BUILD_DIR = path.join(os.tmpdir(), 'lwe-build')
 
-/** Common paths where linux-wallpaperengine may be installed outside $PATH. */
+/** Common install locations checked before falling back to $PATH. */
 const LWE_SEARCH_PATHS = [
-  '/home/uwu/projects/private/linux-wallpaperengine/build/output/linux-wallpaperengine',
-  '/home/uwu/projects/linux-wallpaperengine/build/output/linux-wallpaperengine',
+  // local fork builds take precedence over system installs
+  path.join(os.homedir(), 'projects', 'private', 'linux-wallpaperengine', 'build', 'output', 'linux-wallpaperengine'),
+  path.join(os.homedir(), 'projects', 'linux-wallpaperengine', 'build', 'output', 'linux-wallpaperengine'),
   '/usr/local/bin/linux-wallpaperengine',
   '/usr/local/linux-wallpaperengine',
   '/usr/bin/linux-wallpaperengine',
@@ -29,31 +37,19 @@ const LWE_SEARCH_PATHS = [
 
 let activeProcess: ChildProcess | null = null
 
-/** Find the LWE binary — preferred paths first, then $PATH as fallback. */
 function findLweBinary(): string | undefined {
-  // 1. Scan preferred locations first (fork builds, custom installs)
   for (const p of LWE_SEARCH_PATHS) {
     try {
       fs.accessSync(p, fs.constants.X_OK)
       return p
-    } catch { /* not here */ }
+    } catch { /* keep looking */ }
   }
-
-  // 2. Fall back to $PATH
-  const inPath = whichCommand(LWE_BINARY)
-  if (inPath) return inPath
-
-  return undefined
+  return whichCommand(LWE_BINARY)
 }
 
 export function getLweStatus(): LweStatus {
-  // Scan preferred paths first, then $PATH
   const found = findLweBinary()
-  if (found) {
-    return { installed: true, path: found }
-  }
-
-  return { installed: false }
+  return found ? { installed: true, path: found } : { installed: false }
 }
 
 export function detectDistro(): LinuxDistro {
@@ -78,7 +74,7 @@ const DEPS_DEBIAN = [
   'libgmp-dev', 'patchelf'
 ]
 
-// Fedora/Nobara: do not add 'ffmpeg' — conflicts with ffmpeg-free; use ffmpeg-free-devel only
+// Fedora/Nobara: 'ffmpeg' conflicts with ffmpeg-free, so only ffmpeg-free-devel is listed
 const DEPS_FEDORA = [
   'gcc', 'g++', 'cmake', 'pkg-config',
   'libXrandr-devel', 'libXinerama-devel', 'libXcursor-devel', 'libXi-devel',
@@ -151,7 +147,7 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
     })
     send({
       stage: 'done',
-      message: 'Build dependencies installed successfully!',
+      message: 'Build dependencies installed.',
       percentage: 100
     })
   } catch (err) {
@@ -201,7 +197,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     const cmakeBuild = path.join(BUILD_DIR, 'build')
     fs.mkdirSync(cmakeBuild, { recursive: true })
 
-    // CMake configure — CEF download can take several minutes; install to /usr/local and symlink into PATH
+    // cmake configure downloads CEF on first run, which can take several minutes
     send({ stage: 'building', message: 'Running cmake (downloading CEF if needed, may take a few minutes)...', percentage: 25 })
     await execFileAsync('cmake', [
       '..',
@@ -228,7 +224,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
 
     send({ stage: 'building', message: 'Build complete.', percentage: 80 })
 
-    // Install — needs sudo via graphical prompt (binary ends up at /usr/local/linux-wallpaperengine)
+    // make install puts the binary at /usr/local/linux-wallpaperengine
     send({ stage: 'installing', message: 'Installing (sudo required)...', percentage: 85 })
 
     const installTool = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
@@ -265,7 +261,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
 
     const status = getLweStatus()
     if (status.installed) {
-      send({ stage: 'done', message: 'linux-wallpaperengine installed successfully!', percentage: 100 })
+      send({ stage: 'done', message: 'linux-wallpaperengine installed.', percentage: 100 })
     } else {
       send({
         stage: 'error',
@@ -280,34 +276,30 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       }
     } catch { /* ignore cleanup errors */ }
 
-    // Capture both stdout and stderr (Node provides these on execFile error when encoding/maxBuffer set)
+    // execFile puts stdout/stderr on the error object when encoding/maxBuffer are set
     const e = err as Error & { stdout?: string; stderr?: string }
     const fullMsg = e.message ?? String(err)
     const combined = [e.stdout, e.stderr].filter(Boolean).join('\n')
     const lines = (combined || fullMsg).split('\n')
 
-    // 1. Real compiler/linker errors (highest priority)
     const compilerErrors = lines.filter(
       (l: string) => /:\d+:\d+: (?:fatal )?error:/i.test(l) || /^\/.*error:/i.test(l) ||
         /undefined reference/i.test(l) || /ld returned/i.test(l) ||
         /collect2: error/i.test(l)
     )
-
-    // 2. CMake / install / permission errors
     const otherErrors = lines.filter(
       (l: string) => /CMake Error/i.test(l) || /No such file or directory/i.test(l) ||
         /Permission denied/i.test(l) || /cannot create/i.test(l) ||
         /fatal:/i.test(l) || /failed to/i.test(l)
     )
 
+    // Prefer compiler/linker errors, then cmake/install errors, then the tail of the log
     let excerpt: string
     if (compilerErrors.length > 0) {
-      // Show the first few real compiler errors (most useful)
       excerpt = compilerErrors.slice(0, 10).join('\n')
     } else if (otherErrors.length > 0) {
       excerpt = otherErrors.slice(0, 8).join('\n')
     } else {
-      // Fallback: show last 30 lines (skip empty/make-summary-only lines)
       excerpt = lines.filter((l: string) => l.trim() && !/^make\[\d+\]: (Entering|Leaving)/i.test(l))
         .slice(-30).join('\n')
     }
@@ -436,24 +428,6 @@ function getLweBinaryPath(): string {
   }
 }
 
-/** Detect Wayland display from the session if Electron doesn't have it (Electron often runs under XWayland). */
-function getWaylandDisplay(): string | undefined {
-  if (process.env.WAYLAND_DISPLAY) return process.env.WAYLAND_DISPLAY
-
-  // Check XDG_SESSION_TYPE to see if we're in a Wayland session
-  if (process.env.XDG_SESSION_TYPE === 'wayland') return 'wayland-0'
-
-  // Try to detect from loginctl
-  try {
-    const sessionType = execFileSync('bash', ['-c',
-      'loginctl show-session $(loginctl 2>/dev/null | grep $USER | head -1 | awk \'{print $1}\') -p Type --value 2>/dev/null'
-    ], { encoding: 'utf8', timeout: 3000 }).trim()
-    if (sessionType === 'wayland') return 'wayland-0'
-  } catch { /* ignore */ }
-
-  return undefined
-}
-
 /** Build env vars that must be set for LWE, as KEY=VALUE strings for use with `env` command. */
 function buildLweEnvVars(): string[] {
   const vars: string[] = []
@@ -467,20 +441,18 @@ function buildLweEnvVars(): string[] {
     .find(p => fs.existsSync(p))
   if (systemEgl) vars.push(`LD_PRELOAD=${systemEgl}`)
 
-  // Wayland display — Electron often runs under XWayland and lacks WAYLAND_DISPLAY.
-  const waylandDisplay = process.env.WAYLAND_DISPLAY || getWaylandDisplay()
+  const waylandDisplay = getWaylandDisplay()
   if (waylandDisplay) vars.push(`WAYLAND_DISPLAY=${waylandDisplay}`)
 
   // XDG_SESSION_TYPE is how LWE decides between X11 and Wayland drivers
   const sessionType = process.env.XDG_SESSION_TYPE
   if (sessionType) vars.push(`XDG_SESSION_TYPE=${sessionType}`)
 
-  // Ensure DISPLAY is passed (for X11/XWayland)
+  // DISPLAY for X11/XWayland
   if (process.env.DISPLAY) vars.push(`DISPLAY=${process.env.DISPLAY}`)
 
-  // Ensure XDG_RUNTIME_DIR is set (needed for Wayland socket)
-  const xdgRuntime = process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid?.() ?? 1000}`
-  vars.push(`XDG_RUNTIME_DIR=${xdgRuntime}`)
+  // XDG_RUNTIME_DIR is needed for the Wayland socket
+  vars.push(`XDG_RUNTIME_DIR=${getXdgRuntimeDir()}`)
 
   return vars
 }
@@ -507,10 +479,9 @@ function buildLweArgs(
   return args
 }
 
-/** Get the control file path used for hot-reload signalling. */
+/** Control file used for hot-reload signalling. */
 function getControlFilePath(): string {
-  const xdgRuntime = process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid?.() ?? 1000}`
-  return path.join(xdgRuntime, 'lwe-control')
+  return path.join(getXdgRuntimeDir(), 'lwe-control')
 }
 
 /** Hot-reload: write new wallpaper path to control file and send SIGUSR1. */
@@ -544,8 +515,8 @@ export function launchLweAsync(
   const lweArgs = buildLweArgs(wallpaperPath, options)
   const envVars = buildLweEnvVars()
 
-  // Spawn via `env` to set env vars explicitly — matches how LWE works from the terminal.
-  // Using the env option on spawn can lose vars when combined with detached/setsid.
+  // Spawn via `env` to set env vars explicitly, matching how LWE works from the terminal.
+  // The env option on spawn can lose vars when combined with detached/setsid.
   const spawnArgs = [...envVars, binaryPath, ...lweArgs]
   console.log('[LWE] Binary:', binaryPath)
   console.log('[LWE] Args:', lweArgs.join(' '))
@@ -608,21 +579,6 @@ export function launchLweAsync(
       }
     }, 2000)
   })
-}
-
-/** Sync launch (no wait); use launchLweAsync in handlers so startup failures are visible. */
-export function launchLwe(
-  wallpaperPath: string,
-  options: { screenRoot?: string; fps?: number } = {}
-): ChildProcess {
-  stopLwe()
-  const binaryPath = getLweBinaryPath()
-  const lweArgs = buildLweArgs(wallpaperPath, options)
-  const envVars = buildLweEnvVars()
-  activeProcess = spawn('env', [...envVars, binaryPath, ...lweArgs], { stdio: 'ignore', detached: true })
-  activeProcess.on('exit', () => { activeProcess = null })
-  activeProcess.unref()
-  return activeProcess
 }
 
 export function stopLwe(): void {

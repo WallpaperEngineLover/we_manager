@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
 import Store from 'electron-store'
-import { getConnectedScreens } from '../utils/platform'
+import { getConnectedScreens, getWaylandDisplay, getXdgRuntimeDir } from '../utils/platform'
 
 interface DesktopIconsStoreSchema {
   desktopIconsEnabled: boolean
@@ -40,25 +40,22 @@ function findLayerShellLib(): string {
   return candidates.find((p) => fs.existsSync(p)) ?? candidates[0]
 }
 
-/** Build env vars for the overlay — Electron runs under XWayland so we must pass Wayland env explicitly. */
+/** Env vars for the overlay; Electron runs under XWayland so the Wayland env must be passed explicitly. */
 function buildOverlayEnvVars(): string[] {
   const vars: string[] = []
 
   vars.push(`LD_PRELOAD=${findLayerShellLib()}`)
 
-  // Force GTK4 to use Wayland backend (otherwise it falls back to X11 where layer-shell doesn't work)
+  // Force GTK4 onto the Wayland backend (layer-shell does not work under X11)
   vars.push('GDK_BACKEND=wayland')
 
-  // Wayland display — Electron often lacks this since it runs under XWayland
-  const waylandDisplay = process.env.WAYLAND_DISPLAY
-    || (process.env.XDG_SESSION_TYPE === 'wayland' ? 'wayland-0' : undefined)
+  const waylandDisplay = getWaylandDisplay()
   if (waylandDisplay) vars.push(`WAYLAND_DISPLAY=${waylandDisplay}`)
 
   // XDG_RUNTIME_DIR is needed for the Wayland socket
-  const xdgRuntime = process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid?.() ?? 1000}`
-  vars.push(`XDG_RUNTIME_DIR=${xdgRuntime}`)
+  vars.push(`XDG_RUNTIME_DIR=${getXdgRuntimeDir()}`)
 
-  // Pass DISPLAY through for XWayland fallback
+  // DISPLAY for the XWayland fallback
   if (process.env.DISPLAY) vars.push(`DISPLAY=${process.env.DISPLAY}`)
 
   return vars

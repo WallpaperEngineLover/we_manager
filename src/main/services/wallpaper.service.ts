@@ -7,7 +7,6 @@ import { getLweStatus } from './lwe.service'
 
 const execFileAsync = promisify(execFile)
 
-// Cache environment detection
 let envCache: WallpaperEnvironment | null = null
 
 export function invalidateEnvCache(): void {
@@ -67,66 +66,33 @@ export async function applyWallpaper(imagePath: string, backend?: WallpaperBacke
 }
 
 async function applyLinux(imagePath: string, preferredBackend?: WallpaperBackend): Promise<void> {
-  const ds = detectDisplayServer()
-  const de = detectDesktopEnv()
-
   if (preferredBackend && preferredBackend !== 'auto') {
     await applyWithBackend(preferredBackend, imagePath)
     return
   }
 
-  if (de === 'gnome') {
-    await execFileAsync('gsettings', [
-      'set',
-      'org.gnome.desktop.background',
-      'picture-uri',
-      `file://${imagePath}`
-    ])
-    return
+  const backend = pickLinuxBackend()
+  if (!backend) {
+    throw new Error(
+      'No supported wallpaper backend found. Please install swww (Wayland) or feh (X11).'
+    )
+  }
+  await applyWithBackend(backend, imagePath)
+}
+
+function pickLinuxBackend(): WallpaperBackend | null {
+  const de = detectDesktopEnv()
+  if (de === 'gnome') return 'gsettings'
+  if (de === 'kde' && isCommandAvailable('qdbus')) return 'qdbus'
+
+  if (detectDisplayServer() === 'wayland') {
+    if (isCommandAvailable('swww')) return 'swww'
+    if (isCommandAvailable('swaybg')) return 'swaybg'
   }
 
-  if (de === 'kde' && isCommandAvailable('qdbus')) {
-    const script = `
-      var allDesktops = desktops();
-      for (var i = 0; i < allDesktops.length; i++) {
-        var d = allDesktops[i];
-        d.wallpaperPlugin = 'org.kde.image';
-        d.currentConfigGroup = ['Wallpaper', 'org.kde.image', 'General'];
-        d.writeConfig('Image', 'file://${imagePath}');
-      }
-    `
-    await execFileAsync('qdbus', [
-      'org.kde.plasmashell',
-      '/PlasmaShell',
-      'org.kde.PlasmaShell.evaluateScript',
-      script
-    ])
-    return
-  }
-
-  if (ds === 'wayland') {
-    if (isCommandAvailable('swww')) {
-      await execFileAsync('swww', ['img', imagePath, '--transition-type', 'fade'])
-      return
-    }
-    if (isCommandAvailable('swaybg')) {
-      await execFileAsync('swaybg', ['-i', imagePath, '-m', 'fill'])
-      return
-    }
-  }
-
-  if (isCommandAvailable('feh')) {
-    await execFileAsync('feh', ['--bg-fill', imagePath])
-    return
-  }
-  if (isCommandAvailable('xwallpaper')) {
-    await execFileAsync('xwallpaper', ['--zoom', imagePath])
-    return
-  }
-
-  throw new Error(
-    'No supported wallpaper backend found. Please install swww (Wayland) or feh (X11).'
-  )
+  if (isCommandAvailable('feh')) return 'feh'
+  if (isCommandAvailable('xwallpaper')) return 'xwallpaper'
+  return null
 }
 
 async function applyWithBackend(backend: WallpaperBackend, imagePath: string): Promise<void> {

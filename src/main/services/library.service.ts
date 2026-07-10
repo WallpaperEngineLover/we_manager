@@ -20,7 +20,7 @@ const store = new Store<LibraryStore>({
   }
 })
 
-export function initDatabase(): void {
+export function initLibrary(): void {
   console.log('[Library] Store initialized at', store.path)
 }
 
@@ -261,7 +261,7 @@ export function scanLibrary(): { imported: number; skipped: number; removed: num
     const pj = readProjectJson(localPath)
 
     if (!pj) {
-      // No project.json — directory exists but download is incomplete
+      // No project.json yet: the directory exists but the download is incomplete
       if (!wallpapers[entry.name]) {
         const now = Date.now()
         wallpapers[entry.name] = {
@@ -298,7 +298,7 @@ export function scanLibrary(): { imported: number; skipped: number; removed: num
   }
 
   if (imported > 0 || removed > 0) {
-    store.set('wallpapers', wallpapers) // single write
+    store.set('wallpapers', wallpapers)
   }
 
   console.log(`[Library] Scan complete: ${imported} imported, ${skipped} skipped, ${removed} removed`)
@@ -309,7 +309,7 @@ export function scanLibrary(): { imported: number; skipped: number; removed: num
   return { imported, skipped, removed }
 }
 
-// ── Folder CRUD ──
+// Folders
 
 export function getAllFolders(): WallpaperFolder[] {
   return store.get('folders')
@@ -390,7 +390,7 @@ export function importWEConfig(configPath: string): { folders: number; playlists
   const imported: WallpaperFolder[] = []
   const existingTitles = new Set(store.get('folders').map((f) => f.title))
 
-  // Try each profile — pick the one with the most folders (usually '~')
+  // Try each profile and pick the one with the most folders (usually '~')
   let bestProfile: { folders: any[]; playlists: any[] } = { folders: [], playlists: [] }
   for (const key of Object.keys(data)) {
     const val = data[key]
@@ -415,7 +415,7 @@ export function importWEConfig(configPath: string): { folders: number; playlists
     existingTitles.add(title)
   }
 
-  // Import playlists (items are full file paths — extract workshop ID)
+  // Import playlists (items are full file paths, so extract the workshop ID)
   for (const p of bestProfile.playlists) {
     const title = p.name ?? 'Untitled Playlist'
     if (existingTitles.has(title)) continue

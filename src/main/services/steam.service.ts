@@ -1,17 +1,16 @@
 import * as path from 'path'
+import { WE_APP_ID } from '@shared/constants'
 import type { DownloadProgressEvent } from '@shared/types'
 
-// steamworks.js must be required at runtime (native module)
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-let steamworks: typeof import('steamworks.js') | null = null
 let client: ReturnType<typeof import('steamworks.js')['init']> | null = null
 
 export function initSteam(): boolean {
   try {
+    // steamworks.js is a native module and must be required at runtime
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    steamworks = require('steamworks.js')
-    client = steamworks!.init(431960) // Wallpaper Engine
-    console.log('[Steam] Initialized successfully')
+    const steamworks: typeof import('steamworks.js') = require('steamworks.js')
+    client = steamworks.init(WE_APP_ID)
+    console.log('[Steam] Initialized')
     return true
   } catch (err) {
     console.warn('[Steam] Init failed (Steam may not be running):', err)
@@ -38,29 +37,40 @@ export async function unsubscribeFromItem(itemId: bigint): Promise<void> {
 
 // ISteamUGC::SetUserItemVote is not bound in steamworks.js, so we call the
 // flat C API directly via koffi FFI. libsteam_api.so is already loaded by
-// steamworks.js, so dlopen just returns the existing handle.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const koffi = require('koffi')
-const _libPath = path.join(
-  path.dirname(require.resolve('steamworks.js')),
-  'dist', 'linux64', 'libsteam_api.so'
-)
-const _steamLib = koffi.load(_libPath)
-const _UGCType = koffi.opaque('ISteamUGC')
-const _UGCPtr = koffi.pointer(_UGCType)
-const _getSteamUGC = _steamLib.func('SteamAPI_SteamUGC_v020', _UGCPtr, [])
-const _setUserItemVote = _steamLib.func(
-  'SteamAPI_ISteamUGC_SetUserItemVote', 'uint64', [_UGCPtr, 'uint64', 'bool']
-)
-// Resolved lazily after SteamAPI_Init (called inside steamworks.init)
-let _ugcPtr: unknown = null
-function getUGCPtr(): unknown {
-  if (!_ugcPtr) _ugcPtr = _getSteamUGC()
-  return _ugcPtr
+// steamworks.js, so dlopen just returns the existing handle. Set up lazily
+// after SteamAPI_Init so a load failure can't take down the whole app.
+interface UgcFfi {
+  setUserItemVote: (ugc: unknown, itemId: bigint, voteUp: boolean) => bigint
+  ugcPtr: unknown
+}
+
+let ugcFfi: UgcFfi | null = null
+
+function getUgcFfi(): UgcFfi {
+  if (!ugcFfi) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const koffi = require('koffi')
+    const libPath = path.join(
+      path.dirname(require.resolve('steamworks.js')),
+      'dist', 'linux64', 'libsteam_api.so'
+    )
+    const steamLib = koffi.load(libPath)
+    const ugcPtrType = koffi.pointer(koffi.opaque('ISteamUGC'))
+    const getSteamUGC = steamLib.func('SteamAPI_SteamUGC_v020', ugcPtrType, [])
+    ugcFfi = {
+      setUserItemVote: steamLib.func(
+        'SteamAPI_ISteamUGC_SetUserItemVote', 'uint64', [ugcPtrType, 'uint64', 'bool']
+      ),
+      ugcPtr: getSteamUGC()
+    }
+  }
+  return ugcFfi
 }
 
 export function voteOnItem(itemId: bigint, voteUp: boolean): void {
-  const handle = _setUserItemVote(getUGCPtr(), itemId, voteUp)
+  getClient() // ensure Steam is initialized before touching the flat API
+  const ffi = getUgcFfi()
+  const handle = ffi.setUserItemVote(ffi.ugcPtr, itemId, voteUp)
   // k_uAPICallInvalid = 0 means the call failed immediately
   if (handle === BigInt(0)) throw new Error('SetUserItemVote failed')
   invalidateVoteCache()
@@ -72,12 +82,12 @@ export function openWorkshopItemOverlay(itemId: bigint): void {
   )
 }
 
-// steamworks.js does not expose SetUserItemVote, so we fetch via getUserItems(VotedUp).
-// Results are cached for the process lifetime; call invalidateVoteCache() after a vote.
-let _votedUpCache: Set<string> | null = null
+// Fetched via getUserItems(VotedUp) and cached for the process lifetime;
+// invalidateVoteCache() is called after each vote.
+let votedUpCache: Set<string> | null = null
 
 export async function getVotedUpItemIds(): Promise<string[]> {
-  if (_votedUpCache) return [..._votedUpCache]
+  if (votedUpCache) return [...votedUpCache]
   const c = getClient()
   const accountId = c.localplayer.getSteamId().accountId
   const ids = new Set<string>()
@@ -87,7 +97,7 @@ export async function getVotedUpItemIds(): Promise<string[]> {
       page, accountId,
       2 /* VotedUp */, 0 /* Items */,
       1 /* CreationOrderDesc */,
-      { consumer: 431960 }
+      { consumer: WE_APP_ID }
     )
     for (const item of r.items) {
       if (item) ids.add(item.publishedFileId.toString())
@@ -95,12 +105,12 @@ export async function getVotedUpItemIds(): Promise<string[]> {
     if (r.returnedResults === 0 || ids.size >= r.totalResults) break
     page++
   }
-  _votedUpCache = ids
+  votedUpCache = ids
   return [...ids]
 }
 
 export function invalidateVoteCache(): void {
-  _votedUpCache = null
+  votedUpCache = null
 }
 
 export function getSubscribedItems(): string[] {
@@ -113,8 +123,8 @@ export function getDownloadInfo(itemId: bigint): DownloadProgressEvent | null {
   try {
     const info = getClient().workshop.downloadInfo(itemId)
     if (!info) return null
-    const bytesTotal = Number(info.bytesTotal)
-    const bytesDownloaded = Number(info.bytesDownloaded)
+    const bytesTotal = Number(info.total)
+    const bytesDownloaded = Number(info.current)
     return {
       itemId: itemId.toString(),
       bytesDownloaded,
@@ -129,7 +139,9 @@ export function getDownloadInfo(itemId: bigint): DownloadProgressEvent | null {
 
 export function getInstallInfo(itemId: bigint): { folder: string; sizeOnDisk: number } | null {
   try {
-    return getClient().workshop.installInfo(itemId) as { folder: string; sizeOnDisk: number }
+    const info = getClient().workshop.installInfo(itemId)
+    if (!info) return null
+    return { folder: info.folder, sizeOnDisk: Number(info.sizeOnDisk) }
   } catch {
     return null
   }

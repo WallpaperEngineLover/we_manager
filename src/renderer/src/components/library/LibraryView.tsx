@@ -138,7 +138,7 @@ function TagDropdown({
           <div className="p-2">
             <input
               type="text"
-              placeholder="Search tags…"
+              placeholder="Search tags..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded bg-white/5 px-2 py-1 text-xs text-gray-200 outline-none"
@@ -169,7 +169,6 @@ function TagDropdown({
   )
 }
 
-// ── Folder context menu ──
 function FolderMenu({
   x,
   y,
@@ -177,7 +176,6 @@ function FolderMenu({
   onRename,
   onDelete
 }: {
-  folder: WallpaperFolder
   x: number
   y: number
   onClose: () => void
@@ -419,7 +417,7 @@ export default function LibraryView() {
     queryClient.invalidateQueries({ queryKey: ['library-tags'] })
   }
 
-  // Create folder — inline input instead of prompt()
+  // Folder creation uses an inline input instead of prompt()
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
 
@@ -457,7 +455,7 @@ export default function LibraryView() {
     setImportStatus(
       removed > 0
         ? `Cleaned up ${removed} non-existent wallpaper(s) from folders.`
-        : 'All folder items are valid — nothing to clean up.'
+        : 'All folder items are valid, nothing to clean up.'
     )
   }
 
@@ -647,7 +645,6 @@ export default function LibraryView() {
       }
     : null
 
-  // ── Wallpaper context menu handlers ──
   const openWallpaperCtxMenu = useCallback(
     (e: React.MouseEvent, wallpaperId: string) => {
       e.preventDefault()
@@ -760,7 +757,7 @@ export default function LibraryView() {
           />
           <input
             type="text"
-            placeholder="Search library…"
+            placeholder="Search library..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-lg bg-white/5 py-2 pl-9 pr-3 text-sm text-gray-200 placeholder-gray-500 outline-none focus:ring-1 focus:ring-indigo-500"
@@ -865,7 +862,7 @@ export default function LibraryView() {
 
       {scanResult && (
         <div className="border-b border-white/5 px-4 py-2 text-xs text-gray-400">
-          Scan complete — {scanResult.imported} imported{scanResult.removed > 0 ? `, ${scanResult.removed} removed` : ''}
+          Scan complete: {scanResult.imported} imported{scanResult.removed > 0 ? `, ${scanResult.removed} removed` : ''}
         </div>
       )}
 
@@ -936,7 +933,7 @@ export default function LibraryView() {
                   if (e.key === 'Enter') handleCreateFolderSubmit()
                   if (e.key === 'Escape') setCreatingFolder(false)
                 }}
-                placeholder="Folder name…"
+                placeholder="Folder name..."
                 className="flex-1 bg-transparent text-xs text-gray-200 outline-none placeholder-gray-600"
               />
             </div>
@@ -1007,7 +1004,7 @@ export default function LibraryView() {
             <div className="flex h-40 flex-col items-center justify-center gap-2 text-gray-500">
               <p>
                 {activeFolder
-                  ? 'This folder is empty — drag wallpapers here'
+                  ? 'This folder is empty. Drag wallpapers here.'
                   : activeCount > 0
                     ? 'No wallpapers match your filters'
                     : 'Your library is empty'}
@@ -1126,7 +1123,6 @@ export default function LibraryView() {
       {/* Folder context menu */}
       {folderMenu && (
         <FolderMenu
-          folder={folderMenu.folder}
           x={folderMenu.x}
           y={folderMenu.y}
           onClose={() => setFolderMenu(null)}
@@ -1161,87 +1157,83 @@ export default function LibraryView() {
 
           <div className="my-1 border-t border-white/5" />
 
+          <button
+            onClick={() => ctxVote(true)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+          >
+            <ThumbsUp size={12} /> Like
+          </button>
+          <button
+            onClick={() => ctxVote(false)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+          >
+            <ThumbsDown size={12} /> Dislike
+          </button>
+
+          <div className="my-1 border-t border-white/5" />
+
+          <button
+            onClick={ctxOpenInSteam}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+          >
+            <ExternalLink size={12} /> Open in Steam Workshop
+          </button>
+          <button
+            onClick={ctxOpenLocally}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+          >
+            <FolderOpen size={12} /> Open wallpaper locally
+          </button>
+
+          {ctxHasVideo && (
             <button
-              onClick={() => ctxVote(true)}
+              onClick={ctxPreviewVideo}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
             >
-              <ThumbsUp size={12} /> Like
+              <Eye size={12} /> Preview in media player
             </button>
+          )}
+
+          <div className="my-1 border-t border-white/5" />
+
+          <div className="relative">
             <button
-              onClick={() => ctxVote(false)}
+              onClick={() => setCtxMenu((prev) => prev ? { ...prev, showFolderSub: !prev.showFolderSub } : null)}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
             >
-              <ThumbsDown size={12} /> Dislike
+              <FolderInput size={12} /> Move to folder
+              <ChevronRight size={12} className="ml-auto" />
             </button>
-
-            <div className="my-1 border-t border-white/5" />
-
-            {/* File operations */}
-            <button
-              onClick={ctxOpenInSteam}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              <ExternalLink size={12} /> Open in Steam Workshop
-            </button>
-            <button
-              onClick={ctxOpenLocally}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              <FolderOpen size={12} /> Open wallpaper locally
-            </button>
-
-            {/* Preview video - only for video type wallpapers */}
-            {ctxHasVideo && (
-              <button
-                onClick={ctxPreviewVideo}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-              >
-                <Eye size={12} /> Preview in media player
-              </button>
-            )}
-
-            <div className="my-1 border-t border-white/5" />
-
-            {/* Move to folder - with submenu */}
-            <div className="relative">
-              <button
-                onClick={() => setCtxMenu((prev) => prev ? { ...prev, showFolderSub: !prev.showFolderSub } : null)}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-              >
-                <FolderInput size={12} /> Move to folder
-                <ChevronRight size={12} className="ml-auto" />
-              </button>
-              {ctxMenu.showFolderSub && (
-                <div className="absolute left-full top-0 ml-1 min-w-[160px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl">
+            {ctxMenu.showFolderSub && (
+              <div className="absolute left-full top-0 ml-1 min-w-[160px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl">
+                <button
+                  onClick={ctxMoveToDefault}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+                >
+                  <Folder size={12} /> Default
+                </button>
+                {folders.length > 0 && <div className="my-1 border-t border-white/5" />}
+                {folders.map((f) => (
                   <button
-                    onClick={ctxMoveToDefault}
+                    key={f.id}
+                    onClick={() => ctxMoveToFolder(f.id)}
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
                   >
-                    <Folder size={12} /> Default
+                    <Folder size={12} /> {f.title}
                   </button>
-                  {folders.length > 0 && <div className="my-1 border-t border-white/5" />}
-                  {folders.map((f) => (
-                    <button
-                      key={f.id}
-                      onClick={() => ctxMoveToFolder(f.id)}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-                    >
-                      <Folder size={12} /> {f.title}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Remove from folder - only when inside a folder */}
-            {activeFolder && (
-              <button
-                onClick={ctxRemoveFromFolder}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
-              >
-                <Trash2 size={12} /> Remove from folder
-              </button>
+                ))}
+              </div>
             )}
+          </div>
+
+          {activeFolder && (
+            <button
+              onClick={ctxRemoveFromFolder}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
+            >
+              <Trash2 size={12} /> Remove from folder
+            </button>
+          )}
         </div>
       )}
     </div>
