@@ -4,6 +4,7 @@
   "type": "module",
   "description": "Wallpaper Engine workshop manager",
   "author": "UwU",
+  "license": "MIT",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
