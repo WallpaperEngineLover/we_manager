@@ -20,6 +20,10 @@ export default function SettingsView() {
 
   // linux-wallpaperengine state
   const [lweStatus, setLweStatus] = useState<LweStatus | null>(null)
+  const [lweRepoUrl, setLweRepoUrl] = useState('')
+  const [lweRepoBranch, setLweRepoBranch] = useState('')
+  const [defaultLweRepo, setDefaultLweRepo] = useState('')
+  const [repoSaved, setRepoSaved] = useState(false)
   const [lweInstalling, setLweInstalling] = useState(false)
   const [lweProgress, setLweProgress] = useState<LweInstallProgress | null>(null)
   const [distro, setDistro] = useState<LinuxDistro | null>(null)
@@ -34,6 +38,9 @@ export default function SettingsView() {
     window.electronAPI.config.get().then((cfg) => {
       setWorkshopPath(cfg.workshopPath ?? cfg.defaultWorkshopPath)
       setDefaultFps(cfg.defaultFps != null ? String(cfg.defaultFps) : '')
+      setLweRepoUrl(cfg.lweRepoUrl ?? '')
+      setLweRepoBranch(cfg.lweRepoBranch ?? '')
+      setDefaultLweRepo(cfg.defaultLweRepoUrl)
     })
     window.electronAPI.lwe.status().then(setLweStatus)
     window.electronAPI.lwe.detectDistro().then(setDistro)
@@ -96,10 +103,18 @@ export default function SettingsView() {
     }
   }
 
+  async function handleSaveRepo() {
+    await window.electronAPI.config.setLweRepo(lweRepoUrl.trim() || null, lweRepoBranch.trim() || null)
+    setRepoSaved(true)
+    setTimeout(() => setRepoSaved(false), 2000)
+  }
+
   async function handleInstallLwe() {
     setLweInstalling(true)
     setLweProgress({ stage: 'cloning', message: 'Starting installation...', percentage: 0 })
     try {
+      // Persist the repo fields first so the build uses what's on screen
+      await window.electronAPI.config.setLweRepo(lweRepoUrl.trim() || null, lweRepoBranch.trim() || null)
       await window.electronAPI.lwe.install()
     } catch (err) {
       setLweProgress({
@@ -294,6 +309,38 @@ export default function SettingsView() {
             scenes directly on your desktop.
           </p>
 
+          {/* Custom source repository */}
+          <div className="mt-3 space-y-2">
+            <label className="block text-xs text-gray-400">Source repository</label>
+            <p className="text-xs text-gray-600">
+              Build from a custom fork instead of the official repo. Accepts a git URL or a
+              local path. Leave empty to use the official repository.
+            </p>
+            <input
+              type="text"
+              value={lweRepoUrl}
+              onChange={(e) => { setLweRepoUrl(e.target.value); setRepoSaved(false) }}
+              placeholder={defaultLweRepo}
+              className="w-full rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+            <div className="flex gap-2 items-center">
+              <input
+                type="text"
+                value={lweRepoBranch}
+                onChange={(e) => { setLweRepoBranch(e.target.value); setRepoSaved(false) }}
+                placeholder="branch (default)"
+                className="w-44 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+              <button
+                onClick={handleSaveRepo}
+                className="flex items-center gap-2 rounded-lg bg-white/5 px-4 py-2 text-sm text-gray-300 hover:bg-white/10"
+              >
+                <Save size={14} />
+                {repoSaved ? 'Saved!' : 'Save'}
+              </button>
+            </div>
+          </div>
+
           {lweStatus === null ? (
             <p className="mt-3 text-xs text-gray-500">Checking...</p>
           ) : lweStatus.installed ? (
@@ -305,18 +352,32 @@ export default function SettingsView() {
               {lweStatus.path && (
                 <p className="text-xs text-gray-500">Path: {lweStatus.path}</p>
               )}
-              <button
-                onClick={handleUninstallLwe}
-                disabled={isBusy}
-                className="flex items-center gap-2 rounded-lg bg-red-600/20 px-4 py-2 text-sm text-red-400 hover:bg-red-600/30 disabled:opacity-50"
-              >
-                {uninstalling ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Trash2 size={14} />
-                )}
-                {uninstalling ? 'Uninstalling...' : 'Uninstall'}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={handleInstallLwe}
+                  disabled={isBusy}
+                  className="flex items-center gap-2 rounded-lg bg-white/5 px-4 py-2 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
+                >
+                  {lweInstalling ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Download size={14} />
+                  )}
+                  {lweInstalling ? 'Building...' : 'Rebuild & install'}
+                </button>
+                <button
+                  onClick={handleUninstallLwe}
+                  disabled={isBusy}
+                  className="flex items-center gap-2 rounded-lg bg-red-600/20 px-4 py-2 text-sm text-red-400 hover:bg-red-600/30 disabled:opacity-50"
+                >
+                  {uninstalling ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={14} />
+                  )}
+                  {uninstalling ? 'Uninstalling...' : 'Uninstall'}
+                </button>
+              </div>
               {uninstallMsg && (
                 <p className="text-xs text-gray-400">{uninstallMsg}</p>
               )}

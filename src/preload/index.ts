@@ -68,12 +68,14 @@ const api = {
   },
 
   config: {
-    get: (): Promise<{ workshopPath: string | null; defaultWorkshopPath: string; isConfigured: boolean; defaultFps: number | null }> =>
+    get: (): Promise<{ workshopPath: string | null; defaultWorkshopPath: string; isConfigured: boolean; defaultFps: number | null; lweRepoUrl: string | null; lweRepoBranch: string | null; defaultLweRepoUrl: string }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_GET),
     setWorkshopPath: (p: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_WORKSHOP_PATH, p),
     setDefaultFps: (fps: number | null): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DEFAULT_FPS, fps),
+    setLweRepo: (url: string | null, branch: string | null): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_LWE_REPO, url, branch),
     pickFolder: (): Promise<string | null> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_PICK_FOLDER),
     pickFile: (): Promise<string | null> =>

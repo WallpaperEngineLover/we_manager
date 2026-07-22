@@ -6,10 +6,14 @@ import {
   isWorkshopPathConfigured,
   getDefaultFps,
   setDefaultFps,
+  getLweRepoUrl,
+  getLweRepoBranch,
+  setLweRepo,
   importWEConfigFile,
   createFreshConfig
 } from '../services/config.service'
 import { getDefaultWorkshopPath } from '../utils/paths'
+import { DEFAULT_LWE_REPO } from '@shared/constants'
 import { restartWatcher } from '../services/watcher.service'
 import { importWEConfig } from '../services/library.service'
 
@@ -18,11 +22,19 @@ export function registerConfigHandlers(): void {
     workshopPath: getConfiguredWorkshopPath(),
     defaultWorkshopPath: getDefaultWorkshopPath(),
     isConfigured: isWorkshopPathConfigured(),
-    defaultFps: getDefaultFps()
+    defaultFps: getDefaultFps(),
+    lweRepoUrl: getLweRepoUrl(),
+    lweRepoBranch: getLweRepoBranch(),
+    defaultLweRepoUrl: DEFAULT_LWE_REPO
   }))
 
   ipcMain.handle(IpcChannels.CONFIG_SET_DEFAULT_FPS, (_e, fps: number | null) => {
     setDefaultFps(fps)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_LWE_REPO, (_e, url: string | null, branch: string | null) => {
+    setLweRepo(url, branch)
     return { ok: true }
   })
 

@@ -15,11 +15,12 @@ import {
   getXdgRuntimeDir
 } from '../utils/platform'
 import { getWorkshopPath } from '../utils/paths'
+import { getLweRepoUrl, getLweRepoBranch } from './config.service'
+import { DEFAULT_LWE_REPO } from '@shared/constants'
 
 const execFileAsync = promisify(execFile)
 
 const LWE_BINARY = 'linux-wallpaperengine'
-const LWE_REPO = 'https://github.com/Almamu/linux-wallpaperengine.git'
 const BUILD_DIR = path.join(os.tmpdir(), 'lwe-build')
 
 /** Common install locations checked before falling back to $PATH. */
@@ -186,9 +187,21 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       fs.rmSync(BUILD_DIR, { recursive: true, force: true })
     }
 
-    // Clone
-    send({ stage: 'cloning', message: 'Cloning linux-wallpaperengine...', percentage: 5 })
-    await execFileAsync('git', ['clone', '--depth', '1', '--recursive', LWE_REPO, BUILD_DIR], {
+    // Clone from the configured repo (custom fork or local path), or the official repo.
+    // Local paths are expanded so git clone sees an absolute path.
+    let repo = getLweRepoUrl() ?? DEFAULT_LWE_REPO
+    if (repo.startsWith('~/')) repo = path.join(os.homedir(), repo.slice(2))
+    const branch = getLweRepoBranch()
+    const cloneArgs = ['clone', '--depth', '1', '--recursive']
+    if (branch) cloneArgs.push('--branch', branch)
+    cloneArgs.push(repo, BUILD_DIR)
+
+    send({
+      stage: 'cloning',
+      message: `Cloning ${repo}${branch ? ` (${branch})` : ''}...`,
+      percentage: 5
+    })
+    await execFileAsync('git', cloneArgs, {
       timeout: 120_000,
       maxBuffer: 10 * 1024 * 1024
     })

@@ -7,13 +7,17 @@ import { WE_APP_ID } from '@shared/constants'
 interface AppConfig {
   workshopPath: string | null
   defaultFps: number | null
+  lweRepoUrl: string | null
+  lweRepoBranch: string | null
 }
 
 const store = new Store<AppConfig>({
   name: 'config',
   defaults: {
     workshopPath: null,
-    defaultFps: null
+    defaultFps: null,
+    lweRepoUrl: null,
+    lweRepoBranch: null
   }
 })
 
@@ -35,6 +39,21 @@ export function getDefaultFps(): number | null {
 
 export function setDefaultFps(fps: number | null): void {
   store.set('defaultFps', fps)
+}
+
+/** Custom linux-wallpaperengine repo (git URL or local path); null = official repo. */
+export function getLweRepoUrl(): string | null {
+  return store.get('lweRepoUrl')
+}
+
+/** Branch/tag to build from the custom repo; null = default branch. */
+export function getLweRepoBranch(): string | null {
+  return store.get('lweRepoBranch')
+}
+
+export function setLweRepo(url: string | null, branch: string | null): void {
+  store.set('lweRepoUrl', url?.trim() || null)
+  store.set('lweRepoBranch', branch?.trim() || null)
 }
 
 /** Path where we store our copy of config.json */

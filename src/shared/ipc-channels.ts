@@ -47,6 +47,7 @@ export const IpcChannels = {
   CONFIG_GET: 'config:get',
   CONFIG_SET_WORKSHOP_PATH: 'config:set-workshop-path',
   CONFIG_SET_DEFAULT_FPS: 'config:set-default-fps',
+  CONFIG_SET_LWE_REPO: 'config:set-lwe-repo',
   CONFIG_PICK_FOLDER: 'config:pick-folder',
   CONFIG_PICK_FILE: 'config:pick-file',
   CONFIG_IMPORT_WE: 'config:import-we',
