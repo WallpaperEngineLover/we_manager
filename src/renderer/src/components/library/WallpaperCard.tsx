@@ -3,6 +3,7 @@ import { Play, Loader2, Check, ThumbsUp, Trash2, ExternalLink, Download, Archive
 import type { WallpaperMeta } from '@shared/types'
 import clsx from 'clsx'
 import { getPreviewSrc } from '../../utils/preview'
+import { openWorkshopPage } from '../../utils/steam'
 
 interface WallpaperCardProps {
   wallpaper: WallpaperMeta
@@ -262,7 +263,7 @@ export default function WallpaperCard({
           <button
             onClick={(e) => {
               e.stopPropagation()
-              window.electronAPI.shell.openExternal(`steam://url/CommunityFilePage/${wallpaper.id}`)
+              openWorkshopPage(wallpaper.id)
             }}
             title="Open in Steam Workshop"
             className="flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-200"

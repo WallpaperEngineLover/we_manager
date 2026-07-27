@@ -13,7 +13,11 @@ import {
   WE_RESOLUTION_GROUPS,
   WE_GENRES
 } from '../../constants/weFilters'
-import { usePreviewSize, PREVIEW_SIZE_MIN_PX } from '../../hooks/usePreviewSize'
+import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
+import { useClickOutside } from '../../hooks/useClickOutside'
+import { toggle } from '../../utils/array'
+import { forEachIgnoringErrors } from '../../utils/async'
+import { openWorkshopPage } from '../../utils/steam'
 
 const STORAGE_KEY = 'we-workshop-filters'
 const STORAGE_VERSION = 2
@@ -58,10 +62,6 @@ function loadFilters(): WorkshopFilterState {
 
 function saveFilters(state: WorkshopFilterState) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, _v: STORAGE_VERSION }))
-}
-
-function toggle(arr: string[], value: string): string[] {
-  return arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value]
 }
 
 function CheckItem({
@@ -146,17 +146,7 @@ export default function WorkshopBrowser() {
   const [pageSize, setPageSize] = useState(50)
   const [previewSize, setPreviewSize] = usePreviewSize()
 
-  // Close context menu on outside click (mousedown so right-click on another card works)
-  useEffect(() => {
-    if (!ctxMenu) return
-    function onMouseDown(e: MouseEvent) {
-      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) {
-        setCtxMenu(null)
-      }
-    }
-    document.addEventListener('mousedown', onMouseDown)
-    return () => document.removeEventListener('mousedown', onMouseDown)
-  }, [ctxMenu])
+  useClickOutside(ctxRef, () => setCtxMenu(null), !!ctxMenu)
 
   useEffect(() => {
     saveFilters(filters)
@@ -238,33 +228,25 @@ export default function WorkshopBrowser() {
 
   async function ctxSubscribe() {
     if (!ctxMenu) return
-    for (const id of ctxMenu.ids) {
-      try { await window.electronAPI.steam.subscribe(id) } catch {}
-    }
+    await forEachIgnoringErrors(ctxMenu.ids, (id) => window.electronAPI.steam.subscribe(id))
     closeCtxMenu()
   }
 
   async function ctxUnsubscribe() {
     if (!ctxMenu) return
-    for (const id of ctxMenu.ids) {
-      try { await window.electronAPI.steam.unsubscribe(id) } catch {}
-    }
+    await forEachIgnoringErrors(ctxMenu.ids, (id) => window.electronAPI.steam.unsubscribe(id))
     closeCtxMenu()
   }
 
   async function ctxVote(up: boolean) {
     if (!ctxMenu) return
-    for (const id of ctxMenu.ids) {
-      try { await window.electronAPI.steam.vote(id, up) } catch {}
-    }
+    await forEachIgnoringErrors(ctxMenu.ids, (id) => window.electronAPI.steam.vote(id, up))
     closeCtxMenu()
   }
 
   function ctxOpenInSteam() {
     if (!ctxMenu) return
-    for (const id of ctxMenu.ids) {
-      window.electronAPI.shell.openExternal(`steam://url/CommunityFilePage/${id}`)
-    }
+    for (const id of ctxMenu.ids) openWorkshopPage(id)
     closeCtxMenu()
   }
 
@@ -564,12 +546,7 @@ export default function WorkshopBrowser() {
               No results found
             </div>
           )}
-          <div
-            className="grid gap-4"
-            style={{
-              gridTemplateColumns: `repeat(auto-fill, minmax(${PREVIEW_SIZE_MIN_PX[previewSize]}px, 1fr))`
-            }}
-          >
+          <div className="grid gap-4" style={previewGridStyle(previewSize)}>
             {paginatedItems.map((item) => (
               <WorkshopCard
                 key={item.publishedFileId}

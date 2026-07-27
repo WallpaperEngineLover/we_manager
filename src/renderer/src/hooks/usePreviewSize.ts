@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 
 export type PreviewSize = 'small' | 'normal' | 'big'
 
@@ -6,6 +6,10 @@ export const PREVIEW_SIZE_MIN_PX: Record<PreviewSize, number> = {
   small: 130,
   normal: 200,
   big: 280
+}
+
+export function previewGridStyle(size: PreviewSize): CSSProperties {
+  return { gridTemplateColumns: `repeat(auto-fill, minmax(${PREVIEW_SIZE_MIN_PX[size]}px, 1fr))` }
 }
 
 const STORAGE_KEY = 'we-preview-size'

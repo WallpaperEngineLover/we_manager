@@ -27,7 +27,11 @@ import PreviewSizeToggle from '../common/PreviewSizeToggle'
 import type { LibraryFilters, WallpaperFolder, LweStatus } from '@shared/types'
 import clsx from 'clsx'
 import { WE_TYPES, WE_AGE_RATINGS } from '../../constants/weFilters'
-import { usePreviewSize, PREVIEW_SIZE_MIN_PX } from '../../hooks/usePreviewSize'
+import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
+import { useClickOutside } from '../../hooks/useClickOutside'
+import { toggle } from '../../utils/array'
+import { forEachIgnoringErrors } from '../../utils/async'
+import { openWorkshopPage } from '../../utils/steam'
 
 const STORAGE_KEY = 'we-library-filters'
 
@@ -63,10 +67,6 @@ function loadFilters(): LibraryFilterState {
   } catch {
     return DEFAULT_STATE
   }
-}
-
-function toggle(arr: string[], value: string): string[] {
-  return arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value]
 }
 
 function Chip({
@@ -106,13 +106,7 @@ function TagDropdown({
   const [search, setSearch] = useState('')
   const ref = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    function onOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onOutside)
-    return () => document.removeEventListener('mousedown', onOutside)
-  }, [])
+  useClickOutside(ref, () => setOpen(false))
 
   const filtered = available.filter((t) =>
     t.toLowerCase().includes(search.toLowerCase())
@@ -192,15 +186,7 @@ function FolderMenu({
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    function onMouseDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        onClose()
-      }
-    }
-    document.addEventListener('mousedown', onMouseDown)
-    return () => document.removeEventListener('mousedown', onMouseDown)
-  }, [onClose])
+  useClickOutside(ref, onClose)
 
   return (
     <div
@@ -275,17 +261,7 @@ export default function LibraryView() {
   } | null>(null)
   const ctxMenuRef = useRef<HTMLDivElement>(null)
 
-  // Close wallpaper context menu on outside click (mousedown so right-click on another card works)
-  useEffect(() => {
-    if (!ctxMenu) return
-    function onMouseDown(e: MouseEvent) {
-      if (ctxMenuRef.current && !ctxMenuRef.current.contains(e.target as Node)) {
-        setCtxMenu(null)
-      }
-    }
-    document.addEventListener('mousedown', onMouseDown)
-    return () => document.removeEventListener('mousedown', onMouseDown)
-  }, [ctxMenu])
+  useClickOutside(ctxMenuRef, () => setCtxMenu(null), !!ctxMenu)
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filterState))
@@ -724,9 +700,7 @@ export default function LibraryView() {
 
   async function ctxUnsubscribe() {
     if (!ctxMenu) return
-    for (const id of ctxMenu.ids) {
-      try { await window.electronAPI.steam.unsubscribe(id) } catch {}
-    }
+    await forEachIgnoringErrors(ctxMenu.ids, (id) => window.electronAPI.steam.unsubscribe(id))
     closeCtxMenu()
     queryClient.invalidateQueries({ queryKey: ['library'] })
     refetchFolders()
@@ -734,18 +708,14 @@ export default function LibraryView() {
 
   async function ctxVote(up: boolean) {
     if (!ctxMenu) return
-    for (const id of ctxMenu.ids) {
-      try { await window.electronAPI.steam.vote(id, up) } catch {}
-    }
+    await forEachIgnoringErrors(ctxMenu.ids, (id) => window.electronAPI.steam.vote(id, up))
     queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })
     closeCtxMenu()
   }
 
   function ctxOpenInSteam() {
     if (!ctxMenu) return
-    for (const id of ctxMenu.ids) {
-      window.electronAPI.shell.openExternal(`steam://url/CommunityFilePage/${id}`)
-    }
+    for (const id of ctxMenu.ids) openWorkshopPage(id)
     closeCtxMenu()
   }
 
@@ -1169,12 +1139,7 @@ export default function LibraryView() {
             </div>
           )}
 
-          <div
-            className="grid gap-4"
-            style={{
-              gridTemplateColumns: `repeat(auto-fill, minmax(${PREVIEW_SIZE_MIN_PX[previewSize]}px, 1fr))`
-            }}
-          >
+          <div className="grid gap-4" style={previewGridStyle(previewSize)}>
             {wallpapers.map((wallpaper) => (
               <WallpaperCard
                 key={wallpaper.id}
