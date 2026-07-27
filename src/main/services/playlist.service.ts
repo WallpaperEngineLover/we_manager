@@ -1,6 +1,7 @@
 import Store from 'electron-store'
 import { randomUUID } from 'crypto'
 import type { Playlist, PlaylistItem, PlaylistSettings } from '@shared/types'
+import { findAndMutate } from '../utils/collections'
 
 interface PlaylistStore {
   playlists: Playlist[]
@@ -17,6 +18,16 @@ const store = new Store<PlaylistStore>({
   name: 'playlists',
   defaults: { playlists: [] }
 })
+
+function updatePlaylist(id: string, mutate: (playlist: Playlist) => void | false): Playlist | null {
+  const playlists = store.get('playlists')
+  const playlist = findAndMutate(playlists, id, (p) => {
+    if (mutate(p) === false) return false
+    p.updatedAt = Date.now()
+  })
+  if (playlist) store.set('playlists', playlists)
+  return playlist
+}
 
 export function getAllPlaylists(): Playlist[] {
   return store.get('playlists')
@@ -43,13 +54,9 @@ export function createPlaylist(title: string): Playlist {
 }
 
 export function renamePlaylist(id: string, title: string): Playlist | null {
-  const playlists = store.get('playlists')
-  const playlist = playlists.find((p) => p.id === id)
-  if (!playlist) return null
-  playlist.title = title
-  playlist.updatedAt = Date.now()
-  store.set('playlists', playlists)
-  return playlist
+  return updatePlaylist(id, (playlist) => {
+    playlist.title = title
+  })
 }
 
 export function deletePlaylist(id: string): void {
@@ -61,62 +68,46 @@ export function updatePlaylistSettings(
   id: string,
   patch: Partial<PlaylistSettings>
 ): Playlist | null {
-  const playlists = store.get('playlists')
-  const playlist = playlists.find((p) => p.id === id)
-  if (!playlist) return null
-  playlist.settings = { ...playlist.settings, ...patch }
-  playlist.updatedAt = Date.now()
-  store.set('playlists', playlists)
-  return playlist
+  return updatePlaylist(id, (playlist) => {
+    playlist.settings = { ...playlist.settings, ...patch }
+  })
 }
 
 export function addItemsToPlaylist(id: string, wallpaperIds: string[]): Playlist | null {
-  const playlists = store.get('playlists')
-  const playlist = playlists.find((p) => p.id === id)
-  if (!playlist) return null
-  const existing = new Set(playlist.items.map((i) => i.wallpaperId))
-  for (const wallpaperId of wallpaperIds) {
-    if (!existing.has(wallpaperId)) {
-      playlist.items.push({ wallpaperId })
-      existing.add(wallpaperId)
+  return updatePlaylist(id, (playlist) => {
+    const existing = new Set(playlist.items.map((i) => i.wallpaperId))
+    for (const wallpaperId of wallpaperIds) {
+      if (!existing.has(wallpaperId)) {
+        playlist.items.push({ wallpaperId })
+        existing.add(wallpaperId)
+      }
     }
-  }
-  playlist.updatedAt = Date.now()
-  store.set('playlists', playlists)
-  return playlist
+  })
 }
 
 export function removeItemsFromPlaylist(id: string, wallpaperIds: string[]): Playlist | null {
-  const playlists = store.get('playlists')
-  const playlist = playlists.find((p) => p.id === id)
-  if (!playlist) return null
-  const remove = new Set(wallpaperIds)
-  playlist.items = playlist.items.filter((i) => !remove.has(i.wallpaperId))
-  playlist.updatedAt = Date.now()
-  store.set('playlists', playlists)
-  return playlist
+  return updatePlaylist(id, (playlist) => {
+    const remove = new Set(wallpaperIds)
+    playlist.items = playlist.items.filter((i) => !remove.has(i.wallpaperId))
+  })
 }
 
 /** Reorders items to match the given wallpaperId sequence (used for manual drag-reorder). */
 export function reorderPlaylistItems(id: string, orderedWallpaperIds: string[]): Playlist | null {
-  const playlists = store.get('playlists')
-  const playlist = playlists.find((p) => p.id === id)
-  if (!playlist) return null
-  const byId = new Map(playlist.items.map((i) => [i.wallpaperId, i]))
-  const reordered: PlaylistItem[] = []
-  for (const wallpaperId of orderedWallpaperIds) {
-    const item = byId.get(wallpaperId)
-    if (item) {
-      reordered.push(item)
-      byId.delete(wallpaperId)
+  return updatePlaylist(id, (playlist) => {
+    const byId = new Map(playlist.items.map((i) => [i.wallpaperId, i]))
+    const reordered: PlaylistItem[] = []
+    for (const wallpaperId of orderedWallpaperIds) {
+      const item = byId.get(wallpaperId)
+      if (item) {
+        reordered.push(item)
+        byId.delete(wallpaperId)
+      }
     }
-  }
-  // Append anything not mentioned in orderedWallpaperIds (defensive, shouldn't normally happen)
-  reordered.push(...byId.values())
-  playlist.items = reordered
-  playlist.updatedAt = Date.now()
-  store.set('playlists', playlists)
-  return playlist
+    // Append anything not mentioned in orderedWallpaperIds (defensive, shouldn't normally happen)
+    reordered.push(...byId.values())
+    playlist.items = reordered
+  })
 }
 
 export function updatePlaylistItem(
@@ -124,16 +115,12 @@ export function updatePlaylistItem(
   wallpaperId: string,
   patch: { volume?: number; durationSec?: number }
 ): Playlist | null {
-  const playlists = store.get('playlists')
-  const playlist = playlists.find((p) => p.id === id)
-  if (!playlist) return null
-  const item = playlist.items.find((i) => i.wallpaperId === wallpaperId)
-  if (!item) return null
-  if ('volume' in patch) item.volume = patch.volume
-  if ('durationSec' in patch) item.durationSec = patch.durationSec
-  playlist.updatedAt = Date.now()
-  store.set('playlists', playlists)
-  return playlist
+  return updatePlaylist(id, (playlist) => {
+    const item = playlist.items.find((i) => i.wallpaperId === wallpaperId)
+    if (!item) return false
+    if ('volume' in patch) item.volume = patch.volume
+    if ('durationSec' in patch) item.durationSec = patch.durationSec
+  })
 }
 
 /**

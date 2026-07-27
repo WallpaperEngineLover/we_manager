@@ -6,6 +6,7 @@ import * as fs from 'fs'
 import { randomUUID } from 'crypto'
 import { cleanupPlaylists } from './playlist.service'
 import { getWorkshopTimesUpdated } from './workshop.service'
+import { findAndMutate } from '../utils/collections'
 
 interface LibraryStore {
   wallpapers: Record<string, WallpaperMeta>
@@ -373,13 +374,17 @@ export function createFolder(title: string): WallpaperFolder {
   return folder
 }
 
-export function renameFolder(id: string, title: string): WallpaperFolder | null {
+function updateFolder(id: string, mutate: (folder: WallpaperFolder) => void): WallpaperFolder | null {
   const folders = store.get('folders')
-  const folder = folders.find((f) => f.id === id)
-  if (!folder) return null
-  folder.title = title
-  store.set('folders', folders)
+  const folder = findAndMutate(folders, id, mutate)
+  if (folder) store.set('folders', folders)
   return folder
+}
+
+export function renameFolder(id: string, title: string): WallpaperFolder | null {
+  return updateFolder(id, (folder) => {
+    folder.title = title
+  })
 }
 
 export function deleteFolder(id: string): void {
@@ -388,24 +393,18 @@ export function deleteFolder(id: string): void {
 }
 
 export function addItemsToFolder(folderId: string, itemIds: string[]): WallpaperFolder | null {
-  const folders = store.get('folders')
-  const folder = folders.find((f) => f.id === folderId)
-  if (!folder) return null
-  const set = new Set(folder.items)
-  for (const id of itemIds) set.add(id)
-  folder.items = [...set]
-  store.set('folders', folders)
-  return folder
+  return updateFolder(folderId, (folder) => {
+    const set = new Set(folder.items)
+    for (const id of itemIds) set.add(id)
+    folder.items = [...set]
+  })
 }
 
 export function removeItemsFromFolder(folderId: string, itemIds: string[]): WallpaperFolder | null {
-  const folders = store.get('folders')
-  const folder = folders.find((f) => f.id === folderId)
-  if (!folder) return null
-  const remove = new Set(itemIds)
-  folder.items = folder.items.filter((id) => !remove.has(id))
-  store.set('folders', folders)
-  return folder
+  return updateFolder(folderId, (folder) => {
+    const remove = new Set(itemIds)
+    folder.items = folder.items.filter((id) => !remove.has(id))
+  })
 }
 
 /**

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { GripVertical, Trash2, Volume2, Clock, ChevronDown, ChevronUp } from 'lucide-react'
 import clsx from 'clsx'
 import type { PlaylistItem, WallpaperMeta } from '@shared/types'
+import { getPreviewSrc } from '../../utils/preview'
 
 interface PlaylistItemRowProps {
   item: PlaylistItem
@@ -33,9 +34,7 @@ export default function PlaylistItemRow({
 }: PlaylistItemRowProps) {
   const [expanded, setExpanded] = useState(false)
 
-  const previewSrc = wallpaper?.previewLocal
-    ? `wallpaper://${wallpaper.previewLocal}`
-    : wallpaper?.previewUrl
+  const previewSrc = getPreviewSrc(wallpaper)
 
   return (
     <div

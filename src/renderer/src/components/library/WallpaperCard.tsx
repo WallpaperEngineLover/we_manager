@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Play, Loader2, Check, ThumbsUp, Trash2, ExternalLink, Download, Archive } from 'lucide-react'
 import type { WallpaperMeta } from '@shared/types'
 import clsx from 'clsx'
+import { getPreviewSrc } from '../../utils/preview'
 
 interface WallpaperCardProps {
   wallpaper: WallpaperMeta
@@ -117,9 +118,7 @@ export default function WallpaperCard({
     }
   }
 
-  const previewSrc = wallpaper.previewLocal
-    ? `wallpaper://${wallpaper.previewLocal}`
-    : wallpaper.previewUrl
+  const previewSrc = getPreviewSrc(wallpaper)
 
   return (
     <div

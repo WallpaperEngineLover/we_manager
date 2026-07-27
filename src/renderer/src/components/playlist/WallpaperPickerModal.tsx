@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Search, X, Plus, Check } from 'lucide-react'
+import { getPreviewSrc } from '../../utils/preview'
 
 interface WallpaperPickerModalProps {
   excludeIds: Set<string>
@@ -81,7 +82,7 @@ export default function WallpaperPickerModal({
           <div className="grid grid-cols-3 gap-2">
             {filtered.map((w) => {
               const isSelected = selected.has(w.id)
-              const previewSrc = w.previewLocal ? `wallpaper://${w.previewLocal}` : w.previewUrl
+              const previewSrc = getPreviewSrc(w)
               return (
                 <button
                   key={w.id}
