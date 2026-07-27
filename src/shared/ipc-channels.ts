@@ -81,6 +81,7 @@ export const IpcChannels = {
 
   // Tray & autostart
   CONFIG_SET_TRAY_ENABLED: 'config:set-tray-enabled',
+  CONFIG_SET_KILL_LWE_ON_QUIT: 'config:set-kill-lwe-on-quit',
   CONFIG_SET_AUTOSTART: 'config:set-autostart',
   CONFIG_GET_AUTOSTART_SUPPORTED: 'config:get-autostart-supported',
 

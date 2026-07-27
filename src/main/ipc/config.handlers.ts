@@ -22,7 +22,9 @@ import {
   getAutostartMinimized,
   setAutostart,
   getAutostartPlaylistId,
-  setAutostartPlaylistId
+  setAutostartPlaylistId,
+  getKillLweOnQuit,
+  setKillLweOnQuit
 } from '../services/config.service'
 import { getDefaultWorkshopPath } from '../utils/paths'
 import { DEFAULT_LWE_REPO } from '@shared/constants'
@@ -47,7 +49,8 @@ export function registerConfigHandlers(): void {
     autostartSupported: isAutostartSupported(),
     autostartEnabled: getAutostartEnabled(),
     autostartMinimized: getAutostartMinimized(),
-    autostartPlaylistId: getAutostartPlaylistId()
+    autostartPlaylistId: getAutostartPlaylistId(),
+    killLweOnQuit: getKillLweOnQuit()
   }))
 
   ipcMain.handle(IpcChannels.CONFIG_GET_AUTOSTART_SUPPORTED, () => isAutostartSupported())
@@ -72,6 +75,11 @@ export function registerConfigHandlers(): void {
       return { ok: true }
     }
   )
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_KILL_LWE_ON_QUIT, (_e, enabled: boolean) => {
+    setKillLweOnQuit(enabled)
+    return { ok: true }
+  })
 
   ipcMain.handle(IpcChannels.CONFIG_SET_BACKUP_PATH, (_e, newPath: string) => {
     setConfiguredBackupPath(newPath)

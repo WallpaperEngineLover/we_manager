@@ -15,6 +15,7 @@ interface AppConfig {
   autostartEnabled: boolean
   autostartMinimized: boolean
   autostartPlaylistId: string | null
+  killLweOnQuit: boolean
 }
 
 const store = new Store<AppConfig>({
@@ -29,7 +30,8 @@ const store = new Store<AppConfig>({
     trayEnabled: false,
     autostartEnabled: false,
     autostartMinimized: false,
-    autostartPlaylistId: null
+    autostartPlaylistId: null,
+    killLweOnQuit: false
   }
 })
 
@@ -92,6 +94,14 @@ export function getAutostartPlaylistId(): string | null {
 
 export function setAutostartPlaylistId(id: string | null): void {
   store.set('autostartPlaylistId', id)
+}
+
+export function getKillLweOnQuit(): boolean {
+  return store.get('killLweOnQuit')
+}
+
+export function setKillLweOnQuit(enabled: boolean): void {
+  store.set('killLweOnQuit', enabled)
 }
 
 export function getDefaultFps(): number | null {

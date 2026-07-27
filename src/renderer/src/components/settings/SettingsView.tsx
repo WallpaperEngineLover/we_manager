@@ -43,6 +43,7 @@ export default function SettingsView() {
 
   // System tray & autostart
   const [trayEnabled, setTrayEnabled] = useState(false)
+  const [killLweOnQuit, setKillLweOnQuit] = useState(false)
   const [autostartSupported, setAutostartSupported] = useState(false)
   const [autostartEnabled, setAutostartEnabledState] = useState(false)
   const [autostartMinimized, setAutostartMinimized] = useState(false)
@@ -59,6 +60,7 @@ export default function SettingsView() {
       setBackupPath(cfg.backupPath ?? '')
       setAutoUnsubscribeAfterBackup(cfg.autoUnsubscribeAfterBackup)
       setTrayEnabled(cfg.trayEnabled)
+      setKillLweOnQuit(cfg.killLweOnQuit)
       setAutostartSupported(cfg.autostartSupported)
       setAutostartEnabledState(cfg.autostartEnabled)
       setAutostartMinimized(cfg.autostartMinimized)
@@ -223,6 +225,12 @@ export default function SettingsView() {
     const newVal = !trayEnabled
     setTrayEnabled(newVal)
     await window.electronAPI.config.setTrayEnabled(newVal)
+  }
+
+  async function handleKillLweOnQuitToggle() {
+    const newVal = !killLweOnQuit
+    setKillLweOnQuit(newVal)
+    await window.electronAPI.config.setKillLweOnQuit(newVal)
   }
 
   async function saveAutostart(patch: {
@@ -598,6 +606,25 @@ export default function SettingsView() {
             {killMsg && (
               <p className="mt-2 text-xs text-gray-400">{killMsg}</p>
             )}
+
+            <label className="mt-3 flex items-center gap-3 cursor-pointer">
+              <button
+                onClick={handleKillLweOnQuitToggle}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                  killLweOnQuit ? 'bg-indigo-600' : 'bg-white/10'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                    killLweOnQuit ? 'translate-x-4' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+              <span className="flex items-center gap-2 text-sm text-gray-300">
+                <Skull size={16} />
+                Kill all linux-wallpaperengine processes when WE Manager quits
+              </span>
+            </label>
           </div>
 
           {/* Install progress */}

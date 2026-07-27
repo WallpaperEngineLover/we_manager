@@ -88,6 +88,7 @@ const api = {
       autostartEnabled: boolean
       autostartMinimized: boolean
       autostartPlaylistId: string | null
+      killLweOnQuit: boolean
     }> => ipcRenderer.invoke(IpcChannels.CONFIG_GET),
     setWorkshopPath: (p: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_WORKSHOP_PATH, p),
@@ -109,6 +110,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_CREATE_FRESH),
     setTrayEnabled: (enabled: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_TRAY_ENABLED, enabled),
+    setKillLweOnQuit: (enabled: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_KILL_LWE_ON_QUIT, enabled),
     setAutostart: (
       enabled: boolean,
       minimized: boolean,

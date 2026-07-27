@@ -6,12 +6,14 @@ import { initLibrary } from './services/library.service'
 import { startWatcher } from './services/watcher.service'
 import { registerAllHandlers } from './ipc'
 import { initDesktopIcons, cleanupDesktopIcons } from './services/desktop-icons.service'
-import { getTrayEnabled, getAutostartPlaylistId } from './services/config.service'
+import { getTrayEnabled, getAutostartPlaylistId, getKillLweOnQuit } from './services/config.service'
 import { createTray } from './services/tray.service'
 import { initPlaylistPlayer, startPlaylist } from './services/playlist-player.service'
+import { killAllLweProcesses } from './services/lwe.service'
 
 const startMinimized = process.argv.includes('--minimized')
 let isQuitting = false
+let hasKilledLweOnQuit = false
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -85,8 +87,14 @@ app.whenReady().then(() => {
   }
 })
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
   isQuitting = true
+
+  if (getKillLweOnQuit() && !hasKilledLweOnQuit) {
+    event.preventDefault()
+    hasKilledLweOnQuit = true
+    killAllLweProcesses().finally(() => app.quit())
+  }
 })
 
 app.on('window-all-closed', () => {
