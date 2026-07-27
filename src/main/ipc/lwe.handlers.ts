@@ -1,6 +1,6 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
-import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, stopLwe, isLweRunning } from '../services/lwe.service'
+import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, stopLwe, isLweRunning, killAllLweProcesses } from '../services/lwe.service'
 import { invalidateEnvCache } from '../services/wallpaper.service'
 
 export function registerLweHandlers(win: BrowserWindow): void {
@@ -37,5 +37,9 @@ export function registerLweHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.LWE_STOP, () => {
     stopLwe()
     return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.LWE_KILL_ALL, async () => {
+    return await killAllLweProcesses()
   })
 }

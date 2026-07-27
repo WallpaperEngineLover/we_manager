@@ -98,6 +98,7 @@ export const IpcChannels = {
   LWE_UNINSTALL: 'lwe:uninstall',
   LWE_LAUNCH: 'lwe:launch',
   LWE_STOP: 'lwe:stop',
+  LWE_KILL_ALL: 'lwe:kill-all',
 
   // Desktop icons overlay
   DESKTOP_ICONS_SET_ENABLED: 'desktop-icons:set-enabled',

@@ -197,7 +197,9 @@ const api = {
     launch: (wallpaperPath: string, options?: { screenRoot?: string; fps?: number }): Promise<{ ok: boolean; running: boolean }> =>
       ipcRenderer.invoke(IpcChannels.LWE_LAUNCH, wallpaperPath, options),
     stop: (): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke(IpcChannels.LWE_STOP)
+      ipcRenderer.invoke(IpcChannels.LWE_STOP),
+    killAll: (): Promise<{ ok: boolean; message: string }> =>
+      ipcRenderer.invoke(IpcChannels.LWE_KILL_ALL)
   },
 
   backup: {

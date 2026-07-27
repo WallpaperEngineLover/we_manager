@@ -607,3 +607,21 @@ export function stopLwe(): void {
 export function isLweRunning(): boolean {
   return activeProcess !== null && activeProcess.exitCode === null
 }
+
+/** Force-kill every linux-wallpaperengine process on the system, including ones this app isn't tracking. */
+export async function killAllLweProcesses(): Promise<{ ok: boolean; message: string }> {
+  activeProcess = null
+
+  try {
+    const { stdout } = await execFileAsync('pkill', ['-9', '-f', '-c', LWE_BINARY])
+    const count = parseInt(stdout.trim(), 10) || 0
+    return { ok: true, message: `Killed ${count} process${count === 1 ? '' : 'es'}.` }
+  } catch (err) {
+    const code = (err as { code?: number }).code
+    // pkill exits 1 when nothing matched, that's not a failure here
+    if (code === 1) {
+      return { ok: true, message: 'No running processes found.' }
+    }
+    return { ok: false, message: `Failed to kill processes: ${(err as Error).message}` }
+  }
+}

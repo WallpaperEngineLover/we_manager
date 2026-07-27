@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power } from 'lucide-react'
+import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull } from 'lucide-react'
 import type { LweStatus, LweInstallProgress, LinuxDistro } from '../../../../shared/types'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
@@ -30,6 +30,8 @@ export default function SettingsView() {
   const [depsInstalling, setDepsInstalling] = useState(false)
   const [uninstalling, setUninstalling] = useState(false)
   const [uninstallMsg, setUninstallMsg] = useState<string | null>(null)
+  const [killingLwe, setKillingLwe] = useState(false)
+  const [killMsg, setKillMsg] = useState<string | null>(null)
 
   // Desktop icons overlay
   const [desktopIconsEnabled, setDesktopIconsEnabled] = useState(false)
@@ -159,6 +161,19 @@ export default function SettingsView() {
       setUninstallMsg(`Uninstall failed: ${(err as Error).message}`)
     } finally {
       setUninstalling(false)
+    }
+  }
+
+  async function handleKillAllLwe() {
+    setKillingLwe(true)
+    setKillMsg(null)
+    try {
+      const result = await window.electronAPI.lwe.killAll()
+      setKillMsg(result.message)
+    } catch (err) {
+      setKillMsg(`Failed: ${(err as Error).message}`)
+    } finally {
+      setKillingLwe(false)
     }
   }
 
@@ -562,6 +577,28 @@ export default function SettingsView() {
               )}
             </div>
           )}
+
+          {/* Kill stray processes */}
+          <div className="mt-4">
+            <button
+              onClick={handleKillAllLwe}
+              disabled={killingLwe}
+              className="flex items-center gap-2 rounded-lg bg-red-600/20 px-4 py-2 text-sm text-red-400 hover:bg-red-600/30 disabled:opacity-50"
+            >
+              {killingLwe ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Skull size={14} />
+              )}
+              {killingLwe ? 'Killing...' : 'Kill all linux-wallpaperengine processes'}
+            </button>
+            <p className="mt-1 text-xs text-gray-600">
+              Force-kills every running instance, including ones not launched by WE Manager.
+            </p>
+            {killMsg && (
+              <p className="mt-2 text-xs text-gray-400">{killMsg}</p>
+            )}
+          </div>
 
           {/* Install progress */}
           {lweProgress && (
