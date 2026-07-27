@@ -19,12 +19,15 @@ import {
   Eye,
   ThumbsUp,
   ThumbsDown,
-  Eraser
+  Eraser,
+  Archive
 } from 'lucide-react'
 import WallpaperCard from './WallpaperCard'
+import PreviewSizeToggle from '../common/PreviewSizeToggle'
 import type { LibraryFilters, WallpaperFolder, LweStatus } from '@shared/types'
 import clsx from 'clsx'
 import { WE_TYPES, WE_AGE_RATINGS } from '../../constants/weFilters'
+import { usePreviewSize, PREVIEW_SIZE_MIN_PX } from '../../hooks/usePreviewSize'
 
 const STORAGE_KEY = 'we-library-filters'
 
@@ -32,9 +35,10 @@ interface LibraryFilterState {
   types: string[]
   ageRatings: string[]
   genres: string[]
+  sources: string[]
 }
 
-const DEFAULT_STATE: LibraryFilterState = { types: [], ageRatings: [], genres: [] }
+const DEFAULT_STATE: LibraryFilterState = { types: [], ageRatings: [], genres: [], sources: [] }
 
 const TYPE_MAP: Record<string, string> = {
   Scene: 'scene',
@@ -46,6 +50,10 @@ const RATING_MAP: Record<string, string> = {
   Everyone: 'everyone',
   Questionable: 'questionable',
   Mature: 'mature'
+}
+const SOURCE_MAP: Record<string, string> = {
+  Workshop: 'workshop',
+  Backup: 'backup'
 }
 
 function loadFilters(): LibraryFilterState {
@@ -239,6 +247,7 @@ export default function LibraryView() {
   // Pagination
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  const [previewSize, setPreviewSize] = usePreviewSize()
 
   // Folder state
   const [activeFolder, setActiveFolder] = useState<string | null>(null) // null = "All"
@@ -287,7 +296,10 @@ export default function LibraryView() {
   }
 
   const activeCount =
-    filterState.types.length + filterState.ageRatings.length + filterState.genres.length
+    filterState.types.length +
+    filterState.ageRatings.length +
+    filterState.genres.length +
+    filterState.sources.length
 
   const filters: LibraryFilters = {
     sortBy,
@@ -328,6 +340,10 @@ export default function LibraryView() {
       }
       if (filterState.genres.length > 0) {
         if (!filterState.genres.some((g) => w.tags.includes(g))) return false
+      }
+      if (filterState.sources.length > 0) {
+        const sources = filterState.sources.map((s) => SOURCE_MAP[s]).filter(Boolean)
+        if (!sources.includes(w.source)) return false
       }
       return true
     })
@@ -406,6 +422,43 @@ export default function LibraryView() {
     staleTime: Infinity
   })
   const votedSet = useMemo(() => new Set(votedIds ?? []), [votedIds])
+
+  const { data: config } = useQuery({
+    queryKey: ['config'],
+    queryFn: () => window.electronAPI.config.get()
+  })
+  const isBackupConfigured = config?.isBackupConfigured ?? false
+
+  const [backingUpSelection, setBackingUpSelection] = useState(false)
+  const [backupScanning, setBackupScanning] = useState(false)
+  const [backupStatus, setBackupStatus] = useState<string | null>(null)
+
+  async function handleBackupSelection() {
+    if (selectedIds.size === 0) return
+    setBackingUpSelection(true)
+    setBackupStatus(null)
+    try {
+      const result = await window.electronAPI.backup.selection(Array.from(selectedIds))
+      setBackupStatus(
+        `Backed up ${result.backedUp}${result.unsubscribed > 0 ? ` (${result.unsubscribed} unsubscribed)` : ''}${result.failed > 0 ? `, ${result.failed} failed` : ''}.`
+      )
+    } finally {
+      setBackingUpSelection(false)
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+    }
+  }
+
+  async function handleScanBackups() {
+    setBackupScanning(true)
+    setBackupStatus(null)
+    try {
+      const result = await window.electronAPI.backup.scan()
+      setBackupStatus(`Backup scan: ${result.imported} imported, ${result.linked} linked.`)
+    } finally {
+      setBackupScanning(false)
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+    }
+  }
 
   async function handleScan() {
     setScanning(true)
@@ -696,6 +749,17 @@ export default function LibraryView() {
     closeCtxMenu()
   }
 
+  async function ctxBackup() {
+    if (!ctxMenu) return
+    closeCtxMenu()
+    if (ctxMenu.ids.length === 1) {
+      await window.electronAPI.backup.item(ctxMenu.ids[0])
+    } else {
+      await window.electronAPI.backup.selection(ctxMenu.ids)
+    }
+    queryClient.invalidateQueries({ queryKey: ['library'] })
+  }
+
   async function ctxOpenLocally() {
     if (!ctxMenu) return
     for (const w of ctxWallpapers) {
@@ -745,6 +809,7 @@ export default function LibraryView() {
 
   // Check if any of the context menu items are video type
   const ctxHasVideo = ctxWallpapers.some((w) => w.type === 'video' && w.file)
+  const ctxHasBackupable = ctxWallpapers.some((w) => w.source === 'workshop')
 
   return (
     <div className="flex h-full flex-col">
@@ -791,6 +856,7 @@ export default function LibraryView() {
           <option value={100}>100 / page</option>
           <option value={200}>200 / page</option>
         </select>
+        <PreviewSizeToggle value={previewSize} onChange={setPreviewSize} />
         <button
           onClick={handleScan}
           disabled={scanning}
@@ -803,6 +869,19 @@ export default function LibraryView() {
             <RefreshCw size={14} />
           )}
           Scan
+        </button>
+        <button
+          onClick={handleScanBackups}
+          disabled={backupScanning || !isBackupConfigured}
+          title={isBackupConfigured ? 'Scan backup folder' : 'Configure a backup folder in Settings first'}
+          className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
+        >
+          {backupScanning ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Archive size={14} />
+          )}
+          Scan backups
         </button>
       </div>
 
@@ -838,6 +917,19 @@ export default function LibraryView() {
 
         <div className="h-3 w-px bg-white/10" />
 
+        <div className="flex gap-0.5">
+          {Object.keys(SOURCE_MAP).map((label) => (
+            <Chip
+              key={label}
+              label={label}
+              active={filterState.sources.includes(label)}
+              onClick={() => updateFilter('sources', label)}
+            />
+          ))}
+        </div>
+
+        <div className="h-3 w-px bg-white/10" />
+
         <TagDropdown
           available={availableTags}
           selected={filterState.genres}
@@ -853,7 +945,23 @@ export default function LibraryView() {
           </button>
         )}
 
-        <span className="ml-auto text-xs text-gray-600">
+        {selectedIds.size > 0 && (
+          <button
+            onClick={handleBackupSelection}
+            disabled={backingUpSelection || !isBackupConfigured}
+            title={isBackupConfigured ? 'Back up selected wallpapers' : 'Configure a backup folder in Settings first'}
+            className="ml-auto flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10 disabled:opacity-50"
+          >
+            {backingUpSelection ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Archive size={12} />
+            )}
+            Backup selection
+          </button>
+        )}
+
+        <span className={clsx('text-xs text-gray-600', selectedIds.size === 0 && 'ml-auto')}>
           {selectedIds.size > 0
             ? `${selectedIds.size} selected / ${wallpapers.length} wallpapers`
             : `${wallpapers.length} wallpapers`}
@@ -863,6 +971,12 @@ export default function LibraryView() {
       {scanResult && (
         <div className="border-b border-white/5 px-4 py-2 text-xs text-gray-400">
           Scan complete: {scanResult.imported} imported{scanResult.removed > 0 ? `, ${scanResult.removed} removed` : ''}
+        </div>
+      )}
+
+      {backupStatus && (
+        <div className="border-b border-white/5 px-4 py-2 text-xs text-gray-400">
+          {backupStatus}
         </div>
       )}
 
@@ -1055,7 +1169,12 @@ export default function LibraryView() {
             </div>
           )}
 
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
+          <div
+            className="grid gap-4"
+            style={{
+              gridTemplateColumns: `repeat(auto-fill, minmax(${PREVIEW_SIZE_MIN_PX[previewSize]}px, 1fr))`
+            }}
+          >
             {wallpapers.map((wallpaper) => (
               <WallpaperCard
                 key={wallpaper.id}
@@ -1063,7 +1182,11 @@ export default function LibraryView() {
                 selected={selectedIds.has(wallpaper.id)}
                 lweInstalled={lweStatus?.installed ?? false}
                 isLiked={votedSet.has(wallpaper.id)}
+                isBackupConfigured={isBackupConfigured}
                 onApplied={() =>
+                  queryClient.invalidateQueries({ queryKey: ['library'] })
+                }
+                onBackedUp={() =>
                   queryClient.invalidateQueries({ queryKey: ['library'] })
                 }
                 onLiked={() => {
@@ -1146,6 +1269,15 @@ export default function LibraryView() {
             <div className="px-3 py-1 text-xs text-gray-600 border-b border-white/5 mb-1">
               {ctxMenu.ids.length} items selected
             </div>
+          )}
+
+          {ctxHasBackupable && isBackupConfigured && (
+            <button
+              onClick={ctxBackup}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+            >
+              <Archive size={12} /> Backup
+            </button>
           )}
 
           <button

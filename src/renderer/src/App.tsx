@@ -2,11 +2,12 @@ import { useState, useEffect, Component, type ReactNode } from 'react'
 import Sidebar from './components/layout/Sidebar'
 import WorkshopBrowser from './components/workshop/WorkshopBrowser'
 import LibraryView from './components/library/LibraryView'
+import PlaylistsView from './components/playlist/PlaylistsView'
 import SettingsView from './components/settings/SettingsView'
 import SetupScreen from './components/setup/SetupScreen'
 import StatusBar from './components/layout/StatusBar'
 
-type View = 'workshop' | 'library' | 'settings'
+type View = 'workshop' | 'library' | 'playlists' | 'settings'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null }
@@ -58,6 +59,7 @@ export default function App() {
           <main className="flex-1 overflow-hidden">
             {activeView === 'workshop' && <WorkshopBrowser />}
             {activeView === 'library' && <LibraryView />}
+            {activeView === 'playlists' && <PlaylistsView />}
             {activeView === 'settings' && <SettingsView />}
           </main>
         </div>

@@ -48,10 +48,11 @@ export function restartWatcher(): void {
       if (!isDirectory) return
 
       console.log('[Watcher] New wallpaper detected:', filename)
-      const meta = importWallpaperById(filename)
-      if (meta && watcherWin && !watcherWin.isDestroyed()) {
-        watcherWin.webContents.send(IpcChannels.EVENT_WALLPAPER_IMPORTED, meta)
-      }
+      importWallpaperById(filename).then((meta) => {
+        if (meta && watcherWin && !watcherWin.isDestroyed()) {
+          watcherWin.webContents.send(IpcChannels.EVENT_WALLPAPER_IMPORTED, meta)
+        }
+      })
     }, 1000)
   })
 }

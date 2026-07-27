@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw } from 'lucide-react'
+import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power } from 'lucide-react'
 import type { LweStatus, LweInstallProgress, LinuxDistro } from '../../../../shared/types'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
@@ -34,6 +34,19 @@ export default function SettingsView() {
   // Desktop icons overlay
   const [desktopIconsEnabled, setDesktopIconsEnabled] = useState(false)
 
+  // Backup
+  const [backupPath, setBackupPath] = useState('')
+  const [backupSaved, setBackupSaved] = useState(false)
+  const [autoUnsubscribeAfterBackup, setAutoUnsubscribeAfterBackup] = useState(false)
+
+  // System tray & autostart
+  const [trayEnabled, setTrayEnabled] = useState(false)
+  const [autostartSupported, setAutostartSupported] = useState(false)
+  const [autostartEnabled, setAutostartEnabledState] = useState(false)
+  const [autostartMinimized, setAutostartMinimized] = useState(false)
+  const [autostartPlaylistId, setAutostartPlaylistId] = useState<string | null>(null)
+  const [playlists, setPlaylists] = useState<{ id: string; title: string }[]>([])
+
   useEffect(() => {
     window.electronAPI.config.get().then((cfg) => {
       setWorkshopPath(cfg.workshopPath ?? cfg.defaultWorkshopPath)
@@ -41,10 +54,18 @@ export default function SettingsView() {
       setLweRepoUrl(cfg.lweRepoUrl ?? '')
       setLweRepoBranch(cfg.lweRepoBranch ?? '')
       setDefaultLweRepo(cfg.defaultLweRepoUrl)
+      setBackupPath(cfg.backupPath ?? '')
+      setAutoUnsubscribeAfterBackup(cfg.autoUnsubscribeAfterBackup)
+      setTrayEnabled(cfg.trayEnabled)
+      setAutostartSupported(cfg.autostartSupported)
+      setAutostartEnabledState(cfg.autostartEnabled)
+      setAutostartMinimized(cfg.autostartMinimized)
+      setAutostartPlaylistId(cfg.autostartPlaylistId)
     })
     window.electronAPI.lwe.status().then(setLweStatus)
     window.electronAPI.lwe.detectDistro().then(setDistro)
     window.electronAPI.desktopIcons.getEnabled().then(setDesktopIconsEnabled)
+    window.electronAPI.playlist.getAll().then((all) => setPlaylists(all.map((p) => ({ id: p.id, title: p.title }))))
   }, [])
 
   // Listen for install progress events
@@ -163,6 +184,46 @@ export default function SettingsView() {
     await window.electronAPI.desktopIcons.setEnabled(newVal)
   }
 
+  async function handleBrowseBackup() {
+    const picked = await window.electronAPI.config.pickFolder()
+    if (picked) {
+      setBackupPath(picked)
+      setBackupSaved(false)
+    }
+  }
+
+  async function handleSaveBackup() {
+    await window.electronAPI.config.setBackupPath(backupPath)
+    setBackupSaved(true)
+    setTimeout(() => setBackupSaved(false), 2000)
+  }
+
+  async function handleAutoUnsubscribeToggle() {
+    const newVal = !autoUnsubscribeAfterBackup
+    setAutoUnsubscribeAfterBackup(newVal)
+    await window.electronAPI.config.setAutoUnsubscribeAfterBackup(newVal)
+  }
+
+  async function handleTrayToggle() {
+    const newVal = !trayEnabled
+    setTrayEnabled(newVal)
+    await window.electronAPI.config.setTrayEnabled(newVal)
+  }
+
+  async function saveAutostart(patch: {
+    enabled?: boolean
+    minimized?: boolean
+    playlistId?: string | null
+  }) {
+    const enabled = patch.enabled ?? autostartEnabled
+    const minimized = patch.minimized ?? autostartMinimized
+    const playlistId = 'playlistId' in patch ? patch.playlistId! : autostartPlaylistId
+    setAutostartEnabledState(enabled)
+    setAutostartMinimized(minimized)
+    setAutostartPlaylistId(playlistId)
+    await window.electronAPI.config.setAutostart(enabled, minimized, playlistId)
+  }
+
   const isBusy = lweInstalling || depsInstalling || uninstalling
 
   return (
@@ -204,6 +265,64 @@ export default function SettingsView() {
             <Save size={14} />
             {saved ? 'Saved!' : 'Save'}
           </button>
+        </div>
+
+        {/* Backup folder */}
+        <div>
+          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+            Backup folder
+          </label>
+          <p className="mt-1 text-xs text-gray-600">
+            Local folder for keeping your own copies of wallpapers, independent of the
+            Steam Workshop. Point this at an existing folder to load wallpapers already
+            backed up there.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <input
+              type="text"
+              value={backupPath}
+              onChange={(e) => {
+                setBackupPath(e.target.value)
+                setBackupSaved(false)
+              }}
+              placeholder="Not configured"
+              className="flex-1 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+            <button
+              onClick={handleBrowseBackup}
+              className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10"
+            >
+              <FolderOpen size={16} />
+              Browse
+            </button>
+          </div>
+          <button
+            onClick={handleSaveBackup}
+            disabled={!backupPath}
+            className="mt-3 flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+          >
+            <Save size={14} />
+            {backupSaved ? 'Saved!' : 'Save'}
+          </button>
+
+          <label className="mt-4 flex items-center gap-3 cursor-pointer">
+            <button
+              onClick={handleAutoUnsubscribeToggle}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                autoUnsubscribeAfterBackup ? 'bg-indigo-600' : 'bg-white/10'
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  autoUnsubscribeAfterBackup ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+            <span className="flex items-center gap-2 text-sm text-gray-300">
+              <Archive size={16} />
+              Unsubscribe from Steam Workshop after backup
+            </span>
+          </label>
         </div>
 
         {/* LWE launch options */}
@@ -496,6 +615,100 @@ export default function SettingsView() {
               {desktopIconsEnabled ? 'Desktop icons visible' : 'Desktop icons hidden'}
             </span>
           </label>
+        </div>
+
+        {/* System tray & startup */}
+        <div>
+          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+            System Tray &amp; Startup
+          </label>
+          <p className="mt-1 text-xs text-gray-600">
+            Keep WE Manager running in the background and optionally launch it automatically.
+          </p>
+
+          <label className="mt-3 flex items-center gap-3 cursor-pointer">
+            <button
+              onClick={handleTrayToggle}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                trayEnabled ? 'bg-indigo-600' : 'bg-white/10'
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  trayEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+            <span className="flex items-center gap-2 text-sm text-gray-300">
+              <LayoutGrid size={16} />
+              Enable system tray (closing the window minimizes to tray instead of quitting)
+            </span>
+          </label>
+
+          <div className="mt-4 space-y-3">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <button
+                onClick={() => autostartSupported && saveAutostart({ enabled: !autostartEnabled })}
+                disabled={!autostartSupported}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-40 ${
+                  autostartEnabled ? 'bg-indigo-600' : 'bg-white/10'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                    autostartEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+              <span className="flex items-center gap-2 text-sm text-gray-300">
+                <Power size={16} />
+                Launch on system startup
+              </span>
+            </label>
+            {!autostartSupported && (
+              <p className="text-xs text-yellow-500/80">
+                Only available in a packaged build (AppImage/deb), not in development mode.
+              </p>
+            )}
+
+            <label className="flex items-center gap-3 cursor-pointer pl-12">
+              <button
+                onClick={() =>
+                  trayEnabled && autostartEnabled && saveAutostart({ minimized: !autostartMinimized })
+                }
+                disabled={!trayEnabled || !autostartEnabled}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-40 ${
+                  autostartMinimized ? 'bg-indigo-600' : 'bg-white/10'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                    autostartMinimized ? 'translate-x-4' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+              <span className="text-sm text-gray-300">
+                Start minimized to tray
+                {!trayEnabled && <span className="text-gray-600"> (enable system tray first)</span>}
+              </span>
+            </label>
+
+            <div className="pl-12">
+              <label className="block text-xs text-gray-400 mb-1">Auto-play playlist on startup</label>
+              <select
+                value={autostartPlaylistId ?? ''}
+                onChange={(e) => saveAutostart({ playlistId: e.target.value || null })}
+                className="w-56 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 [&>option]:bg-[#1a1a1a] [&>option]:text-gray-200"
+              >
+                <option value="">None</option>
+                {playlists.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
       </div>
     </div>

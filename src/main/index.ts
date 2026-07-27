@@ -6,6 +6,12 @@ import { initLibrary } from './services/library.service'
 import { startWatcher } from './services/watcher.service'
 import { registerAllHandlers } from './ipc'
 import { initDesktopIcons, cleanupDesktopIcons } from './services/desktop-icons.service'
+import { getTrayEnabled, getAutostartPlaylistId } from './services/config.service'
+import { createTray } from './services/tray.service'
+import { initPlaylistPlayer, startPlaylist } from './services/playlist-player.service'
+
+const startMinimized = process.argv.includes('--minimized')
+let isQuitting = false
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -15,6 +21,7 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     backgroundColor: '#0f0f0f',
     titleBarStyle: 'hiddenInset',
+    show: !(startMinimized && getTrayEnabled()),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -26,6 +33,15 @@ function createWindow(): BrowserWindow {
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  // When the tray is enabled, closing the window hides it instead of quitting so the
+  // tray icon remains the only way back in (and the app keeps running for playlists).
+  win.on('close', (event) => {
+    if (getTrayEnabled() && !isQuitting) {
+      event.preventDefault()
+      win.hide()
+    }
   })
 
   if (process.env.NODE_ENV === 'development' && process.env['ELECTRON_RENDERER_URL']) {
@@ -55,6 +71,22 @@ app.whenReady().then(() => {
   registerAllHandlers(win)
   startWatcher(win)
   initDesktopIcons()
+  const resumed = initPlaylistPlayer(win)
+
+  if (getTrayEnabled()) createTray(win)
+
+  const autostartPlaylistId = getAutostartPlaylistId()
+  if (!resumed && autostartPlaylistId) {
+    try {
+      startPlaylist(autostartPlaylistId)
+    } catch (err) {
+      console.error('[App] Failed to autostart playlist:', err)
+    }
+  }
+})
+
+app.on('before-quit', () => {
+  isQuitting = true
 })
 
 app.on('window-all-closed', () => {
@@ -65,5 +97,7 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow()
+  } else {
+    BrowserWindow.getAllWindows()[0].show()
   }
 })

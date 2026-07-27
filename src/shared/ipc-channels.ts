@@ -48,10 +48,41 @@ export const IpcChannels = {
   CONFIG_SET_WORKSHOP_PATH: 'config:set-workshop-path',
   CONFIG_SET_DEFAULT_FPS: 'config:set-default-fps',
   CONFIG_SET_LWE_REPO: 'config:set-lwe-repo',
+  CONFIG_SET_BACKUP_PATH: 'config:set-backup-path',
+  CONFIG_SET_AUTO_UNSUBSCRIBE: 'config:set-auto-unsubscribe',
   CONFIG_PICK_FOLDER: 'config:pick-folder',
   CONFIG_PICK_FILE: 'config:pick-file',
   CONFIG_IMPORT_WE: 'config:import-we',
   CONFIG_CREATE_FRESH: 'config:create-fresh',
+
+  // Backup
+  BACKUP_ITEM: 'backup:item',
+  BACKUP_SELECTION: 'backup:selection',
+  BACKUP_SCAN: 'backup:scan',
+
+  // Playlists
+  PLAYLIST_GET_ALL: 'playlist:get-all',
+  PLAYLIST_GET_ONE: 'playlist:get-one',
+  PLAYLIST_CREATE: 'playlist:create',
+  PLAYLIST_RENAME: 'playlist:rename',
+  PLAYLIST_DELETE: 'playlist:delete',
+  PLAYLIST_UPDATE_SETTINGS: 'playlist:update-settings',
+  PLAYLIST_ADD_ITEMS: 'playlist:add-items',
+  PLAYLIST_REMOVE_ITEMS: 'playlist:remove-items',
+  PLAYLIST_REORDER_ITEMS: 'playlist:reorder-items',
+  PLAYLIST_UPDATE_ITEM: 'playlist:update-item',
+  PLAYLIST_START: 'playlist:start',
+  PLAYLIST_STOP: 'playlist:stop',
+  PLAYLIST_PAUSE: 'playlist:pause',
+  PLAYLIST_RESUME: 'playlist:resume',
+  PLAYLIST_NEXT: 'playlist:next',
+  PLAYLIST_PREVIOUS: 'playlist:previous',
+  PLAYLIST_GET_STATE: 'playlist:get-state',
+
+  // Tray & autostart
+  CONFIG_SET_TRAY_ENABLED: 'config:set-tray-enabled',
+  CONFIG_SET_AUTOSTART: 'config:set-autostart',
+  CONFIG_GET_AUTOSTART_SUPPORTED: 'config:get-autostart-supported',
 
   // Shell operations
   SHELL_OPEN_PATH: 'shell:open-path',
@@ -76,7 +107,9 @@ export const IpcChannels = {
   EVENT_DOWNLOAD_PROGRESS: 'event:download-progress',
   EVENT_WALLPAPER_IMPORTED: 'event:wallpaper-imported',
   EVENT_STEAM_STATUS: 'event:steam-status',
-  EVENT_LWE_INSTALL_PROGRESS: 'event:lwe-install-progress'
+  EVENT_LWE_INSTALL_PROGRESS: 'event:lwe-install-progress',
+  EVENT_BACKUP_PROGRESS: 'event:backup-progress',
+  EVENT_PLAYLIST_STATE_CHANGED: 'event:playlist-state-changed'
 } as const
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]

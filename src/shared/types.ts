@@ -39,11 +39,12 @@ export interface WallpaperMeta {
   lastAppliedAt?: number
   authorSteamId?: string
   authorName?: string
-  source: 'workshop' | 'local'
+  source: 'workshop' | 'local' | 'backup'
   tags: string[]
   categories: string[]
   downloading?: boolean
   fpsOverride?: number
+  backedUp?: boolean
 }
 
 export interface WorkshopItem {
@@ -126,4 +127,49 @@ export interface LweInstallProgress {
   stage: 'installing-deps' | 'cloning' | 'building' | 'installing' | 'done' | 'error'
   message: string
   percentage: number
+}
+
+export interface BackupProgressEvent {
+  itemId: string
+  bytesCopied: number
+  bytesTotal: number
+  percentage: number
+  status: 'copying' | 'completed' | 'error'
+  message?: string
+}
+
+export interface PlaylistItem {
+  wallpaperId: string
+  /** 0-100, overrides the playlist's defaultVolume when set */
+  volume?: number
+  /** Overrides the playlist's defaultDurationSec when set */
+  durationSec?: number
+}
+
+export interface PlaylistSettings {
+  /** Shuffle playback order; reshuffled every time the playlist loops back to the start */
+  randomize: boolean
+  /** Base ordering when randomize is off; 'manual' respects PlaylistItem[] order */
+  sortBy: 'manual' | 'title' | 'createdAt'
+  /** How long each wallpaper plays before advancing, in seconds */
+  defaultDurationSec: number
+  /** 0-100, used for items without a per-item volume override */
+  defaultVolume: number
+}
+
+export interface Playlist {
+  id: string
+  title: string
+  items: PlaylistItem[]
+  settings: PlaylistSettings
+  createdAt: number
+  updatedAt: number
+}
+
+export interface PlaylistPlaybackState {
+  playlistId: string | null
+  currentItemId: string | null
+  currentIndex: number
+  isPlaying: boolean
+  order: string[]
 }

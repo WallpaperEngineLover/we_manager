@@ -1,9 +1,12 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import * as os from 'os'
+import * as fs from 'fs'
+import * as path from 'path'
 import { detectDisplayServer, detectDesktopEnv, isCommandAvailable } from '../utils/platform'
-import type { WallpaperBackend, WallpaperEnvironment } from '@shared/types'
-import { getLweStatus } from './lwe.service'
+import type { WallpaperBackend, WallpaperEnvironment, WallpaperMeta } from '@shared/types'
+import { getLweStatus, launchLweAsync } from './lwe.service'
+import { getDefaultFps } from './config.service'
 
 const execFileAsync = promisify(execFile)
 
@@ -166,4 +169,52 @@ async function applyWindows(imagePath: string): Promise<void> {
   await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], {
     env: { ...process.env, WE_WALLPAPER_PATH: imagePath }
   })
+}
+
+function findWallpaperImage(dirPath: string): string {
+  if (!fs.existsSync(dirPath)) {
+    throw new Error(`Directory not found: ${dirPath}`)
+  }
+  if (!fs.statSync(dirPath).isDirectory()) {
+    return dirPath
+  }
+
+  const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
+  const files = fs.readdirSync(dirPath)
+
+  const preview = files.find((f) => f.toLowerCase().startsWith('preview'))
+  if (preview && imageExtensions.includes(path.extname(preview).toLowerCase())) {
+    return path.join(dirPath, preview)
+  }
+
+  const image = files.find((f) => imageExtensions.includes(path.extname(f).toLowerCase()))
+  if (image) return path.join(dirPath, image)
+
+  throw new Error(`No image found in ${dirPath}`)
+}
+
+/**
+ * Apply a library wallpaper: renders animated/scene/web/video wallpapers via
+ * linux-wallpaperengine when available, otherwise falls back to a static image.
+ * Shared by the manual "apply" IPC handler and the playlist playback engine.
+ */
+export async function applyWallpaperMeta(
+  wallpaper: WallpaperMeta,
+  options: { fps?: number; volume?: number; backend?: WallpaperBackend } = {}
+): Promise<string> {
+  if (!wallpaper.localPath) throw new Error(`Wallpaper ${wallpaper.id} has no local path`)
+
+  const isAnimated = wallpaper.type === 'scene' || wallpaper.type === 'web' || wallpaper.type === 'video'
+  const lwe = getLweStatus()
+
+  if (isAnimated && os.platform() === 'linux' && lwe.installed) {
+    const fps = options.fps ?? wallpaper.fpsOverride ?? getDefaultFps() ?? undefined
+    await launchLweAsync(wallpaper.localPath, { fps, volume: options.volume })
+    return wallpaper.localPath
+  }
+
+  // Static fallback: set the preview image as a plain wallpaper
+  const appliedPath = findWallpaperImage(wallpaper.localPath)
+  await applyWallpaper(appliedPath, options.backend)
+  return appliedPath
 }

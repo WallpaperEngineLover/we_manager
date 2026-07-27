@@ -470,10 +470,10 @@ function buildLweEnvVars(): string[] {
   return vars
 }
 
-/** Build the common LWE args (assets dir, screen roots, fps). */
+/** Build the common LWE args (assets dir, screen roots, fps, volume). */
 function buildLweArgs(
   wallpaperPath: string,
-  options: { screenRoot?: string; fps?: number }
+  options: { screenRoot?: string; fps?: number; volume?: number }
 ): string[] {
   const args: string[] = []
   const assetsDir = findWeAssetsDir()
@@ -488,6 +488,7 @@ function buildLweArgs(
   }
 
   if (options.fps) args.push('--fps', String(options.fps))
+  if (options.volume !== undefined) args.push('--volume', String(options.volume))
   args.push(wallpaperPath)
   return args
 }
@@ -515,7 +516,7 @@ function hotReloadLwe(wallpaperPath: string): boolean {
 /** Launch LWE and resolve after 2s if still running; reject if it exits with error (so UI can show message). */
 export function launchLweAsync(
   wallpaperPath: string,
-  options: { screenRoot?: string; fps?: number } = {}
+  options: { screenRoot?: string; fps?: number; volume?: number } = {}
 ): Promise<void> {
   // Hot-reload if already running
   if (isLweRunning() && hotReloadLwe(wallpaperPath)) {

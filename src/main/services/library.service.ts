@@ -4,6 +4,8 @@ import { getWorkshopPath } from '../utils/paths'
 import * as path from 'path'
 import * as fs from 'fs'
 import { randomUUID } from 'crypto'
+import { cleanupPlaylists } from './playlist.service'
+import { getWorkshopTimesUpdated } from './workshop.service'
 
 interface LibraryStore {
   wallpapers: Record<string, WallpaperMeta>
@@ -85,10 +87,11 @@ export function upsertWallpaper(meta: WallpaperMeta): void {
   store.set('wallpapers', wallpapers)
 }
 
+// updatedAt tracks the workshop item's own timestamp (set in buildMeta), not local edits.
 export function updateWallpaper(id: string, patch: Partial<WallpaperMeta>): void {
   const current = getWallpaper(id)
   if (!current) throw new Error(`Wallpaper ${id} not found`)
-  upsertWallpaper({ ...current, ...patch, updatedAt: Date.now() })
+  upsertWallpaper({ ...current, ...patch, updatedAt: current.updatedAt })
 }
 
 export function deleteWallpaper(id: string): void {
@@ -144,7 +147,7 @@ export function getDistinctTags(): string[] {
   return [...set].sort()
 }
 
-interface ProjectJson {
+export interface ProjectJson {
   title?: string
   type?: string
   file?: string
@@ -155,7 +158,7 @@ interface ProjectJson {
   workshopid?: string
 }
 
-function readProjectJson(localPath: string): ProjectJson | null {
+export function readProjectJson(localPath: string): ProjectJson | null {
   try {
     const raw = fs.readFileSync(path.join(localPath, 'project.json'), 'utf8')
     return JSON.parse(raw) as ProjectJson
@@ -164,7 +167,7 @@ function readProjectJson(localPath: string): ProjectJson | null {
   }
 }
 
-function normalizeType(raw?: string): WallpaperType {
+export function normalizeType(raw?: string): WallpaperType {
   switch (raw?.toLowerCase()) {
     case 'video': return 'video'
     case 'web': return 'web'
@@ -173,7 +176,7 @@ function normalizeType(raw?: string): WallpaperType {
   }
 }
 
-function normalizeRating(raw?: string): ContentRating {
+export function normalizeRating(raw?: string): ContentRating {
   switch (raw?.toLowerCase()) {
     case 'questionable': return 'questionable'
     case 'mature': return 'mature'
@@ -181,7 +184,7 @@ function normalizeRating(raw?: string): ContentRating {
   }
 }
 
-function getDirSize(dirPath: string): number {
+export function getDirSize(dirPath: string): number {
   let total = 0
   try {
     for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
@@ -196,11 +199,20 @@ function getDirSize(dirPath: string): number {
   return total
 }
 
+async function safeGetWorkshopTimesUpdated(ids: string[]): Promise<Map<string, number>> {
+  try {
+    return await getWorkshopTimesUpdated(ids)
+  } catch {
+    return new Map()
+  }
+}
+
 function buildMeta(
   workshopId: string,
   localPath: string,
   pj: ProjectJson | null,
-  existing?: WallpaperMeta
+  existing?: WallpaperMeta,
+  workshopTimeUpdated?: number
 ): WallpaperMeta {
   const now = Date.now()
   const { downloading: _d, ...existingRest } = existing ?? { appliedCount: 0, categories: [] }
@@ -217,23 +229,30 @@ function buildMeta(
     file: pj?.file,
     fileSize: getDirSize(localPath),
     createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
+    updatedAt: workshopTimeUpdated ? workshopTimeUpdated * 1000 : (existing?.updatedAt ?? now),
     subscribed: true,
     source: 'workshop',
     tags: pj?.tags ?? existing?.tags ?? []
   }
 }
 
-export function importWallpaperById(workshopId: string): WallpaperMeta | null {
+export async function importWallpaperById(workshopId: string): Promise<WallpaperMeta | null> {
   const localPath = path.join(getWorkshopPath(), workshopId)
   if (!fs.existsSync(localPath)) return null
 
-  const meta = buildMeta(workshopId, localPath, readProjectJson(localPath), getWallpaper(workshopId) ?? undefined)
+  const timesUpdated = await safeGetWorkshopTimesUpdated([workshopId])
+  const meta = buildMeta(
+    workshopId,
+    localPath,
+    readProjectJson(localPath),
+    getWallpaper(workshopId) ?? undefined,
+    timesUpdated.get(workshopId)
+  )
   upsertWallpaper(meta)
   return meta
 }
 
-export function scanLibrary(): { imported: number; skipped: number; removed: number } {
+export async function scanLibrary(): Promise<{ imported: number; skipped: number; removed: number }> {
   const workshopPath = getWorkshopPath()
   if (!fs.existsSync(workshopPath)) return { imported: 0, skipped: 0, removed: 0 }
 
@@ -254,6 +273,8 @@ export function scanLibrary(): { imported: number; skipped: number; removed: num
     }
   }
 
+  const toRebuild: { entry: fs.Dirent; localPath: string; pj: ProjectJson }[] = []
+  const cacheHits: string[] = []
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
 
@@ -286,25 +307,54 @@ export function scanLibrary(): { imported: number; skipped: number; removed: num
       continue
     }
 
-    // Skip already-imported entries that have all required fields (cache hit)
+    // Skip already-imported entries that have all required fields (cache hit),
+    // but still track them so their updatedAt can be resynced with Steam below.
     const existing = wallpapers[entry.name]
     if (!existing?.downloading && existing?.previewLocal !== undefined && existing?.contentRating !== undefined && existing?.fileSize !== undefined) {
+      cacheHits.push(entry.name)
       skipped++
       continue
     }
 
-    wallpapers[entry.name] = buildMeta(entry.name, localPath, pj, existing ?? undefined)
+    toRebuild.push({ entry, localPath, pj })
+  }
+
+  const timesUpdated = await safeGetWorkshopTimesUpdated([
+    ...toRebuild.map(({ entry }) => entry.name),
+    ...cacheHits
+  ])
+
+  for (const { entry, localPath, pj } of toRebuild) {
+    wallpapers[entry.name] = buildMeta(
+      entry.name,
+      localPath,
+      pj,
+      wallpapers[entry.name] ?? undefined,
+      timesUpdated.get(entry.name)
+    )
     imported++
   }
 
-  if (imported > 0 || removed > 0) {
+  let resynced = false
+  for (const id of cacheHits) {
+    const seconds = timesUpdated.get(id)
+    if (seconds === undefined) continue
+    const newUpdatedAt = seconds * 1000
+    if (wallpapers[id].updatedAt !== newUpdatedAt) {
+      wallpapers[id] = { ...wallpapers[id], updatedAt: newUpdatedAt }
+      resynced = true
+    }
+  }
+
+  if (imported > 0 || removed > 0 || resynced) {
     store.set('wallpapers', wallpapers)
   }
 
   console.log(`[Library] Scan complete: ${imported} imported, ${skipped} skipped, ${removed} removed`)
 
-  // Auto-cleanup folder items that reference non-existent wallpapers
+  // Auto-cleanup folder/playlist items that reference non-existent wallpapers
   cleanupFolders()
+  cleanupPlaylists(new Set(Object.keys(wallpapers)))
 
   return { imported, skipped, removed }
 }

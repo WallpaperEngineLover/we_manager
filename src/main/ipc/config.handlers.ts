@@ -10,12 +10,26 @@ import {
   getLweRepoBranch,
   setLweRepo,
   importWEConfigFile,
-  createFreshConfig
+  createFreshConfig,
+  getConfiguredBackupPath,
+  setConfiguredBackupPath,
+  isBackupPathConfigured,
+  getAutoUnsubscribeAfterBackup,
+  setAutoUnsubscribeAfterBackup,
+  getTrayEnabled,
+  setTrayEnabled,
+  getAutostartEnabled,
+  getAutostartMinimized,
+  setAutostart,
+  getAutostartPlaylistId,
+  setAutostartPlaylistId
 } from '../services/config.service'
 import { getDefaultWorkshopPath } from '../utils/paths'
 import { DEFAULT_LWE_REPO } from '@shared/constants'
 import { restartWatcher } from '../services/watcher.service'
 import { importWEConfig } from '../services/library.service'
+import { createTray, destroyTray } from '../services/tray.service'
+import { isAutostartSupported, setAutostartEnabled } from '../services/autostart.service'
 
 export function registerConfigHandlers(): void {
   ipcMain.handle(IpcChannels.CONFIG_GET, () => ({
@@ -25,8 +39,49 @@ export function registerConfigHandlers(): void {
     defaultFps: getDefaultFps(),
     lweRepoUrl: getLweRepoUrl(),
     lweRepoBranch: getLweRepoBranch(),
-    defaultLweRepoUrl: DEFAULT_LWE_REPO
+    defaultLweRepoUrl: DEFAULT_LWE_REPO,
+    backupPath: getConfiguredBackupPath(),
+    isBackupConfigured: isBackupPathConfigured(),
+    autoUnsubscribeAfterBackup: getAutoUnsubscribeAfterBackup(),
+    trayEnabled: getTrayEnabled(),
+    autostartSupported: isAutostartSupported(),
+    autostartEnabled: getAutostartEnabled(),
+    autostartMinimized: getAutostartMinimized(),
+    autostartPlaylistId: getAutostartPlaylistId()
   }))
+
+  ipcMain.handle(IpcChannels.CONFIG_GET_AUTOSTART_SUPPORTED, () => isAutostartSupported())
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_TRAY_ENABLED, (_e, enabled: boolean) => {
+    setTrayEnabled(enabled)
+    if (enabled) {
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win) createTray(win)
+    } else {
+      destroyTray()
+    }
+    return { ok: true }
+  })
+
+  ipcMain.handle(
+    IpcChannels.CONFIG_SET_AUTOSTART,
+    (_e, enabled: boolean, minimized: boolean, playlistId: string | null) => {
+      setAutostart(enabled, minimized)
+      setAutostartPlaylistId(playlistId)
+      setAutostartEnabled(enabled, minimized)
+      return { ok: true }
+    }
+  )
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_BACKUP_PATH, (_e, newPath: string) => {
+    setConfiguredBackupPath(newPath)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_AUTO_UNSUBSCRIBE, (_e, enabled: boolean) => {
+    setAutoUnsubscribeAfterBackup(enabled)
+    return { ok: true }
+  })
 
   ipcMain.handle(IpcChannels.CONFIG_SET_DEFAULT_FPS, (_e, fps: number | null) => {
     setDefaultFps(fps)

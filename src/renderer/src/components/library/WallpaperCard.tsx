@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Play, Loader2, Check, ThumbsUp, Trash2, ExternalLink, Download } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Play, Loader2, Check, ThumbsUp, Trash2, ExternalLink, Download, Archive } from 'lucide-react'
 import type { WallpaperMeta } from '@shared/types'
 import clsx from 'clsx'
 
@@ -8,9 +8,11 @@ interface WallpaperCardProps {
   selected?: boolean
   lweInstalled?: boolean
   isLiked?: boolean
+  isBackupConfigured?: boolean
   onApplied?: () => void
   onLiked?: () => void
   onUnsubscribed?: () => void
+  onBackedUp?: () => void
   onSelect?: (e: React.MouseEvent) => void
   onContextMenu?: (e: React.MouseEvent) => void
 }
@@ -20,9 +22,11 @@ export default function WallpaperCard({
   selected,
   lweInstalled,
   isLiked = false,
+  isBackupConfigured = false,
   onApplied,
   onLiked,
   onUnsubscribed,
+  onBackedUp,
   onSelect,
   onContextMenu
 }: WallpaperCardProps) {
@@ -31,6 +35,21 @@ export default function WallpaperCard({
   const [unsubState, setUnsubState] = useState<'idle' | 'confirm' | 'pending'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [fpsInput, setFpsInput] = useState(wallpaper.fpsOverride != null ? String(wallpaper.fpsOverride) : '')
+  const [isBackingUp, setIsBackingUp] = useState(false)
+  const [backupPercentage, setBackupPercentage] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!isBackingUp) return
+    return window.electronAPI.on.backupProgress((progress) => {
+      if (progress.itemId !== wallpaper.id) return
+      if (progress.status === 'copying') {
+        setBackupPercentage(progress.percentage)
+      } else {
+        setIsBackingUp(false)
+        setBackupPercentage(null)
+      }
+    })
+  }, [isBackingUp, wallpaper.id])
 
   async function handleApply(e: React.MouseEvent) {
     e.stopPropagation()
@@ -67,6 +86,21 @@ export default function WallpaperCard({
     const current = wallpaper.fpsOverride
     if ((parsed ?? undefined) === current) return
     window.electronAPI.library.update(wallpaper.id, { fpsOverride: parsed })
+  }
+
+  async function handleBackup(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (isBackingUp) return
+    setIsBackingUp(true)
+    setError(null)
+    try {
+      await window.electronAPI.backup.item(wallpaper.id)
+      onBackedUp?.()
+    } catch (err) {
+      setError((err as Error).message)
+      setIsBackingUp(false)
+      setBackupPercentage(null)
+    }
   }
 
   async function handleUnsubscribeClick(e: React.MouseEvent) {
@@ -135,6 +169,14 @@ export default function WallpaperCard({
             <span className="text-xs text-gray-300">Downloading...</span>
           </div>
         )}
+        {(wallpaper.backedUp || wallpaper.source === 'backup') && (
+          <div
+            className="absolute bottom-2 right-2 flex h-5 w-5 items-center justify-center rounded bg-black/60 text-indigo-300"
+            title="Backed up locally"
+          >
+            <Archive size={12} />
+          </div>
+        )}
       </div>
 
       <div className="p-3">
@@ -180,6 +222,17 @@ export default function WallpaperCard({
             {isLiking ? <Loader2 size={11} className="animate-spin" /> : <ThumbsUp size={11} />}
             {isLiked ? 'Liked' : 'Like'}
           </button>
+          {wallpaper.source === 'workshop' && isBackupConfigured && (
+            <button
+              onClick={handleBackup}
+              disabled={isBackingUp}
+              title={wallpaper.backedUp ? 'Back up again' : 'Back up locally'}
+              className="flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isBackingUp ? <Loader2 size={11} className="animate-spin" /> : <Archive size={11} />}
+              {isBackingUp && backupPercentage != null ? `${backupPercentage}%` : 'Backup'}
+            </button>
+          )}
           {unsubState === 'confirm' ? (
             <div className="flex items-center gap-1">
               <span className="text-xs text-gray-400">Sure?</span>

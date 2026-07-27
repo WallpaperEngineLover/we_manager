@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { Search, Loader2, SlidersHorizontal, X, ChevronDown, ChevronRight } from 'lucide-react'
 import WorkshopCard from './WorkshopCard'
+import PreviewSizeToggle from '../common/PreviewSizeToggle'
 import type { WorkshopQueryType } from '@shared/types'
 import clsx from 'clsx'
 import {
@@ -12,6 +13,7 @@ import {
   WE_RESOLUTION_GROUPS,
   WE_GENRES
 } from '../../constants/weFilters'
+import { usePreviewSize, PREVIEW_SIZE_MIN_PX } from '../../hooks/usePreviewSize'
 
 const STORAGE_KEY = 'we-workshop-filters'
 const STORAGE_VERSION = 2
@@ -142,6 +144,7 @@ export default function WorkshopBrowser() {
   const ctxRef = useRef<HTMLDivElement>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  const [previewSize, setPreviewSize] = usePreviewSize()
 
   // Close context menu on outside click (mousedown so right-click on another card works)
   useEffect(() => {
@@ -362,6 +365,7 @@ export default function WorkshopBrowser() {
           <option value="RankedByTotalUniqueSubscriptions">Most Subscribed</option>
           <option value="RankedByLastUpdatedDate">Recently Updated</option>
         </select>
+        <PreviewSizeToggle value={previewSize} onChange={setPreviewSize} />
         {activeCount > 0 && (
           <button
             onClick={clearAll}
@@ -560,7 +564,12 @@ export default function WorkshopBrowser() {
               No results found
             </div>
           )}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
+          <div
+            className="grid gap-4"
+            style={{
+              gridTemplateColumns: `repeat(auto-fill, minmax(${PREVIEW_SIZE_MIN_PX[previewSize]}px, 1fr))`
+            }}
+          >
             {paginatedItems.map((item) => (
               <WorkshopCard
                 key={item.publishedFileId}

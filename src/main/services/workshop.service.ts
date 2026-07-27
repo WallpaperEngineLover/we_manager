@@ -56,6 +56,20 @@ export async function getWorkshopItem(publishedFileId: string): Promise<Workshop
   return transformItem(item, subscribedSet)
 }
 
+export async function getWorkshopTimesUpdated(
+  publishedFileIds: string[]
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>()
+  if (publishedFileIds.length === 0) return map
+
+  const client = getClient()
+  const result = await client.workshop.getItems(publishedFileIds.map((id) => BigInt(id)))
+  for (const item of result.items) {
+    if (item) map.set(item.publishedFileId.toString(), item.timeUpdated)
+  }
+  return map
+}
+
 function transformItem(
   item: NonNullable<Awaited<ReturnType<ReturnType<typeof getClient>['workshop']['getItem']>>>,
   subscribedSet: Set<string>

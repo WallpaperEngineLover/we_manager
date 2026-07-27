@@ -1,7 +1,7 @@
-import { Globe, Library, Settings } from 'lucide-react'
+import { Globe, Library, ListVideo, Settings } from 'lucide-react'
 import clsx from 'clsx'
 
-type View = 'workshop' | 'library' | 'settings'
+type View = 'workshop' | 'library' | 'playlists' | 'settings'
 
 interface SidebarProps {
   activeView: View
@@ -11,7 +11,8 @@ interface SidebarProps {
 export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
   const items = [
     { id: 'workshop' as View, label: 'Workshop', icon: Globe },
-    { id: 'library' as View, label: 'Library', icon: Library }
+    { id: 'library' as View, label: 'Library', icon: Library },
+    { id: 'playlists' as View, label: 'Playlists', icon: ListVideo }
   ]
 
   return (

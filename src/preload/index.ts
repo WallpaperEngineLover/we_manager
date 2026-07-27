@@ -12,7 +12,11 @@ import type {
   WallpaperEnvironment,
   LweStatus,
   LweInstallProgress,
-  LinuxDistro
+  LinuxDistro,
+  BackupProgressEvent,
+  Playlist,
+  PlaylistSettings,
+  PlaylistPlaybackState
 } from '../shared/types'
 
 const api = {
@@ -68,14 +72,33 @@ const api = {
   },
 
   config: {
-    get: (): Promise<{ workshopPath: string | null; defaultWorkshopPath: string; isConfigured: boolean; defaultFps: number | null; lweRepoUrl: string | null; lweRepoBranch: string | null; defaultLweRepoUrl: string }> =>
-      ipcRenderer.invoke(IpcChannels.CONFIG_GET),
+    get: (): Promise<{
+      workshopPath: string | null
+      defaultWorkshopPath: string
+      isConfigured: boolean
+      defaultFps: number | null
+      lweRepoUrl: string | null
+      lweRepoBranch: string | null
+      defaultLweRepoUrl: string
+      backupPath: string | null
+      isBackupConfigured: boolean
+      autoUnsubscribeAfterBackup: boolean
+      trayEnabled: boolean
+      autostartSupported: boolean
+      autostartEnabled: boolean
+      autostartMinimized: boolean
+      autostartPlaylistId: string | null
+    }> => ipcRenderer.invoke(IpcChannels.CONFIG_GET),
     setWorkshopPath: (p: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_WORKSHOP_PATH, p),
     setDefaultFps: (fps: number | null): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DEFAULT_FPS, fps),
     setLweRepo: (url: string | null, branch: string | null): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_LWE_REPO, url, branch),
+    setBackupPath: (p: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_BACKUP_PATH, p),
+    setAutoUnsubscribeAfterBackup: (enabled: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_AUTO_UNSUBSCRIBE, enabled),
     pickFolder: (): Promise<string | null> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_PICK_FOLDER),
     pickFile: (): Promise<string | null> =>
@@ -83,7 +106,53 @@ const api = {
     importWE: (sourcePath: string): Promise<{ folders: number; playlists: number; configPath: string }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_IMPORT_WE, sourcePath),
     createFresh: (): Promise<{ configPath: string }> =>
-      ipcRenderer.invoke(IpcChannels.CONFIG_CREATE_FRESH)
+      ipcRenderer.invoke(IpcChannels.CONFIG_CREATE_FRESH),
+    setTrayEnabled: (enabled: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_TRAY_ENABLED, enabled),
+    setAutostart: (
+      enabled: boolean,
+      minimized: boolean,
+      playlistId: string | null
+    ): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_AUTOSTART, enabled, minimized, playlistId),
+    getAutostartSupported: (): Promise<boolean> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_GET_AUTOSTART_SUPPORTED)
+  },
+
+  playlist: {
+    getAll: (): Promise<Playlist[]> => ipcRenderer.invoke(IpcChannels.PLAYLIST_GET_ALL),
+    getOne: (id: string): Promise<Playlist | null> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_GET_ONE, id),
+    create: (title: string): Promise<Playlist> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_CREATE, title),
+    rename: (id: string, title: string): Promise<Playlist | null> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_RENAME, id, title),
+    delete: (id: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_DELETE, id),
+    updateSettings: (id: string, patch: Partial<PlaylistSettings>): Promise<Playlist | null> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_UPDATE_SETTINGS, id, patch),
+    addItems: (id: string, wallpaperIds: string[]): Promise<Playlist | null> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_ADD_ITEMS, id, wallpaperIds),
+    removeItems: (id: string, wallpaperIds: string[]): Promise<Playlist | null> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_REMOVE_ITEMS, id, wallpaperIds),
+    reorderItems: (id: string, orderedWallpaperIds: string[]): Promise<Playlist | null> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_REORDER_ITEMS, id, orderedWallpaperIds),
+    updateItem: (
+      id: string,
+      wallpaperId: string,
+      patch: { volume?: number; durationSec?: number }
+    ): Promise<Playlist | null> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_UPDATE_ITEM, id, wallpaperId, patch),
+    start: (id: string): Promise<PlaylistPlaybackState> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_START, id),
+    stop: (): Promise<PlaylistPlaybackState> => ipcRenderer.invoke(IpcChannels.PLAYLIST_STOP),
+    pause: (): Promise<PlaylistPlaybackState> => ipcRenderer.invoke(IpcChannels.PLAYLIST_PAUSE),
+    resume: (): Promise<PlaylistPlaybackState> => ipcRenderer.invoke(IpcChannels.PLAYLIST_RESUME),
+    next: (): Promise<PlaylistPlaybackState> => ipcRenderer.invoke(IpcChannels.PLAYLIST_NEXT),
+    previous: (): Promise<PlaylistPlaybackState> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_PREVIOUS),
+    getState: (): Promise<PlaylistPlaybackState> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_GET_STATE)
   },
 
   folders: {
@@ -131,6 +200,15 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LWE_STOP)
   },
 
+  backup: {
+    item: (itemId: string): Promise<{ ok: boolean; unsubscribed: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.BACKUP_ITEM, itemId),
+    selection: (itemIds: string[]): Promise<{ backedUp: number; failed: number; unsubscribed: number }> =>
+      ipcRenderer.invoke(IpcChannels.BACKUP_SELECTION, itemIds),
+    scan: (): Promise<{ imported: number; skipped: number; linked: number }> =>
+      ipcRenderer.invoke(IpcChannels.BACKUP_SCAN)
+  },
+
   desktopIcons: {
     setEnabled: (enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> =>
       ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_SET_ENABLED, enabled),
@@ -169,6 +247,16 @@ const api = {
       const listener = (_: Electron.IpcRendererEvent, progress: LweInstallProgress) => cb(progress)
       ipcRenderer.on(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, listener)
+    },
+    backupProgress: (cb: (progress: BackupProgressEvent) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, progress: BackupProgressEvent) => cb(progress)
+      ipcRenderer.on(IpcChannels.EVENT_BACKUP_PROGRESS, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_BACKUP_PROGRESS, listener)
+    },
+    playlistStateChanged: (cb: (state: PlaylistPlaybackState) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, state: PlaylistPlaybackState) => cb(state)
+      ipcRenderer.on(IpcChannels.EVENT_PLAYLIST_STATE_CHANGED, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_PLAYLIST_STATE_CHANGED, listener)
     }
   }
 }

@@ -9,6 +9,12 @@ interface AppConfig {
   defaultFps: number | null
   lweRepoUrl: string | null
   lweRepoBranch: string | null
+  backupPath: string | null
+  autoUnsubscribeAfterBackup: boolean
+  trayEnabled: boolean
+  autostartEnabled: boolean
+  autostartMinimized: boolean
+  autostartPlaylistId: string | null
 }
 
 const store = new Store<AppConfig>({
@@ -17,7 +23,13 @@ const store = new Store<AppConfig>({
     workshopPath: null,
     defaultFps: null,
     lweRepoUrl: null,
-    lweRepoBranch: null
+    lweRepoBranch: null,
+    backupPath: null,
+    autoUnsubscribeAfterBackup: false,
+    trayEnabled: false,
+    autostartEnabled: false,
+    autostartMinimized: false,
+    autostartPlaylistId: null
   }
 })
 
@@ -31,6 +43,55 @@ export function setConfiguredWorkshopPath(p: string): void {
 
 export function isWorkshopPathConfigured(): boolean {
   return store.get('workshopPath') !== null
+}
+
+export function getConfiguredBackupPath(): string | null {
+  return store.get('backupPath')
+}
+
+export function setConfiguredBackupPath(p: string): void {
+  store.set('backupPath', p)
+}
+
+export function isBackupPathConfigured(): boolean {
+  return store.get('backupPath') !== null
+}
+
+export function getAutoUnsubscribeAfterBackup(): boolean {
+  return store.get('autoUnsubscribeAfterBackup')
+}
+
+export function setAutoUnsubscribeAfterBackup(enabled: boolean): void {
+  store.set('autoUnsubscribeAfterBackup', enabled)
+}
+
+export function getTrayEnabled(): boolean {
+  return store.get('trayEnabled')
+}
+
+export function setTrayEnabled(enabled: boolean): void {
+  store.set('trayEnabled', enabled)
+}
+
+export function getAutostartEnabled(): boolean {
+  return store.get('autostartEnabled')
+}
+
+export function getAutostartMinimized(): boolean {
+  return store.get('autostartMinimized')
+}
+
+export function setAutostart(enabled: boolean, minimized: boolean): void {
+  store.set('autostartEnabled', enabled)
+  store.set('autostartMinimized', minimized)
+}
+
+export function getAutostartPlaylistId(): string | null {
+  return store.get('autostartPlaylistId')
+}
+
+export function setAutostartPlaylistId(id: string | null): void {
+  store.set('autostartPlaylistId', id)
 }
 
 export function getDefaultFps(): number | null {

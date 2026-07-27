@@ -8,6 +8,8 @@ import { registerFolderHandlers } from './folders.handlers'
 import { registerShellHandlers } from './shell.handlers'
 import { registerLweHandlers } from './lwe.handlers'
 import { registerDesktopIconsHandlers } from './desktop-icons.handlers'
+import { registerBackupHandlers } from './backup.handlers'
+import { registerPlaylistHandlers } from './playlist.handlers'
 
 export function registerAllHandlers(win: BrowserWindow): void {
   registerSteamHandlers(win)
@@ -19,4 +21,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
   registerShellHandlers()
   registerLweHandlers(win)
   registerDesktopIconsHandlers()
+  registerBackupHandlers(win)
+  registerPlaylistHandlers()
 }
