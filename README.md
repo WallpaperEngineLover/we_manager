@@ -30,3 +30,10 @@ npm run dist     # package with electron-builder
   GTK4, gtk4-layer-shell and pycairo, and only works on Wayland.
 - `steam_appid.txt` is required by the Steamworks SDK and must stay next to
   the app.
+- Known issue: disabling "Enable system tray" in Settings can leave the tray
+  icon in the panel until the app is fully closed. Electron's Linux tray
+  backend doesn't reliably release the icon's DBus/StatusNotifierItem
+  registration while the process is still running, even though `destroy()`
+  is called correctly on our end. Confirmed upstream: relaunching the process
+  is the only thing that clears it, but doing that from the toggle itself
+  caused GPU/window failures on Wayland, so it isn't worth the tradeoff.
