@@ -6,6 +6,7 @@ import { getPlaylist } from './playlist.service'
 import { getWallpaper, updateWallpaper } from './library.service'
 import { applyWallpaperMeta } from './wallpaper.service'
 import { setActiveWallpaperId } from './wallpaper-state.service'
+import { getLweStatus } from './lwe.service'
 
 interface PlaybackStore {
   activePlaylistId: string | null
@@ -265,6 +266,7 @@ export function getPlaybackState(): PlaylistPlaybackState {
  * Call once on app startup. Resumes whichever playlist was active when the app last
  * closed. Returns true if a playlist was resumed, so the caller can skip the
  * "autostart playlist" config setting to avoid starting two playlists at once.
+ * Does nothing if linux-wallpaperengine isn't installed.
  */
 export function initPlaylistPlayer(window: BrowserWindow): boolean {
   win = window
@@ -272,6 +274,7 @@ export function initPlaylistPlayer(window: BrowserWindow): boolean {
   if (!activeId) return false
   const playlist = getPlaylist(activeId)
   if (!playlist || playlist.items.length === 0) return false
+  if (!getLweStatus().installed) return false
 
   const wasPlaying = store.get('isPlaying')
   startPlaylist(activeId)

@@ -9,7 +9,7 @@ import { initDesktopIcons, cleanupDesktopIcons } from './services/desktop-icons.
 import { getTrayEnabled, getAutostartPlaylistId, getKillLweOnQuit } from './services/config.service'
 import { createTray } from './services/tray.service'
 import { initPlaylistPlayer, startPlaylist } from './services/playlist-player.service'
-import { killAllLweProcesses } from './services/lwe.service'
+import { killAllLweProcesses, getLweStatus } from './services/lwe.service'
 
 const startMinimized = process.argv.includes('--minimized')
 let isQuitting = false
@@ -78,7 +78,7 @@ app.whenReady().then(() => {
   if (getTrayEnabled()) createTray(win)
 
   const autostartPlaylistId = getAutostartPlaylistId()
-  if (!resumed && autostartPlaylistId) {
+  if (!resumed && autostartPlaylistId && getLweStatus().installed) {
     try {
       startPlaylist(autostartPlaylistId)
     } catch (err) {
