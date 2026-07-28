@@ -38,6 +38,19 @@ const LWE_SEARCH_PATHS = [
 
 let activeProcess: ChildProcess | null = null
 
+async function removeBuildDir(dir: string): Promise<void> {
+  if (!fs.existsSync(dir)) return
+  try {
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 60 })
+    return
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code !== 'EACCES' && code !== 'ENOTEMPTY' && code !== 'EPERM') throw err
+  }
+  const elevate = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
+  await execFileAsync(elevate, ['rm', '-rf', dir], { timeout: 30_000, encoding: 'utf8' })
+}
+
 function findLweBinary(): string | undefined {
   for (const p of LWE_SEARCH_PATHS) {
     try {
@@ -183,9 +196,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     }
 
     // Clean previous build
-    if (fs.existsSync(BUILD_DIR)) {
-      fs.rmSync(BUILD_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 60 })
-    }
+    await removeBuildDir(BUILD_DIR)
 
     // Clone from the configured repo (custom fork or local path), or the official repo.
     // Local paths are expanded so git clone sees an absolute path.
@@ -244,9 +255,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     // pkexec often runs the command in a different cwd (e.g. / or root's home), so run install
     // inside a shell that cd's to the build dir first; PATH preserved for make
     const pathEnv = process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'
-    // After install, fix RUNPATH to avoid CEF's libEGL.so shadowing the system Mesa EGL,
-    // and run ldconfig so the linker cache picks up the new shared libs.
-    const installScript = `cd ${JSON.stringify(cmakeBuild)} && export PATH=${JSON.stringify(pathEnv)} && make install && patchelf --set-rpath /usr/local/lib64:/usr/local/lib /usr/local/linux-wallpaperengine 2>/dev/null; ldconfig`
+    const installScript = `cd ${JSON.stringify(cmakeBuild)} && export PATH=${JSON.stringify(pathEnv)} && make install && patchelf --set-rpath /usr/local/lib64:/usr/local/lib /usr/local/linux-wallpaperengine 2>/dev/null; ldconfig; rm -rf ${JSON.stringify(BUILD_DIR)}`
     await execFileAsync(installTool, ['bash', '-c', installScript], {
       timeout: 120_000,
       maxBuffer: 2 * 1024 * 1024,
@@ -266,9 +275,6 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       // Non-fatal: user may already have it in PATH or can add /usr/local to PATH
     }
 
-    // Cleanup build dir
-    fs.rmSync(BUILD_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 60 })
-
     // Invalidate cache so next status check re-detects
     invalidateCommandCache(LWE_BINARY)
 
@@ -284,9 +290,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     }
   } catch (err) {
     try {
-      if (fs.existsSync(BUILD_DIR)) {
-        fs.rmSync(BUILD_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 60 })
-      }
+      await removeBuildDir(BUILD_DIR)
     } catch { /* ignore cleanup errors */ }
 
     // execFile puts stdout/stderr on the error object when encoding/maxBuffer are set
