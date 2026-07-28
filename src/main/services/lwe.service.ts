@@ -14,7 +14,7 @@ import {
   getWaylandDisplay,
   getXdgRuntimeDir
 } from '../utils/platform'
-import { getWorkshopPath } from '../utils/paths'
+import { getWorkshopPath, getLweManifestPath } from '../utils/paths'
 import { getLweRepoUrl, getLweRepoBranch } from './config.service'
 import { DEFAULT_LWE_REPO } from '@shared/constants'
 
@@ -49,6 +49,25 @@ async function removeBuildDir(dir: string): Promise<void> {
   }
   const elevate = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
   await execFileAsync(elevate, ['rm', '-rf', dir], { timeout: 30_000, encoding: 'utf8' })
+}
+
+interface LweInstallManifest {
+  files: string[]
+  symlink: string
+}
+
+function readLweManifest(): LweInstallManifest | undefined {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(getLweManifestPath(), 'utf8')) as LweInstallManifest
+    if (Array.isArray(parsed.files) && typeof parsed.symlink === 'string') return parsed
+  } catch { /* falls back to heuristic cleanup in uninstallLwe */ }
+  return undefined
+}
+
+function writeLweManifest(manifest: LweInstallManifest): void {
+  try {
+    fs.writeFileSync(getLweManifestPath(), JSON.stringify(manifest, null, 2), 'utf8')
+  } catch { /* non-fatal */ }
 }
 
 function findLweBinary(): string | undefined {
@@ -178,6 +197,9 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     win.webContents.send(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, progress)
   }
 
+  // read by the catch handler to decide whether to preserve or wipe the build cache
+  let isLocalDir = false
+
   try {
     send({ stage: 'cloning', message: 'Checking build dependencies...', percentage: 0 })
 
@@ -195,29 +217,57 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       return
     }
 
-    // Clean previous build
-    await removeBuildDir(BUILD_DIR)
-
-    // Clone from the configured repo (custom fork or local path), or the official repo.
-    // Local paths are expanded so git clone sees an absolute path.
     let repo = getLweRepoUrl() ?? DEFAULT_LWE_REPO
     if (repo.startsWith('~/')) repo = path.join(os.homedir(), repo.slice(2))
     const branch = getLweRepoBranch()
-    const cloneArgs = ['clone', '--depth', '1', '--recursive']
-    if (branch) cloneArgs.push('--branch', branch)
-    cloneArgs.push(repo, BUILD_DIR)
 
-    send({
-      stage: 'cloning',
-      message: `Cloning ${repo}${branch ? ` (${branch})` : ''}...`,
-      percentage: 5
-    })
-    await execFileAsync('git', cloneArgs, {
-      timeout: 120_000,
-      maxBuffer: 10 * 1024 * 1024
-    })
+    isLocalDir = (() => {
+      try { return fs.statSync(repo).isDirectory() } catch { return false }
+    })()
 
-    // Create build dir
+    // Reuse the previous build dir when it's the same local source, so CEF's ~2GB download
+    // and compiled objects survive between iterations instead of a full rebuild every time.
+    const sourceMarker = path.join(BUILD_DIR, '.lwe-source-path')
+    const canReuseBuildCache = isLocalDir && (() => {
+      try { return fs.readFileSync(sourceMarker, 'utf8').trim() === repo } catch { return false }
+    })()
+    if (!canReuseBuildCache) {
+      await removeBuildDir(BUILD_DIR)
+    }
+
+    if (isLocalDir) {
+      // Copy the working tree instead of `git clone`, so uncommitted edits don't need a commit first.
+      send({ stage: 'cloning', message: `Copying local source from ${repo}...`, percentage: 5 })
+      fs.mkdirSync(BUILD_DIR, { recursive: true })
+      if (isCommandAvailable('rsync')) {
+        // --delete so files removed from the source don't linger in a reused build dir
+        await execFileAsync('rsync', [
+          '-a', '--delete', '--exclude=/.git', '--exclude=/build',
+          `${repo}/`, `${BUILD_DIR}/`
+        ], { timeout: 120_000, maxBuffer: 10 * 1024 * 1024 })
+      } else {
+        await execFileAsync('bash', [
+          '-c',
+          `tar -C ${JSON.stringify(repo)} --exclude=.git --exclude=build -cf - . | tar -C ${JSON.stringify(BUILD_DIR)} -xf -`
+        ], { timeout: 120_000, maxBuffer: 10 * 1024 * 1024 })
+      }
+      fs.writeFileSync(sourceMarker, repo, 'utf8')
+    } else {
+      const cloneArgs = ['clone', '--depth', '1', '--recursive']
+      if (branch) cloneArgs.push('--branch', branch)
+      cloneArgs.push(repo, BUILD_DIR)
+
+      send({
+        stage: 'cloning',
+        message: `Cloning ${repo}${branch ? ` (${branch})` : ''}...`,
+        percentage: 5
+      })
+      await execFileAsync('git', cloneArgs, {
+        timeout: 120_000,
+        maxBuffer: 10 * 1024 * 1024
+      })
+    }
+
     const cmakeBuild = path.join(BUILD_DIR, 'build')
     fs.mkdirSync(cmakeBuild, { recursive: true })
 
@@ -255,10 +305,18 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     // pkexec often runs the command in a different cwd (e.g. / or root's home), so run install
     // inside a shell that cd's to the build dir first; PATH preserved for make
     const pathEnv = process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'
-    const installScript = `cd ${JSON.stringify(cmakeBuild)} && export PATH=${JSON.stringify(pathEnv)} && make install && patchelf --set-rpath /usr/local/lib64:/usr/local/lib /usr/local/linux-wallpaperengine 2>/dev/null; ldconfig; rm -rf ${JSON.stringify(BUILD_DIR)}`
-    await execFileAsync(installTool, ['bash', '-c', installScript], {
+    // install_manifest.txt lists every file `make install` placed; capture it so uninstall
+    // can remove exactly those files instead of guessing.
+    const manifestMarker = '###LWE_INSTALL_MANIFEST###'
+    // Local repo: hand the build dir back to the invoking user instead of deleting it, so the
+    // next unprivileged cmake/make can still write into what `make install` (root) just touched.
+    const reclaim = isLocalDir
+      ? `chown -R ${process.getuid()}:${process.getgid()} ${JSON.stringify(BUILD_DIR)}`
+      : `rm -rf ${JSON.stringify(BUILD_DIR)}`
+    const installScript = `cd ${JSON.stringify(cmakeBuild)} && export PATH=${JSON.stringify(pathEnv)} && make install && patchelf --set-rpath /usr/local/lib64:/usr/local/lib /usr/local/linux-wallpaperengine 2>/dev/null; ldconfig; echo ${manifestMarker}; cat install_manifest.txt 2>/dev/null; ${reclaim}`
+    const { stdout: installOutput } = await execFileAsync(installTool, ['bash', '-c', installScript], {
       timeout: 120_000,
-      maxBuffer: 2 * 1024 * 1024,
+      maxBuffer: 5 * 1024 * 1024,
       encoding: 'utf8'
     })
 
@@ -275,6 +333,15 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       // Non-fatal: user may already have it in PATH or can add /usr/local to PATH
     }
 
+    const manifestIdx = installOutput.indexOf(manifestMarker)
+    if (manifestIdx !== -1) {
+      const installedFiles = installOutput.slice(manifestIdx + manifestMarker.length)
+        .split('\n').map(l => l.trim()).filter(Boolean)
+      if (installedFiles.length > 0) {
+        writeLweManifest({ files: installedFiles, symlink: linkPath })
+      }
+    }
+
     // Invalidate cache so next status check re-detects
     invalidateCommandCache(LWE_BINARY)
 
@@ -289,9 +356,13 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       })
     }
   } catch (err) {
-    try {
-      await removeBuildDir(BUILD_DIR)
-    } catch { /* ignore cleanup errors */ }
+    // Failures here happen before the elevated install step, so the build dir isn't root-tainted -
+    // leave it for a local repo so a fix-and-retry stays incremental.
+    if (!isLocalDir) {
+      try {
+        await removeBuildDir(BUILD_DIR)
+      } catch { /* ignore cleanup errors */ }
+    }
 
     // execFile puts stdout/stderr on the error object when encoding/maxBuffer are set
     const e = err as Error & { stdout?: string; stderr?: string }
@@ -339,38 +410,51 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
   stopLwe()
 
   const elevate = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
-  const binaryPath = status.path
 
-  // Resolve symlink to find the real binary location
-  let realPath: string
-  try {
-    realPath = fs.realpathSync(binaryPath)
-  } catch {
-    realPath = binaryPath
-  }
+  const manifest = readLweManifest()
+  let filesToRemove: string[]
+  let dirsToPrune: string[] = []
 
-  // Collect all files to remove (binary, symlink if different, known lib dir)
-  const filesToRemove: string[] = [realPath]
-  if (realPath !== binaryPath) filesToRemove.push(binaryPath)
-
-  // Check for LWE lib directory next to the real binary (cmake install puts libs there)
-  const binDir = path.dirname(realPath)
-  const libDir = path.join(binDir, 'lib')
-  if (fs.existsSync(libDir)) {
-    // Only remove if it looks like it belongs to LWE (contains libcef or similar)
+  if (manifest) {
+    filesToRemove = [...manifest.files, manifest.symlink]
+    // deepest first, so a dir only prunes once its own contents are gone
+    dirsToPrune = [...new Set(manifest.files.map(f => path.dirname(f)))].sort((a, b) => b.length - a.length)
+  } else {
+    // no manifest (pre-dates this, or lost): binary + lib dir only, won't clean up CEF resources
+    const binaryPath = status.path
+    let realPath: string
     try {
-      const entries = fs.readdirSync(libDir)
-      if (entries.some(e => e.includes('cef') || e.includes('wallpaper'))) {
-        filesToRemove.push(libDir)
-      }
-    } catch { /* ignore */ }
+      realPath = fs.realpathSync(binaryPath)
+    } catch {
+      realPath = binaryPath
+    }
+
+    filesToRemove = [realPath]
+    if (realPath !== binaryPath) filesToRemove.push(binaryPath)
+
+    const binDir = path.dirname(realPath)
+    const libDir = path.join(binDir, 'lib')
+    if (fs.existsSync(libDir)) {
+      try {
+        const entries = fs.readdirSync(libDir)
+        if (entries.some(e => e.includes('cef') || e.includes('wallpaper'))) {
+          filesToRemove.push(libDir)
+        }
+      } catch { /* ignore */ }
+    }
   }
 
   try {
-    await execFileAsync(elevate, ['rm', '-rf', ...filesToRemove], {
-      timeout: 30_000,
+    const quoted = (paths: string[]) => paths.map(p => JSON.stringify(p)).join(' ')
+    const script = dirsToPrune.length > 0
+      ? `rm -f ${quoted(filesToRemove)}; rmdir --ignore-fail-on-non-empty -p ${quoted(dirsToPrune)} 2>/dev/null; ldconfig`
+      : `rm -f ${quoted(filesToRemove)}; ldconfig`
+    await execFileAsync(elevate, ['bash', '-c', script], {
+      timeout: 60_000,
       encoding: 'utf8'
     })
+
+    try { fs.rmSync(getLweManifestPath(), { force: true }) } catch { /* ignore */ }
 
     // Invalidate caches
     invalidateCommandCache(LWE_BINARY)

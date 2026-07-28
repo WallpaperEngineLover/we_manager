@@ -48,3 +48,7 @@ export function getDataPath(): string {
 export function getPreviewCachePath(): string {
   return path.join(getDataPath(), 'preview-cache')
 }
+
+export function getLweManifestPath(): string {
+  return path.join(getDataPath(), 'lwe-install-manifest.json')
+}
