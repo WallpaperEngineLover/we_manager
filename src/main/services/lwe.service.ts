@@ -184,7 +184,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
 
     // Clean previous build
     if (fs.existsSync(BUILD_DIR)) {
-      fs.rmSync(BUILD_DIR, { recursive: true, force: true })
+      fs.rmSync(BUILD_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 60 })
     }
 
     // Clone from the configured repo (custom fork or local path), or the official repo.
@@ -267,7 +267,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     }
 
     // Cleanup build dir
-    fs.rmSync(BUILD_DIR, { recursive: true, force: true })
+    fs.rmSync(BUILD_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 60 })
 
     // Invalidate cache so next status check re-detects
     invalidateCommandCache(LWE_BINARY)
@@ -285,7 +285,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
   } catch (err) {
     try {
       if (fs.existsSync(BUILD_DIR)) {
-        fs.rmSync(BUILD_DIR, { recursive: true, force: true })
+        fs.rmSync(BUILD_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 60 })
       }
     } catch { /* ignore cleanup errors */ }
 
