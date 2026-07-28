@@ -19,7 +19,7 @@ export type WorkshopQueryType =
   | 'RankedByTextSearch'
   | 'RankedByLastUpdatedDate'
 
-export type ContentRating = 'everyone' | 'questionable' | 'mature'
+export type ContentRating = 'everyone' | 'questionable' | 'mature' | 'uncategorized'
 
 export interface WallpaperMeta {
   id: string

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { GripVertical, Trash2, Volume2, Clock, ChevronDown, ChevronUp } from 'lucide-react'
+import { GripVertical, Trash2, Volume2, Clock, ChevronDown, ChevronUp, Play, Pause } from 'lucide-react'
 import clsx from 'clsx'
 import type { PlaylistItem, WallpaperMeta } from '@shared/types'
 import { getPreviewSrc } from '../../utils/preview'
@@ -13,6 +13,7 @@ interface PlaylistItemRowProps {
   onDragStart: (index: number) => void
   onDragOver: (index: number) => void
   onDrop: () => void
+  onPlay: () => void
   onRemove: () => void
   onUpdate: (patch: { volume?: number; durationSec?: number }) => void
   defaultDurationSec: number
@@ -23,10 +24,12 @@ export default function PlaylistItemRow({
   item,
   wallpaper,
   index,
+  isPlaying,
   isCurrent,
   onDragStart,
   onDragOver,
   onDrop,
+  onPlay,
   onRemove,
   onUpdate,
   defaultDurationSec,
@@ -56,11 +59,27 @@ export default function PlaylistItemRow({
       <div className="flex items-center gap-2 p-2">
         <GripVertical size={14} className="shrink-0 cursor-grab text-gray-600" />
         <span className="w-5 shrink-0 text-center text-xs text-gray-600">{index + 1}</span>
-        <div className="h-10 w-16 shrink-0 overflow-hidden rounded bg-[#111]">
+        <button
+          onClick={onPlay}
+          title={isCurrent && isPlaying ? 'Now playing' : 'Play this wallpaper'}
+          className="group relative h-10 w-16 shrink-0 overflow-hidden rounded bg-[#111]"
+        >
           {previewSrc && (
             <img src={previewSrc} alt="" className="h-full w-full object-cover" loading="lazy" />
           )}
-        </div>
+          <div
+            className={clsx(
+              'absolute inset-0 flex items-center justify-center bg-black/50 transition-opacity',
+              isCurrent && isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            )}
+          >
+            {isCurrent && isPlaying ? (
+              <Pause size={14} className="text-white" />
+            ) : (
+              <Play size={14} className="text-white" />
+            )}
+          </div>
+        </button>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm text-gray-200" title={wallpaper?.title}>
             {wallpaper?.title ?? item.wallpaperId}

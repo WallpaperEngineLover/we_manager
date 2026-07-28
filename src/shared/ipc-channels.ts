@@ -73,6 +73,7 @@ export const IpcChannels = {
   PLAYLIST_REORDER_ITEMS: 'playlist:reorder-items',
   PLAYLIST_UPDATE_ITEM: 'playlist:update-item',
   PLAYLIST_START: 'playlist:start',
+  PLAYLIST_PLAY_ITEM: 'playlist:play-item',
   PLAYLIST_STOP: 'playlist:stop',
   PLAYLIST_PAUSE: 'playlist:pause',
   PLAYLIST_RESUME: 'playlist:resume',

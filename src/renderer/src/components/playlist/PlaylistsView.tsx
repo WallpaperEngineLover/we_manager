@@ -155,6 +155,22 @@ export default function PlaylistsView() {
     }
   }
 
+  async function handlePlayItem(wallpaperId: string) {
+    if (!activePlaylist) return
+    if (isThisPlaylistActive && playbackState?.isPlaying && playbackState?.currentItemId === wallpaperId) {
+      await window.electronAPI.playlist.pause()
+      queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
+      return
+    }
+    setError(null)
+    try {
+      await window.electronAPI.playlist.playItem(activePlaylist.id, wallpaperId)
+      queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
   async function handlePauseResume() {
     if (isThisPlaylistActive && playbackState?.isPlaying) {
       await window.electronAPI.playlist.pause()
@@ -442,6 +458,7 @@ export default function PlaylistsView() {
                   onDragStart={handleDragStart}
                   onDragOver={handleDragOver}
                   onDrop={handleDrop}
+                  onPlay={() => handlePlayItem(item.wallpaperId)}
                   onRemove={() => handleRemoveItem(item.wallpaperId)}
                   onUpdate={(patch) => handleUpdateItem(item.wallpaperId, patch)}
                   defaultDurationSec={activePlaylist.settings.defaultDurationSec}

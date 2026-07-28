@@ -174,6 +174,38 @@ export function startPlaylist(id: string): PlaylistPlaybackState {
   return state
 }
 
+export async function playItem(playlistId: string, wallpaperId: string): Promise<PlaylistPlaybackState> {
+  const playlist = getPlaylist(playlistId)
+  if (!playlist) throw new Error(`Playlist ${playlistId} not found`)
+  if (!findItem(playlist, wallpaperId)) throw new Error(`Wallpaper ${wallpaperId} is not in this playlist`)
+
+  clearTimer()
+  if (state.playlistId !== playlistId) {
+    state = {
+      playlistId: playlist.id,
+      currentItemId: null,
+      currentIndex: -1,
+      isPlaying: true,
+      order: buildOrder(playlist)
+    }
+  }
+
+  let index = state.order.indexOf(wallpaperId)
+  if (index === -1) {
+    state.order = buildOrder(playlist)
+    index = state.order.indexOf(wallpaperId)
+  }
+  state.currentIndex = index
+  state.isPlaying = true
+  store.set('activePlaylistId', playlist.id)
+  store.set('isPlaying', true)
+
+  await applyCurrent(playlist)
+  emitState()
+  scheduleNext(playlist)
+  return state
+}
+
 export function stopPlaylist(): PlaylistPlaybackState {
   clearTimer()
   state = { playlistId: null, currentItemId: null, currentIndex: -1, isPlaying: false, order: [] }

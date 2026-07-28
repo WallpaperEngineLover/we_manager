@@ -1,20 +1,23 @@
 import { useState, useEffect } from 'react'
-import { Play, Loader2, Check, ThumbsUp, Trash2, ExternalLink, Download, Archive, AlertTriangle, RotateCw } from 'lucide-react'
+import { Play, Loader2, Check, X, ThumbsUp, Trash2, ExternalLink, Download, Archive, AlertTriangle, RotateCw, Plus } from 'lucide-react'
 import type { WallpaperMeta } from '@shared/types'
 import clsx from 'clsx'
 import { getPreviewSrc } from '../../utils/preview'
 import { openWorkshopPage } from '../../utils/steam'
+import { useToast } from '../common/Toast'
+import type { PreviewSize } from '../../hooks/usePreviewSize'
 
 interface WallpaperCardProps {
   wallpaper: WallpaperMeta
   selected?: boolean
   lweInstalled?: boolean
   isLiked?: boolean
-  isBackupConfigured?: boolean
+  currentPlaylistId?: string | null
+  previewSize?: PreviewSize
   onApplied?: () => void
   onLiked?: () => void
   onUnsubscribed?: () => void
-  onBackedUp?: () => void
+  onAddedToPlaylist?: () => void
   onRedownloaded?: () => void
   onSelect?: (e: React.MouseEvent) => void
   onContextMenu?: (e: React.MouseEvent) => void
@@ -25,37 +28,25 @@ export default function WallpaperCard({
   selected,
   lweInstalled,
   isLiked = false,
-  isBackupConfigured = false,
+  currentPlaylistId = null,
+  previewSize = 'normal',
   onApplied,
   onLiked,
   onUnsubscribed,
-  onBackedUp,
+  onAddedToPlaylist,
   onRedownloaded,
   onSelect,
   onContextMenu
 }: WallpaperCardProps) {
+  const { showToast } = useToast()
   const [isApplying, setIsApplying] = useState(false)
   const [isLiking, setIsLiking] = useState(false)
   const [unsubState, setUnsubState] = useState<'idle' | 'confirm' | 'pending'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [fpsInput, setFpsInput] = useState(wallpaper.fpsOverride != null ? String(wallpaper.fpsOverride) : '')
-  const [isBackingUp, setIsBackingUp] = useState(false)
-  const [backupPercentage, setBackupPercentage] = useState<number | null>(null)
+  const [isAddingToPlaylist, setIsAddingToPlaylist] = useState(false)
   const [isRedownloading, setIsRedownloading] = useState(false)
   const [downloadPercentage, setDownloadPercentage] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (!isBackingUp) return
-    return window.electronAPI.on.backupProgress((progress) => {
-      if (progress.itemId !== wallpaper.id) return
-      if (progress.status === 'copying') {
-        setBackupPercentage(progress.percentage)
-      } else {
-        setIsBackingUp(false)
-        setBackupPercentage(null)
-      }
-    })
-  }, [isBackingUp, wallpaper.id])
 
   useEffect(() => {
     if (!wallpaper.downloading) {
@@ -125,18 +116,19 @@ export default function WallpaperCard({
     window.electronAPI.library.update(wallpaper.id, { fpsOverride: parsed })
   }
 
-  async function handleBackup(e: React.MouseEvent) {
+  async function handleAddToPlaylist(e: React.MouseEvent) {
     e.stopPropagation()
-    if (isBackingUp) return
-    setIsBackingUp(true)
+    if (!currentPlaylistId || isAddingToPlaylist) return
+    setIsAddingToPlaylist(true)
     setError(null)
     try {
-      await window.electronAPI.backup.item(wallpaper.id)
-      onBackedUp?.()
+      await window.electronAPI.playlist.addItems(currentPlaylistId, [wallpaper.id])
+      showToast('Added to current playlist')
+      onAddedToPlaylist?.()
     } catch (err) {
       setError((err as Error).message)
-      setIsBackingUp(false)
-      setBackupPercentage(null)
+    } finally {
+      setIsAddingToPlaylist(false)
     }
   }
 
@@ -155,6 +147,7 @@ export default function WallpaperCard({
   }
 
   const previewSrc = getPreviewSrc(wallpaper)
+  const compact = previewSize !== 'big'
 
   return (
     <div
@@ -266,46 +259,50 @@ export default function WallpaperCard({
           />
         </div>
         {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
-        <div className="mt-2 flex items-center gap-2">
+        <div className={clsx('mt-2 flex items-center', compact ? 'gap-1' : 'gap-2')}>
           <button
             onClick={handleLike}
             disabled={isLiked || isLiking}
             title={isLiked ? 'Already liked on Steam' : 'Like on Steam'}
             className={clsx(
-              'flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors disabled:cursor-default',
+              'flex items-center gap-1 rounded text-xs transition-colors disabled:cursor-default',
+              compact ? 'p-1.5' : 'px-2 py-1',
               isLiked
                 ? 'bg-green-600/30 text-green-300'
                 : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200'
             )}
           >
             {isLiking ? <Loader2 size={11} className="animate-spin" /> : <ThumbsUp size={11} />}
-            {isLiked ? 'Liked' : 'Like'}
+            {!compact && (isLiked ? 'Liked' : 'Like')}
           </button>
-          {wallpaper.source === 'workshop' && isBackupConfigured && (
-            <button
-              onClick={handleBackup}
-              disabled={isBackingUp}
-              title={wallpaper.backedUp ? 'Back up again' : 'Back up locally'}
-              className="flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isBackingUp ? <Loader2 size={11} className="animate-spin" /> : <Archive size={11} />}
-              {isBackingUp && backupPercentage != null ? `${backupPercentage}%` : 'Backup'}
-            </button>
-          )}
+          <button
+            onClick={handleAddToPlaylist}
+            disabled={!currentPlaylistId || isAddingToPlaylist}
+            title={currentPlaylistId ? 'Add to current playlist (+)' : 'No playlist is currently active'}
+            className={clsx(
+              'flex items-center gap-1 rounded bg-white/5 text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50',
+              compact ? 'p-1.5' : 'px-2 py-1'
+            )}
+          >
+            {isAddingToPlaylist ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
+            {!compact && 'Add'}
+          </button>
           {unsubState === 'confirm' ? (
             <div className="flex items-center gap-1">
-              <span className="text-xs text-gray-400">Sure?</span>
+              {!compact && <span className="text-xs text-gray-400">Sure?</span>}
               <button
                 onClick={handleUnsubscribeClick}
-                className="rounded bg-red-600/80 px-2 py-1 text-xs text-white hover:bg-red-600"
+                title="Confirm unsubscribe"
+                className={clsx('rounded bg-red-600/80 text-xs text-white hover:bg-red-600', compact ? 'p-1.5' : 'px-2 py-1')}
               >
-                Yes
+                {compact ? <Check size={11} /> : 'Yes'}
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); setUnsubState('idle') }}
-                className="rounded bg-white/5 px-2 py-1 text-xs text-gray-400 hover:bg-white/10"
+                title="Cancel"
+                className={clsx('rounded bg-white/5 text-xs text-gray-400 hover:bg-white/10', compact ? 'p-1.5' : 'px-2 py-1')}
               >
-                No
+                {compact ? <X size={11} /> : 'No'}
               </button>
             </div>
           ) : (
@@ -313,10 +310,13 @@ export default function WallpaperCard({
               onClick={handleUnsubscribeClick}
               disabled={unsubState === 'pending'}
               title="Unsubscribe and delete files"
-              className="flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-xs text-gray-400 transition-colors hover:bg-red-500/20 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+              className={clsx(
+                'flex items-center gap-1 rounded bg-white/5 text-xs text-gray-400 transition-colors hover:bg-red-500/20 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50',
+                compact ? 'p-1.5' : 'px-2 py-1'
+              )}
             >
               {unsubState === 'pending' ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
-              Unsub
+              {!compact && 'Unsub'}
             </button>
           )}
           <button
@@ -325,10 +325,13 @@ export default function WallpaperCard({
               openWorkshopPage(wallpaper.id)
             }}
             title="Open in Steam Workshop"
-            className="flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-200"
+            className={clsx(
+              'flex items-center gap-1 rounded bg-white/5 text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-200',
+              compact ? 'p-1.5' : 'px-2 py-1'
+            )}
           >
             <ExternalLink size={11} />
-            Steam
+            {!compact && 'Steam'}
           </button>
         </div>
       </div>

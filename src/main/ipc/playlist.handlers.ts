@@ -50,6 +50,9 @@ export function registerPlaylistHandlers(): void {
   )
 
   ipcMain.handle(IpcChannels.PLAYLIST_START, (_e, id: string) => player.startPlaylist(id))
+  ipcMain.handle(IpcChannels.PLAYLIST_PLAY_ITEM, (_e, id: string, wallpaperId: string) =>
+    player.playItem(id, wallpaperId)
+  )
   ipcMain.handle(IpcChannels.PLAYLIST_STOP, () => player.stopPlaylist())
   ipcMain.handle(IpcChannels.PLAYLIST_PAUSE, () => player.pausePlaylist())
   ipcMain.handle(IpcChannels.PLAYLIST_RESUME, () => player.resumePlaylist())

@@ -39,6 +39,13 @@ export const WE_AGE_RATINGS: FilterItem[] = [
   { tag: 'Mature', label: 'Mature' }
 ]
 
+// Local library only: items whose downloaded project.json never had a rating set.
+// Not a real Steam Workshop tag, so it can't be used to filter the live workshop query.
+export const WE_LIBRARY_AGE_RATINGS: FilterItem[] = [
+  ...WE_AGE_RATINGS,
+  { tag: 'Uncategorized', label: 'Uncategorized' }
+]
+
 export const WE_RESOLUTION_GROUPS: ResolutionGroup[] = [
   {
     label: 'Widescreen',

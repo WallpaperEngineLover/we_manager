@@ -180,9 +180,10 @@ export function normalizeType(raw?: string): WallpaperType {
 
 export function normalizeRating(raw?: string): ContentRating {
   switch (raw?.toLowerCase()) {
+    case 'everyone': return 'everyone'
     case 'questionable': return 'questionable'
     case 'mature': return 'mature'
-    default: return 'everyone'
+    default: return 'uncategorized'
   }
 }
 
@@ -249,7 +250,7 @@ function buildIncompleteMeta(
     id: workshopId,
     title: existing?.title ?? `Wallpaper ${workshopId}`,
     type: existing?.type ?? 'scene',
-    contentRating: existing?.contentRating ?? 'everyone',
+    contentRating: existing?.contentRating ?? 'uncategorized',
     localPath,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
@@ -407,12 +408,23 @@ export function deleteFolder(id: string): void {
   store.set('folders', folders)
 }
 
+/** A wallpaper can only live in one folder at a time, so adding it here pulls it out of any other. */
 export function addItemsToFolder(folderId: string, itemIds: string[]): WallpaperFolder | null {
-  return updateFolder(folderId, (folder) => {
+  const folders = store.get('folders')
+  const moving = new Set(itemIds)
+  for (const folder of folders) {
+    if (folder.id === folderId) continue
+    folder.items = folder.items.filter((id) => !moving.has(id))
+  }
+
+  const target = findAndMutate(folders, folderId, (folder) => {
     const set = new Set(folder.items)
     for (const id of itemIds) set.add(id)
     folder.items = [...set]
   })
+
+  if (target) store.set('folders', folders)
+  return target
 }
 
 export function removeItemsFromFolder(folderId: string, itemIds: string[]): WallpaperFolder | null {
@@ -423,18 +435,25 @@ export function removeItemsFromFolder(folderId: string, itemIds: string[]): Wall
 }
 
 /**
- * Remove folder item IDs that don't exist in the wallpapers store.
- * Returns the number of stale IDs removed.
+ * Remove folder item IDs that don't exist in the wallpapers store, and drop
+ * items from any folder beyond the first that also claims them (a wallpaper
+ * can only belong to one folder).
+ * Returns the number of stale/duplicate IDs removed.
  */
 export function cleanupFolders(): number {
   const wallpapers = store.get('wallpapers')
   const validIds = new Set(Object.keys(wallpapers))
   const folders = store.get('folders')
+  const seen = new Set<string>()
   let removed = 0
 
   for (const folder of folders) {
     const before = folder.items.length
-    folder.items = folder.items.filter((id) => validIds.has(id))
+    folder.items = folder.items.filter((id) => {
+      if (!validIds.has(id) || seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
     removed += before - folder.items.length
   }
 

@@ -25,9 +25,10 @@ import {
 } from 'lucide-react'
 import WallpaperCard from './WallpaperCard'
 import PreviewSizeToggle from '../common/PreviewSizeToggle'
+import { useToast } from '../common/Toast'
 import type { LibraryFilters, WallpaperFolder, LweStatus } from '@shared/types'
 import clsx from 'clsx'
-import { WE_TYPES, WE_AGE_RATINGS } from '../../constants/weFilters'
+import { WE_TYPES, WE_LIBRARY_AGE_RATINGS } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
 import { useClickOutside } from '../../hooks/useClickOutside'
 import { toggle } from '../../utils/array'
@@ -61,7 +62,8 @@ const TYPE_MAP: Record<string, string> = {
 const RATING_MAP: Record<string, string> = {
   Everyone: 'everyone',
   Questionable: 'questionable',
-  Mature: 'mature'
+  Mature: 'mature',
+  Uncategorized: 'uncategorized'
 }
 const SOURCE_MAP: Record<string, string> = {
   Workshop: 'workshop',
@@ -335,7 +337,7 @@ export default function LibraryView() {
         const ratings = filterState.ageRatings
           .map((r) => RATING_MAP[r])
           .filter(Boolean)
-        if (!ratings.includes(w.contentRating ?? 'everyone')) return false
+        if (!ratings.includes(w.contentRating ?? 'uncategorized')) return false
       }
       if (filterState.genres.length > 0) {
         if (!filterState.genres.some((g) => w.tags.includes(g))) return false
@@ -370,6 +372,15 @@ export default function LibraryView() {
     }
     return set
   }, [folders, existingIds])
+
+  // Each wallpaper lives in at most one folder; map wallpaper id -> its folder id
+  const folderOfItem = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const f of folders) {
+      for (const id of f.items) map.set(id, f.id)
+    }
+    return map
+  }, [folders])
 
   // Real item count per folder (only items that exist in the library)
   const folderCounts = useMemo(() => {
@@ -433,6 +444,27 @@ export default function LibraryView() {
     queryFn: () => window.electronAPI.config.get()
   })
   const isBackupConfigured = config?.isBackupConfigured ?? false
+
+  const { data: playbackState } = useQuery({
+    queryKey: ['playlist-playback-state'],
+    queryFn: () => window.electronAPI.playlist.getState()
+  })
+  const currentPlaylistId = playbackState?.playlistId ?? null
+
+  useEffect(() => {
+    return window.electronAPI.on.playlistStateChanged((state) => {
+      queryClient.setQueryData(['playlist-playback-state'], state)
+    })
+  }, [queryClient])
+
+  const { showToast } = useToast()
+
+  async function addToCurrentPlaylist(wallpaperIds: string[]) {
+    if (!currentPlaylistId || wallpaperIds.length === 0) return
+    await window.electronAPI.playlist.addItems(currentPlaylistId, wallpaperIds)
+    queryClient.invalidateQueries({ queryKey: ['playlists'] })
+    showToast('Added to current playlist')
+  }
 
   const [backingUpSelection, setBackingUpSelection] = useState(false)
   const [backupScanning, setBackupScanning] = useState(false)
@@ -688,10 +720,15 @@ export default function LibraryView() {
         e.preventDefault()
         setSelectedIds(new Set(wallpapers.map((w) => w.id)))
       }
+      if (e.key === '+' && selectedIds.size > 0) {
+        const active = document.activeElement
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
+        addToCurrentPlaylist(Array.from(selectedIds))
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [wallpapers])
+  }, [wallpapers, selectedIds, currentPlaylistId])
 
   // Compute marquee rect for rendering (in container-relative px)
   const marqueeRect = marquee
@@ -786,9 +823,9 @@ export default function LibraryView() {
     closeCtxMenu()
   }
 
-  async function ctxMoveToDefault() {
+  async function ctxRemoveFromFolder() {
     if (!ctxMenu) return
-    // Remove from every folder that contains these items
+    // Each wallpaper lives in at most one folder, so pull it out of whichever one it's in
     for (const folder of folders) {
       const overlap = ctxMenu.ids.filter((id) => folder.items.includes(id))
       if (overlap.length > 0) {
@@ -799,16 +836,19 @@ export default function LibraryView() {
     closeCtxMenu()
   }
 
-  async function ctxRemoveFromFolder() {
-    if (!ctxMenu || !activeFolder) return
-    await window.electronAPI.folders.removeItems(activeFolder, ctxMenu.ids)
-    refetchFolders()
-    closeCtxMenu()
-  }
-
   // Check if any of the context menu items are video type
   const ctxHasVideo = ctxWallpapers.some((w) => w.type === 'video' && w.file)
   const ctxHasBackupable = ctxWallpapers.some((w) => w.source === 'workshop')
+
+  // Folder membership of the selected wallpapers, for the context menu
+  const ctxCurrentFolderIds = ctxMenu
+    ? new Set(ctxMenu.ids.map((id) => folderOfItem.get(id)).filter((id): id is string => !!id))
+    : new Set<string>()
+  const ctxHasFolder = ctxCurrentFolderIds.size > 0
+  // Only offer folders the selection isn't already fully inside as move targets
+  const ctxMoveTargets = folders.filter(
+    (f) => !(ctxCurrentFolderIds.size === 1 && ctxCurrentFolderIds.has(f.id))
+  )
 
   return (
     <div className="flex h-full flex-col">
@@ -904,7 +944,7 @@ export default function LibraryView() {
         <div className="h-3 w-px bg-white/10" />
 
         <div className="flex gap-0.5">
-          {WE_AGE_RATINGS.map((item) => (
+          {WE_LIBRARY_AGE_RATINGS.map((item) => (
             <Chip
               key={item.tag}
               label={item.label}
@@ -1197,12 +1237,13 @@ export default function LibraryView() {
                 selected={selectedIds.has(wallpaper.id)}
                 lweInstalled={lweStatus?.installed ?? false}
                 isLiked={votedSet.has(wallpaper.id)}
-                isBackupConfigured={isBackupConfigured}
+                currentPlaylistId={currentPlaylistId}
+                previewSize={previewSize}
                 onApplied={() =>
                   queryClient.invalidateQueries({ queryKey: ['library'] })
                 }
-                onBackedUp={() =>
-                  queryClient.invalidateQueries({ queryKey: ['library'] })
+                onAddedToPlaylist={() =>
+                  queryClient.invalidateQueries({ queryKey: ['playlists'] })
                 }
                 onLiked={() => {
                   queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
@@ -1356,14 +1397,10 @@ export default function LibraryView() {
             </button>
             {ctxMenu.showFolderSub && (
               <div className="absolute left-full top-0 ml-1 min-w-[160px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl">
-                <button
-                  onClick={ctxMoveToDefault}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-                >
-                  <Folder size={12} /> Default
-                </button>
-                {folders.length > 0 && <div className="my-1 border-t border-white/5" />}
-                {folders.map((f) => (
+                {ctxMoveTargets.length === 0 && (
+                  <div className="px-3 py-1.5 text-gray-500">No other folders</div>
+                )}
+                {ctxMoveTargets.map((f) => (
                   <button
                     key={f.id}
                     onClick={() => ctxMoveToFolder(f.id)}
@@ -1376,7 +1413,7 @@ export default function LibraryView() {
             )}
           </div>
 
-          {activeFolder && (
+          {ctxHasFolder && (
             <button
               onClick={ctxRemoveFromFolder}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"

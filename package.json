@@ -60,6 +60,9 @@
       ],
       "category": "Utility"
     },
+    "appImage": {
+      "artifactName": "WE-Manager-${version}.${ext}"
+    },
     "files": [
       "out/**/*",
       "node_modules/**/*"

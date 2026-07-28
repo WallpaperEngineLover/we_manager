@@ -150,6 +150,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.PLAYLIST_UPDATE_ITEM, id, wallpaperId, patch),
     start: (id: string): Promise<PlaylistPlaybackState> =>
       ipcRenderer.invoke(IpcChannels.PLAYLIST_START, id),
+    playItem: (id: string, wallpaperId: string): Promise<PlaylistPlaybackState> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_PLAY_ITEM, id, wallpaperId),
     stop: (): Promise<PlaylistPlaybackState> => ipcRenderer.invoke(IpcChannels.PLAYLIST_STOP),
     pause: (): Promise<PlaylistPlaybackState> => ipcRenderer.invoke(IpcChannels.PLAYLIST_PAUSE),
     resume: (): Promise<PlaylistPlaybackState> => ipcRenderer.invoke(IpcChannels.PLAYLIST_RESUME),
