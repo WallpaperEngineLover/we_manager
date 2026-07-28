@@ -9,6 +9,8 @@ import {
   getLweRepoUrl,
   getLweRepoBranch,
   setLweRepo,
+  getLweCmakeArgs,
+  setLweCmakeArgs,
   importWEConfigFile,
   createFreshConfig,
   getConfiguredBackupPath,
@@ -41,6 +43,7 @@ export function registerConfigHandlers(): void {
     defaultFps: getDefaultFps(),
     lweRepoUrl: getLweRepoUrl(),
     lweRepoBranch: getLweRepoBranch(),
+    lweCmakeArgs: getLweCmakeArgs(),
     defaultLweRepoUrl: DEFAULT_LWE_REPO,
     backupPath: getConfiguredBackupPath(),
     isBackupConfigured: isBackupPathConfigured(),
@@ -98,6 +101,11 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle(IpcChannels.CONFIG_SET_LWE_REPO, (_e, url: string | null, branch: string | null) => {
     setLweRepo(url, branch)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_LWE_CMAKE_ARGS, (_e, args: string | null) => {
+    setLweCmakeArgs(args)
     return { ok: true }
   })
 

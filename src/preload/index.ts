@@ -81,6 +81,7 @@ const api = {
       defaultFps: number | null
       lweRepoUrl: string | null
       lweRepoBranch: string | null
+      lweCmakeArgs: string | null
       defaultLweRepoUrl: string
       backupPath: string | null
       isBackupConfigured: boolean
@@ -98,6 +99,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DEFAULT_FPS, fps),
     setLweRepo: (url: string | null, branch: string | null): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_LWE_REPO, url, branch),
+    setLweCmakeArgs: (args: string | null): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_LWE_CMAKE_ARGS, args),
     setBackupPath: (p: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_BACKUP_PATH, p),
     setAutoUnsubscribeAfterBackup: (enabled: boolean): Promise<{ ok: boolean }> =>

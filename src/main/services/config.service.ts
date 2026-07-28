@@ -9,6 +9,7 @@ interface AppConfig {
   defaultFps: number | null
   lweRepoUrl: string | null
   lweRepoBranch: string | null
+  lweCmakeArgs: string | null
   backupPath: string | null
   autoUnsubscribeAfterBackup: boolean
   trayEnabled: boolean
@@ -25,6 +26,7 @@ const store = new Store<AppConfig>({
     defaultFps: null,
     lweRepoUrl: null,
     lweRepoBranch: null,
+    lweCmakeArgs: null,
     backupPath: null,
     autoUnsubscribeAfterBackup: false,
     trayEnabled: false,
@@ -125,6 +127,15 @@ export function getLweRepoBranch(): string | null {
 export function setLweRepo(url: string | null, branch: string | null): void {
   store.set('lweRepoUrl', url?.trim() || null)
   store.set('lweRepoBranch', branch?.trim() || null)
+}
+
+/** Extra cmake arguments (e.g. "-DENABLE_KDE_EXPERIMENTAL_FEATURES=ON"), appended to the build. */
+export function getLweCmakeArgs(): string | null {
+  return store.get('lweCmakeArgs')
+}
+
+export function setLweCmakeArgs(args: string | null): void {
+  store.set('lweCmakeArgs', args?.trim() || null)
 }
 
 /** Path where we store our copy of config.json */

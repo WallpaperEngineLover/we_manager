@@ -22,6 +22,7 @@ export default function SettingsView() {
   const [lweStatus, setLweStatus] = useState<LweStatus | null>(null)
   const [lweRepoUrl, setLweRepoUrl] = useState('')
   const [lweRepoBranch, setLweRepoBranch] = useState('')
+  const [lweCmakeArgs, setLweCmakeArgs] = useState('')
   const [defaultLweRepo, setDefaultLweRepo] = useState('')
   const [repoSaved, setRepoSaved] = useState(false)
   const [lweInstalling, setLweInstalling] = useState(false)
@@ -56,6 +57,7 @@ export default function SettingsView() {
       setDefaultFps(cfg.defaultFps != null ? String(cfg.defaultFps) : '')
       setLweRepoUrl(cfg.lweRepoUrl ?? '')
       setLweRepoBranch(cfg.lweRepoBranch ?? '')
+      setLweCmakeArgs(cfg.lweCmakeArgs ?? '')
       setDefaultLweRepo(cfg.defaultLweRepoUrl)
       setBackupPath(cfg.backupPath ?? '')
       setAutoUnsubscribeAfterBackup(cfg.autoUnsubscribeAfterBackup)
@@ -130,6 +132,7 @@ export default function SettingsView() {
 
   async function handleSaveRepo() {
     await window.electronAPI.config.setLweRepo(lweRepoUrl.trim() || null, lweRepoBranch.trim() || null)
+    await window.electronAPI.config.setLweCmakeArgs(lweCmakeArgs.trim() || null)
     setRepoSaved(true)
     setTimeout(() => setRepoSaved(false), 2000)
   }
@@ -138,8 +141,9 @@ export default function SettingsView() {
     setLweInstalling(true)
     setLweProgress({ stage: 'cloning', message: 'Starting installation...', percentage: 0 })
     try {
-      // Persist the repo fields first so the build uses what's on screen
+      // Persist the repo/cmake-args fields first so the build uses what's on screen
       await window.electronAPI.config.setLweRepo(lweRepoUrl.trim() || null, lweRepoBranch.trim() || null)
+      await window.electronAPI.config.setLweCmakeArgs(lweCmakeArgs.trim() || null)
       await window.electronAPI.lwe.install()
     } catch (err) {
       setLweProgress({
@@ -481,6 +485,17 @@ export default function SettingsView() {
                 {repoSaved ? 'Saved!' : 'Save'}
               </button>
             </div>
+            <label className="block text-xs text-gray-400">Extra cmake arguments</label>
+            <p className="text-xs text-gray-600">
+              Passed to cmake when configuring the build, e.g. -DENABLE_KDE_EXPERIMENTAL_FEATURES=ON
+            </p>
+            <input
+              type="text"
+              value={lweCmakeArgs}
+              onChange={(e) => { setLweCmakeArgs(e.target.value); setRepoSaved(false) }}
+              placeholder="-DENABLE_KDE_EXPERIMENTAL_FEATURES=ON"
+              className="w-full rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+            />
           </div>
 
           {lweStatus === null ? (

@@ -15,7 +15,7 @@ import {
   getXdgRuntimeDir
 } from '../utils/platform'
 import { getWorkshopPath, getLweManifestPath } from '../utils/paths'
-import { getLweRepoUrl, getLweRepoBranch } from './config.service'
+import { getLweRepoUrl, getLweRepoBranch, getLweCmakeArgs } from './config.service'
 import { DEFAULT_LWE_REPO } from '@shared/constants'
 
 const execFileAsync = promisify(execFile)
@@ -68,6 +68,34 @@ function writeLweManifest(manifest: LweInstallManifest): void {
   try {
     fs.writeFileSync(getLweManifestPath(), JSON.stringify(manifest, null, 2), 'utf8')
   } catch { /* non-fatal */ }
+}
+
+function parseExtraCmakeArgs(raw: string | null): string[] {
+  if (!raw) return []
+  const args: string[] = []
+  let current = ''
+  let quote: string | null = null
+  let inToken = false
+  for (const ch of raw) {
+    if (quote) {
+      if (ch === quote) quote = null
+      else current += ch
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      inToken = true
+      continue
+    }
+    if (/\s/.test(ch)) {
+      if (inToken) { args.push(current); current = ''; inToken = false }
+      continue
+    }
+    current += ch
+    inToken = true
+  }
+  if (inToken) args.push(current)
+  return args
 }
 
 function findLweBinary(): string | undefined {
@@ -278,7 +306,8 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       '-DCMAKE_BUILD_TYPE=Release',
       '-DCMAKE_INSTALL_PREFIX=/usr/local',
       '-DCMAKE_C_FLAGS=-Wno-error',
-      '-DCMAKE_CXX_FLAGS=-Wno-error'
+      '-DCMAKE_CXX_FLAGS=-Wno-error',
+      ...parseExtraCmakeArgs(getLweCmakeArgs())
     ], {
       cwd: cmakeBuild,
       timeout: 600_000,
