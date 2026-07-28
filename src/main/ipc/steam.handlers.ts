@@ -4,6 +4,35 @@ import { IpcChannels } from '@shared/ipc-channels'
 import * as steam from '../services/steam.service'
 import * as library from '../services/library.service'
 
+function startDownloadPoll(win: BrowserWindow, itemId: string): void {
+  const idBig = BigInt(itemId)
+  const pollInterval = setInterval(() => {
+    if (win.isDestroyed()) {
+      clearInterval(pollInterval)
+      return
+    }
+    const info = steam.getDownloadInfo(idBig)
+    if (info) {
+      win.webContents.send(IpcChannels.EVENT_DOWNLOAD_PROGRESS, info)
+      return
+    }
+    if (steam.isItemDownloading(idBig)) return // queued/pending, no progress numbers yet
+
+    clearInterval(pollInterval)
+    library.importWallpaperById(itemId).then((meta) => {
+      if (win.isDestroyed()) return
+      const success = !!meta && !meta.downloading && !meta.downloadFailed
+      win.webContents.send(IpcChannels.EVENT_DOWNLOAD_PROGRESS, {
+        itemId,
+        bytesDownloaded: 0,
+        bytesTotal: 0,
+        percentage: success ? 100 : 0,
+        status: success ? 'completed' : 'error'
+      })
+    })
+  }, 1000)
+}
+
 export function registerSteamHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.STEAM_IS_RUNNING, () => {
     return steam.isSteamRunning()
@@ -11,28 +40,7 @@ export function registerSteamHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(IpcChannels.STEAM_SUBSCRIBE, async (_e, itemId: string) => {
     await steam.subscribeToItem(BigInt(itemId))
-
-    // Poll download progress until Steam reports the download is gone
-    const pollInterval = setInterval(() => {
-      if (win.isDestroyed()) {
-        clearInterval(pollInterval)
-        return
-      }
-      const info = steam.getDownloadInfo(BigInt(itemId))
-      if (!info) {
-        clearInterval(pollInterval)
-        win.webContents.send(IpcChannels.EVENT_DOWNLOAD_PROGRESS, {
-          itemId,
-          bytesDownloaded: 0,
-          bytesTotal: 0,
-          percentage: 100,
-          status: 'completed'
-        })
-        return
-      }
-      win.webContents.send(IpcChannels.EVENT_DOWNLOAD_PROGRESS, info)
-    }, 1000)
-
+    startDownloadPoll(win, itemId)
     return { ok: true }
   })
 
@@ -43,6 +51,20 @@ export function registerSteamHandlers(win: BrowserWindow): void {
       try { fs.rmSync(wallpaper.localPath, { recursive: true, force: true }) } catch { /* ignore */ }
     }
     library.deleteWallpaper(itemId)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.STEAM_REDOWNLOAD, async (_e, itemId: string) => {
+    const wallpaper = library.getWallpaper(itemId)
+    await steam.unsubscribeFromItem(BigInt(itemId))
+    if (wallpaper?.localPath) {
+      try { fs.rmSync(wallpaper.localPath, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+    if (wallpaper) {
+      library.updateWallpaper(itemId, { downloading: true, downloadFailed: false })
+    }
+    await steam.subscribeToItem(BigInt(itemId))
+    startDownloadPoll(win, itemId)
     return { ok: true }
   })
 

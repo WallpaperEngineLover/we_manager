@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto'
 import { cleanupPlaylists } from './playlist.service'
 import { getWorkshopTimesUpdated } from './workshop.service'
 import { findAndMutate } from '../utils/collections'
+import { isSteamRunning, isItemDownloading } from './steam.service'
 
 interface LibraryStore {
   wallpapers: Record<string, WallpaperMeta>
@@ -216,7 +217,7 @@ function buildMeta(
   workshopTimeUpdated?: number
 ): WallpaperMeta {
   const now = Date.now()
-  const { downloading: _d, ...existingRest } = existing ?? { appliedCount: 0, categories: [] }
+  const { downloading: _d, downloadFailed: _df, ...existingRest } = existing ?? { appliedCount: 0, categories: [] }
   return {
     ...existingRest,
     id: workshopId,
@@ -237,18 +238,45 @@ function buildMeta(
   }
 }
 
+function buildIncompleteMeta(
+  workshopId: string,
+  localPath: string,
+  existing?: WallpaperMeta
+): WallpaperMeta {
+  const now = Date.now()
+  const downloading = isSteamRunning() ? isItemDownloading(BigInt(workshopId)) : true
+  return {
+    id: workshopId,
+    title: existing?.title ?? `Wallpaper ${workshopId}`,
+    type: existing?.type ?? 'scene',
+    contentRating: existing?.contentRating ?? 'everyone',
+    localPath,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    subscribed: true,
+    appliedCount: existing?.appliedCount ?? 0,
+    source: 'workshop',
+    tags: existing?.tags ?? [],
+    categories: existing?.categories ?? [],
+    downloading,
+    downloadFailed: !downloading
+  }
+}
+
 export async function importWallpaperById(workshopId: string): Promise<WallpaperMeta | null> {
   const localPath = path.join(getWorkshopPath(), workshopId)
   if (!fs.existsSync(localPath)) return null
 
+  const existing = getWallpaper(workshopId) ?? undefined
+  const pj = readProjectJson(localPath)
+  if (!pj) {
+    const meta = buildIncompleteMeta(workshopId, localPath, existing)
+    upsertWallpaper(meta)
+    return meta
+  }
+
   const timesUpdated = await safeGetWorkshopTimesUpdated([workshopId])
-  const meta = buildMeta(
-    workshopId,
-    localPath,
-    readProjectJson(localPath),
-    getWallpaper(workshopId) ?? undefined,
-    timesUpdated.get(workshopId)
-  )
+  const meta = buildMeta(workshopId, localPath, pj, existing, timesUpdated.get(workshopId))
   upsertWallpaper(meta)
   return meta
 }
@@ -283,33 +311,20 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     const pj = readProjectJson(localPath)
 
     if (!pj) {
-      // No project.json yet: the directory exists but the download is incomplete
-      if (!wallpapers[entry.name]) {
-        const now = Date.now()
-        wallpapers[entry.name] = {
-          id: entry.name,
-          title: `Wallpaper ${entry.name}`,
-          type: 'scene',
-          contentRating: 'everyone',
-          localPath,
-          createdAt: now,
-          updatedAt: now,
-          subscribed: true,
-          appliedCount: 0,
-          source: 'workshop',
-          tags: [],
-          categories: [],
-          downloading: true
-        }
+      const existing = wallpapers[entry.name]
+      const meta = buildIncompleteMeta(entry.name, localPath, existing)
+      if (!existing) {
+        wallpapers[entry.name] = meta
         imported++
+      } else if (existing.downloading !== meta.downloading || existing.downloadFailed !== meta.downloadFailed) {
+        wallpapers[entry.name] = { ...existing, downloading: meta.downloading, downloadFailed: meta.downloadFailed }
+        skipped++
       } else {
         skipped++
       }
       continue
     }
 
-    // Skip already-imported entries that have all required fields (cache hit),
-    // but still track them so their updatedAt can be resynced with Steam below.
     const existing = wallpapers[entry.name]
     if (!existing?.downloading && existing?.previewLocal !== undefined && existing?.contentRating !== undefined && existing?.fileSize !== undefined) {
       cacheHits.push(entry.name)

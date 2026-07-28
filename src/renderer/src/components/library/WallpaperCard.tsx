@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Play, Loader2, Check, ThumbsUp, Trash2, ExternalLink, Download, Archive } from 'lucide-react'
+import { Play, Loader2, Check, ThumbsUp, Trash2, ExternalLink, Download, Archive, AlertTriangle, RotateCw } from 'lucide-react'
 import type { WallpaperMeta } from '@shared/types'
 import clsx from 'clsx'
 import { getPreviewSrc } from '../../utils/preview'
@@ -15,6 +15,7 @@ interface WallpaperCardProps {
   onLiked?: () => void
   onUnsubscribed?: () => void
   onBackedUp?: () => void
+  onRedownloaded?: () => void
   onSelect?: (e: React.MouseEvent) => void
   onContextMenu?: (e: React.MouseEvent) => void
 }
@@ -29,6 +30,7 @@ export default function WallpaperCard({
   onLiked,
   onUnsubscribed,
   onBackedUp,
+  onRedownloaded,
   onSelect,
   onContextMenu
 }: WallpaperCardProps) {
@@ -39,6 +41,8 @@ export default function WallpaperCard({
   const [fpsInput, setFpsInput] = useState(wallpaper.fpsOverride != null ? String(wallpaper.fpsOverride) : '')
   const [isBackingUp, setIsBackingUp] = useState(false)
   const [backupPercentage, setBackupPercentage] = useState<number | null>(null)
+  const [isRedownloading, setIsRedownloading] = useState(false)
+  const [downloadPercentage, setDownloadPercentage] = useState<number | null>(null)
 
   useEffect(() => {
     if (!isBackingUp) return
@@ -52,6 +56,37 @@ export default function WallpaperCard({
       }
     })
   }, [isBackingUp, wallpaper.id])
+
+  useEffect(() => {
+    if (!wallpaper.downloading) {
+      setDownloadPercentage(null)
+      return
+    }
+    return window.electronAPI.on.downloadProgress((progress) => {
+      if (progress.itemId !== wallpaper.id) return
+      if (progress.status === 'downloading') {
+        setDownloadPercentage(progress.percentage)
+      } else {
+        setDownloadPercentage(null)
+        setIsRedownloading(false)
+        onRedownloaded?.()
+      }
+    })
+  }, [wallpaper.downloading, wallpaper.id, onRedownloaded])
+
+  async function handleRedownload(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (isRedownloading) return
+    setIsRedownloading(true)
+    setError(null)
+    try {
+      await window.electronAPI.steam.redownload(wallpaper.id)
+      onRedownloaded?.()
+    } catch (err) {
+      setError((err as Error).message)
+      setIsRedownloading(false)
+    }
+  }
 
   async function handleApply(e: React.MouseEvent) {
     e.stopPropagation()
@@ -164,9 +199,33 @@ export default function WallpaperCard({
           <div className="flex h-full items-center justify-center text-gray-600">No preview</div>
         )}
         {wallpaper.downloading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/70">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/70 px-4">
             <Download size={20} className="text-indigo-400 animate-bounce" />
-            <span className="text-xs text-gray-300">Downloading...</span>
+            <span className="text-xs text-gray-300">
+              {downloadPercentage != null ? `Downloading... ${downloadPercentage}%` : 'Downloading...'}
+            </span>
+            {downloadPercentage != null && (
+              <div className="h-1 w-full max-w-[140px] overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full bg-indigo-500 transition-[width]"
+                  style={{ width: `${downloadPercentage}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+        {wallpaper.downloadFailed && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/70 px-4 text-center">
+            <AlertTriangle size={20} className="text-red-400" />
+            <span className="text-xs text-gray-300">Download failed</span>
+            <button
+              onClick={handleRedownload}
+              disabled={isRedownloading}
+              className="flex items-center gap-1 rounded bg-indigo-600/80 px-2 py-1 text-xs text-white transition-colors hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isRedownloading ? <Loader2 size={11} className="animate-spin" /> : <RotateCw size={11} />}
+              Redownload
+            </button>
           </div>
         )}
         {(wallpaper.backedUp || wallpaper.source === 'backup') && (
@@ -278,11 +337,19 @@ export default function WallpaperCard({
       <div className="absolute right-2 top-2">
         <button
           onClick={handleApply}
-          disabled={isApplying || !lweInstalled || wallpaper.downloading}
-          title={wallpaper.downloading ? 'Wallpaper is still downloading' : !lweInstalled ? 'Install linux-wallpaperengine in Settings first' : 'Play wallpaper'}
+          disabled={isApplying || !lweInstalled || wallpaper.downloading || wallpaper.downloadFailed}
+          title={
+            wallpaper.downloading
+              ? 'Wallpaper is still downloading'
+              : wallpaper.downloadFailed
+                ? 'Download failed - use Redownload to try again'
+                : !lweInstalled
+                  ? 'Install linux-wallpaperengine in Settings first'
+                  : 'Play wallpaper'
+          }
           className={clsx(
             'flex h-7 w-7 items-center justify-center rounded-full transition-opacity disabled:cursor-not-allowed',
-            !lweInstalled || wallpaper.downloading
+            !lweInstalled || wallpaper.downloading || wallpaper.downloadFailed
               ? 'bg-black/60 text-gray-500 opacity-0 group-hover:opacity-100'
               : 'bg-black/60 text-white opacity-0 hover:bg-indigo-600 group-hover:opacity-100'
           )}

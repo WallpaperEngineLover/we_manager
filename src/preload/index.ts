@@ -33,6 +33,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.STEAM_SUBSCRIBE, itemId),
     unsubscribe: (itemId: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.STEAM_UNSUBSCRIBE, itemId),
+    redownload: (itemId: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.STEAM_REDOWNLOAD, itemId),
     getSubscribedItems: (): Promise<string[]> =>
       ipcRenderer.invoke(IpcChannels.STEAM_GET_SUBSCRIBED),
     downloadInfo: (itemId: string): Promise<DownloadProgressEvent | null> =>

@@ -43,6 +43,7 @@ export interface WallpaperMeta {
   tags: string[]
   categories: string[]
   downloading?: boolean
+  downloadFailed?: boolean
   fpsOverride?: number
   backedUp?: boolean
 }

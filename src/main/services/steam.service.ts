@@ -19,10 +19,12 @@ export function initSteam(): boolean {
 }
 
 export function isSteamRunning(): boolean {
+  if (!client) initSteam()
   return client !== null
 }
 
 export function getClient() {
+  if (!client) initSteam()
   if (!client) throw new Error('Steam not initialized')
   return client
 }
@@ -153,4 +155,13 @@ export function getItemState(itemId: bigint): number {
   } catch {
     return 0
   }
+}
+
+// EItemState flags from the Steamworks SDK (isteamugc.h)
+const ITEM_STATE_DOWNLOAD_PENDING = 32
+const ITEM_STATE_DOWNLOADING = 16
+
+export function isItemDownloading(itemId: bigint): boolean {
+  const state = getItemState(itemId)
+  return (state & (ITEM_STATE_DOWNLOADING | ITEM_STATE_DOWNLOAD_PENDING)) !== 0
 }

@@ -20,7 +20,8 @@ import {
   ThumbsUp,
   ThumbsDown,
   Eraser,
-  Archive
+  Archive,
+  AlertTriangle
 } from 'lucide-react'
 import WallpaperCard from './WallpaperCard'
 import PreviewSizeToggle from '../common/PreviewSizeToggle'
@@ -40,9 +41,16 @@ interface LibraryFilterState {
   ageRatings: string[]
   genres: string[]
   sources: string[]
+  failedOnly: boolean
 }
 
-const DEFAULT_STATE: LibraryFilterState = { types: [], ageRatings: [], genres: [], sources: [] }
+const DEFAULT_STATE: LibraryFilterState = {
+  types: [],
+  ageRatings: [],
+  genres: [],
+  sources: [],
+  failedOnly: false
+}
 
 const TYPE_MAP: Record<string, string> = {
   Scene: 'scene',
@@ -267,15 +275,30 @@ export default function LibraryView() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filterState))
   }, [filterState])
 
-  function updateFilter<K extends keyof LibraryFilterState>(key: K, tag: string) {
+  function updateFilter<K extends 'types' | 'ageRatings' | 'genres' | 'sources'>(key: K, tag: string) {
     setFilterState((prev) => ({ ...prev, [key]: toggle(prev[key], tag) }))
+  }
+
+  function toggleFailedOnly() {
+    setFilterState((prev) => ({ ...prev, failedOnly: !prev.failedOnly }))
   }
 
   const activeCount =
     filterState.types.length +
     filterState.ageRatings.length +
     filterState.genres.length +
-    filterState.sources.length
+    filterState.sources.length +
+    (filterState.failedOnly ? 1 : 0)
+
+  // Refresh the library once a background download (subscribe or redownload) settles,
+  // so the downloading/downloadFailed badges stay in sync without a manual Scan.
+  useEffect(() => {
+    return window.electronAPI.on.downloadProgress((progress) => {
+      if (progress.status === 'completed' || progress.status === 'error') {
+        queryClient.invalidateQueries({ queryKey: ['library'] })
+      }
+    })
+  }, [queryClient])
 
   const filters: LibraryFilters = {
     sortBy,
@@ -321,6 +344,7 @@ export default function LibraryView() {
         const sources = filterState.sources.map((s) => SOURCE_MAP[s]).filter(Boolean)
         if (!sources.includes(w.source)) return false
       }
+      if (filterState.failedOnly && !w.downloadFailed) return false
       return true
     })
   }, [allWallpapers, filterState])
@@ -328,6 +352,11 @@ export default function LibraryView() {
   // Set of all existing library wallpaper IDs (for cross-referencing)
   const existingIds = useMemo(
     () => new Set(allWallpapers.map((w) => w.id)),
+    [allWallpapers]
+  )
+
+  const failedCount = useMemo(
+    () => allWallpapers.filter((w) => w.downloadFailed).length,
     [allWallpapers]
   )
 
@@ -900,6 +929,27 @@ export default function LibraryView() {
 
         <div className="h-3 w-px bg-white/10" />
 
+        <button
+          onClick={toggleFailedOnly}
+          title="Show only wallpapers whose download failed (e.g. disk ran out of space)"
+          className={clsx(
+            'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+            filterState.failedOnly
+              ? 'bg-red-600 text-white'
+              : failedCount > 0
+                ? 'text-red-400 hover:bg-white/5'
+                : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+          )}
+        >
+          <AlertTriangle size={12} />
+          Failed
+          {failedCount > 0 && (
+            <span className="rounded-full bg-black/30 px-1.5">{failedCount}</span>
+          )}
+        </button>
+
+        <div className="h-3 w-px bg-white/10" />
+
         <TagDropdown
           available={availableTags}
           selected={filterState.genres}
@@ -1164,6 +1214,9 @@ export default function LibraryView() {
                   queryClient.invalidateQueries({ queryKey: ['library'] })
                   refetchFolders()
                 }}
+                onRedownloaded={() =>
+                  queryClient.invalidateQueries({ queryKey: ['library'] })
+                }
                 onSelect={(e) => handleCardSelect(wallpaper.id, e)}
                 onContextMenu={(e) => openWallpaperCtxMenu(e, wallpaper.id)}
               />

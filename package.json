@@ -1,9 +1,10 @@
 {
   "name": "we-manager",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "Wallpaper Engine workshop manager",
-  "author": "UwU",
+  "author": "UwU <260361707+WallpaperEngineLover@users.noreply.github.com>",
+  "email": "260361707+WallpaperEngineLover@users.noreply.github.com",
   "license": "MIT",
   "main": "out/main/index.js",
   "scripts": {

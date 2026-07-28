@@ -14,6 +14,7 @@ export const IpcChannels = {
   STEAM_VOTE: 'steam:vote',
   STEAM_OPEN_WORKSHOP: 'steam:open-workshop',
   STEAM_GET_VOTED_IDS: 'steam:get-voted-ids',
+  STEAM_REDOWNLOAD: 'steam:redownload',
 
   // Library management
   LIBRARY_GET_ALL: 'library:get-all',
