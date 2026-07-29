@@ -7,7 +7,7 @@ import { randomUUID } from 'crypto'
 import { cleanupPlaylists } from './playlist.service'
 import { getWorkshopTimesUpdated } from './workshop.service'
 import { findAndMutate } from '../utils/collections'
-import { isSteamRunning, isItemDownloading } from './steam.service'
+import { isSteamRunning, getItemDownloadStatus, getSubscribedItems } from './steam.service'
 
 interface LibraryStore {
   wallpapers: Record<string, WallpaperMeta>
@@ -245,7 +245,9 @@ function buildIncompleteMeta(
   existing?: WallpaperMeta
 ): WallpaperMeta {
   const now = Date.now()
-  const downloading = isSteamRunning() ? isItemDownloading(BigInt(workshopId)) : true
+  const { downloading, failed } = isSteamRunning()
+    ? getItemDownloadStatus(BigInt(workshopId))
+    : { downloading: true, failed: false }
   return {
     id: workshopId,
     title: existing?.title ?? `Wallpaper ${workshopId}`,
@@ -260,7 +262,7 @@ function buildIncompleteMeta(
     tags: existing?.tags ?? [],
     categories: existing?.categories ?? [],
     downloading,
-    downloadFailed: !downloading
+    downloadFailed: failed
   }
 }
 
@@ -288,6 +290,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
 
   const entries = fs.readdirSync(workshopPath, { withFileTypes: true })
   const onDisk = new Set(entries.filter(e => e.isDirectory()).map(e => e.name))
+  const subscribedIds = isSteamRunning() ? new Set(getSubscribedItems()) : new Set<string>()
 
   // Load entire store once, mutate in memory, write once at the end
   const wallpapers = store.get('wallpapers')
@@ -295,11 +298,27 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   let skipped = 0
   let removed = 0
 
-  // Remove wallpapers whose directories no longer exist on disk
+  // Remove wallpapers whose directories no longer exist on disk, unless Steam
+  // still has them subscribed (those get tracked below instead, so a failed
+  // or never-started download doesn't just vanish from the library)
   for (const id of Object.keys(wallpapers)) {
-    if (!onDisk.has(id)) {
+    if (!onDisk.has(id) && !subscribedIds.has(id)) {
       delete wallpapers[id]
       removed++
+    }
+  }
+
+  const trackIncomplete = (id: string, localPath: string): void => {
+    const existing = wallpapers[id]
+    const meta = buildIncompleteMeta(id, localPath, existing)
+    if (!existing) {
+      wallpapers[id] = meta
+      imported++
+    } else if (existing.downloading !== meta.downloading || existing.downloadFailed !== meta.downloadFailed) {
+      wallpapers[id] = { ...existing, downloading: meta.downloading, downloadFailed: meta.downloadFailed }
+      skipped++
+    } else {
+      skipped++
     }
   }
 
@@ -312,17 +331,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     const pj = readProjectJson(localPath)
 
     if (!pj) {
-      const existing = wallpapers[entry.name]
-      const meta = buildIncompleteMeta(entry.name, localPath, existing)
-      if (!existing) {
-        wallpapers[entry.name] = meta
-        imported++
-      } else if (existing.downloading !== meta.downloading || existing.downloadFailed !== meta.downloadFailed) {
-        wallpapers[entry.name] = { ...existing, downloading: meta.downloading, downloadFailed: meta.downloadFailed }
-        skipped++
-      } else {
-        skipped++
-      }
+      trackIncomplete(entry.name, localPath)
       continue
     }
 
@@ -334,6 +343,13 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     }
 
     toRebuild.push({ entry, localPath, pj })
+  }
+
+  // Items Steam still lists as subscribed but that never got a local folder
+  // at all (the download failed before writing anything, or hasn't started)
+  for (const id of subscribedIds) {
+    if (onDisk.has(id)) continue
+    trackIncomplete(id, path.join(workshopPath, id))
   }
 
   const timesUpdated = await safeGetWorkshopTimesUpdated([

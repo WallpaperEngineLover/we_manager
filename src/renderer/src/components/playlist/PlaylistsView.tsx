@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ListVideo,
@@ -11,12 +11,23 @@ import {
   SkipForward,
   SkipBack,
   Shuffle,
-  ArrowDownWideNarrow
+  ArrowDownWideNarrow,
+  ExternalLink,
+  FolderOpen,
+  FolderInput,
+  Folder,
+  ChevronRight,
+  Eye,
+  ThumbsUp,
+  ThumbsDown,
+  Archive
 } from 'lucide-react'
 import clsx from 'clsx'
 import type { Playlist, PlaylistPlaybackState, PlaylistSettings } from '@shared/types'
 import PlaylistItemRow from './PlaylistItemRow'
 import WallpaperPickerModal from './WallpaperPickerModal'
+import { useClickOutside } from '../../hooks/useClickOutside'
+import { openWorkshopPage } from '../../utils/steam'
 
 const SORT_OPTIONS: { value: PlaylistSettings['sortBy']; label: string }[] = [
   { value: 'manual', label: 'Manual order' },
@@ -36,6 +47,15 @@ export default function PlaylistsView() {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number
+    y: number
+    wallpaperId: string
+    showFolderSub: boolean
+  } | null>(null)
+  const ctxMenuRef = useRef<HTMLDivElement>(null)
+  useClickOutside(ctxMenuRef, () => setCtxMenu(null), !!ctxMenu)
+
   const { data: playlists = [] } = useQuery({
     queryKey: ['playlists'],
     queryFn: () => window.electronAPI.playlist.getAll()
@@ -46,6 +66,24 @@ export default function PlaylistsView() {
     queryFn: () => window.electronAPI.library.getAll()
   })
   const wallpaperById = useMemo(() => new Map(wallpapers.map((w) => [w.id, w])), [wallpapers])
+
+  const { data: folders = [], refetch: refetchFolders } = useQuery({
+    queryKey: ['folders'],
+    queryFn: () => window.electronAPI.folders.getAll()
+  })
+  const folderOfItem = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const f of folders) {
+      for (const id of f.items) map.set(id, f.id)
+    }
+    return map
+  }, [folders])
+
+  const { data: config } = useQuery({
+    queryKey: ['config'],
+    queryFn: () => window.electronAPI.config.get()
+  })
+  const isBackupConfigured = config?.isBackupConfigured ?? false
 
   const { data: playbackState } = useQuery({
     queryKey: ['playlist-playback-state'],
@@ -119,6 +157,75 @@ export default function PlaylistsView() {
     if (!activePlaylist) return
     await window.electronAPI.playlist.updateItem(activePlaylist.id, wallpaperId, patch)
     invalidatePlaylists()
+  }
+
+  function openItemCtxMenu(e: React.MouseEvent, wallpaperId: string) {
+    e.preventDefault()
+    setCtxMenu({ x: e.clientX, y: e.clientY, wallpaperId, showFolderSub: false })
+  }
+
+  function closeCtxMenu() {
+    setCtxMenu(null)
+  }
+
+  const ctxWallpaper = ctxMenu ? wallpaperById.get(ctxMenu.wallpaperId) : undefined
+  const ctxHasVideo = Boolean(ctxWallpaper?.type === 'video' && ctxWallpaper.file)
+  const ctxHasBackupable = ctxWallpaper?.source === 'workshop'
+  const ctxFolderId = ctxMenu ? folderOfItem.get(ctxMenu.wallpaperId) : undefined
+  const ctxMoveTargets = folders.filter((f) => f.id !== ctxFolderId)
+
+  async function ctxUnsubscribe() {
+    if (!ctxMenu) return
+    await window.electronAPI.steam.unsubscribe(ctxMenu.wallpaperId)
+    closeCtxMenu()
+    queryClient.invalidateQueries({ queryKey: ['library-all'] })
+    refetchFolders()
+  }
+
+  async function ctxVote(up: boolean) {
+    if (!ctxMenu) return
+    await window.electronAPI.steam.vote(ctxMenu.wallpaperId, up)
+    queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })
+    closeCtxMenu()
+  }
+
+  function ctxOpenInSteam() {
+    if (!ctxMenu) return
+    openWorkshopPage(ctxMenu.wallpaperId)
+    closeCtxMenu()
+  }
+
+  async function ctxBackup() {
+    if (!ctxMenu) return
+    closeCtxMenu()
+    await window.electronAPI.backup.item(ctxMenu.wallpaperId)
+    queryClient.invalidateQueries({ queryKey: ['library-all'] })
+  }
+
+  async function ctxOpenLocally() {
+    if (!ctxMenu || !ctxWallpaper?.localPath) return closeCtxMenu()
+    await window.electronAPI.shell.openPath(ctxWallpaper.localPath)
+    closeCtxMenu()
+  }
+
+  async function ctxPreviewVideo() {
+    if (!ctxWallpaper?.localPath || !ctxWallpaper.file) return closeCtxMenu()
+    await window.electronAPI.shell.openWithDefault(ctxWallpaper.localPath + '/' + ctxWallpaper.file)
+    closeCtxMenu()
+  }
+
+  async function ctxMoveToFolder(folderId: string) {
+    if (!ctxMenu) return
+    await window.electronAPI.folders.addItems(folderId, [ctxMenu.wallpaperId])
+    refetchFolders()
+    closeCtxMenu()
+  }
+
+  async function ctxRemoveFromFolder() {
+    if (!ctxMenu || !ctxFolderId) return
+    await window.electronAPI.folders.removeItems(ctxFolderId, [ctxMenu.wallpaperId])
+    refetchFolders()
+    closeCtxMenu()
   }
 
   function handleDragStart(index: number) {
@@ -461,6 +568,7 @@ export default function PlaylistsView() {
                   onPlay={() => handlePlayItem(item.wallpaperId)}
                   onRemove={() => handleRemoveItem(item.wallpaperId)}
                   onUpdate={(patch) => handleUpdateItem(item.wallpaperId, patch)}
+                  onContextMenu={(e) => openItemCtxMenu(e, item.wallpaperId)}
                   defaultDurationSec={activePlaylist.settings.defaultDurationSec}
                   defaultVolume={activePlaylist.settings.defaultVolume}
                 />
@@ -476,6 +584,106 @@ export default function PlaylistsView() {
           onAdd={handleAddWallpapers}
           onClose={() => setPickerOpen(false)}
         />
+      )}
+
+      {ctxMenu && (
+        <div
+          ref={ctxMenuRef}
+          className="fixed z-50 min-w-[200px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        >
+          {ctxHasBackupable && isBackupConfigured && (
+            <button
+              onClick={ctxBackup}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+            >
+              <Archive size={12} /> Backup
+            </button>
+          )}
+
+          <button
+            onClick={ctxUnsubscribe}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
+          >
+            Unsubscribe
+          </button>
+
+          <div className="my-1 border-t border-white/5" />
+
+          <button
+            onClick={() => ctxVote(true)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+          >
+            <ThumbsUp size={12} /> Like
+          </button>
+          <button
+            onClick={() => ctxVote(false)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+          >
+            <ThumbsDown size={12} /> Dislike
+          </button>
+
+          <div className="my-1 border-t border-white/5" />
+
+          <button
+            onClick={ctxOpenInSteam}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+          >
+            <ExternalLink size={12} /> Open in Steam Workshop
+          </button>
+          <button
+            onClick={ctxOpenLocally}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+          >
+            <FolderOpen size={12} /> Open wallpaper locally
+          </button>
+
+          {ctxHasVideo && (
+            <button
+              onClick={ctxPreviewVideo}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+            >
+              <Eye size={12} /> Preview in media player
+            </button>
+          )}
+
+          <div className="my-1 border-t border-white/5" />
+
+          <div className="relative">
+            <button
+              onClick={() => setCtxMenu((prev) => prev ? { ...prev, showFolderSub: !prev.showFolderSub } : null)}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+            >
+              <FolderInput size={12} /> Move to folder
+              <ChevronRight size={12} className="ml-auto" />
+            </button>
+            {ctxMenu.showFolderSub && (
+              <div className="absolute left-full top-0 ml-1 min-w-[160px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl">
+                {ctxMoveTargets.length === 0 && (
+                  <div className="px-3 py-1.5 text-gray-500">No other folders</div>
+                )}
+                {ctxMoveTargets.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => ctxMoveToFolder(f.id)}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+                  >
+                    <Folder size={12} /> {f.title}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {ctxFolderId && (
+            <button
+              onClick={ctxRemoveFromFolder}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
+            >
+              <Trash2 size={12} /> Remove from folder
+            </button>
+          )}
+        </div>
       )}
     </div>
   )

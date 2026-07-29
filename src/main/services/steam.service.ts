@@ -158,10 +158,21 @@ export function getItemState(itemId: bigint): number {
 }
 
 // EItemState flags from the Steamworks SDK (isteamugc.h)
-const ITEM_STATE_DOWNLOAD_PENDING = 32
+const ITEM_STATE_NEEDS_UPDATE = 8
 const ITEM_STATE_DOWNLOADING = 16
+const ITEM_STATE_DOWNLOAD_PENDING = 32
 
 export function isItemDownloading(itemId: bigint): boolean {
   const state = getItemState(itemId)
   return (state & (ITEM_STATE_DOWNLOADING | ITEM_STATE_DOWNLOAD_PENDING)) !== 0
+}
+
+// NeedsUpdate stays set while Steam hasn't caught the local copy up to the
+// server version. If it's set but nothing is actively downloading/pending,
+// Steam gave up on the transfer (e.g. it errored out or the disk filled up).
+export function getItemDownloadStatus(itemId: bigint): { downloading: boolean; failed: boolean } {
+  const state = getItemState(itemId)
+  const downloading = (state & (ITEM_STATE_DOWNLOADING | ITEM_STATE_DOWNLOAD_PENDING)) !== 0
+  const failed = !downloading && (state & ITEM_STATE_NEEDS_UPDATE) !== 0
+  return { downloading, failed }
 }

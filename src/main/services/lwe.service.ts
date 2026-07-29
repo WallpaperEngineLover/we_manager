@@ -340,7 +340,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     // Local repo: hand the build dir back to the invoking user instead of deleting it, so the
     // next unprivileged cmake/make can still write into what `make install` (root) just touched.
     const reclaim = isLocalDir
-      ? `chown -R ${process.getuid()}:${process.getgid()} ${JSON.stringify(BUILD_DIR)}`
+      ? `chown -R ${process.getuid!()}:${process.getgid!()} ${JSON.stringify(BUILD_DIR)}`
       : `rm -rf ${JSON.stringify(BUILD_DIR)}`
     const installScript = `cd ${JSON.stringify(cmakeBuild)} && export PATH=${JSON.stringify(pathEnv)} && make install && patchelf --set-rpath /usr/local/lib64:/usr/local/lib /usr/local/linux-wallpaperengine 2>/dev/null; ldconfig; echo ${manifestMarker}; cat install_manifest.txt 2>/dev/null; ${reclaim}`
     const { stdout: installOutput } = await execFileAsync(installTool, ['bash', '-c', installScript], {

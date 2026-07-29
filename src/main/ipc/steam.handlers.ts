@@ -3,6 +3,7 @@ import * as fs from 'fs'
 import { IpcChannels } from '@shared/ipc-channels'
 import * as steam from '../services/steam.service'
 import * as library from '../services/library.service'
+import * as backup from '../services/backup.service'
 
 function startDownloadPoll(win: BrowserWindow, itemId: string): void {
   const idBig = BigInt(itemId)
@@ -50,7 +51,15 @@ export function registerSteamHandlers(win: BrowserWindow): void {
     if (wallpaper?.localPath) {
       try { fs.rmSync(wallpaper.localPath, { recursive: true, force: true }) } catch { /* ignore */ }
     }
-    library.deleteWallpaper(itemId)
+    if (wallpaper?.backedUp && backup.isBackedUp(itemId)) {
+      library.updateWallpaper(itemId, {
+        source: 'backup',
+        localPath: backup.getBackupDir(itemId),
+        subscribed: false
+      })
+    } else {
+      library.deleteWallpaper(itemId)
+    }
     return { ok: true }
   })
 

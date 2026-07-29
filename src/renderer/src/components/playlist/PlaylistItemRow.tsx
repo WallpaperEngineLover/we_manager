@@ -16,6 +16,7 @@ interface PlaylistItemRowProps {
   onPlay: () => void
   onRemove: () => void
   onUpdate: (patch: { volume?: number; durationSec?: number }) => void
+  onContextMenu: (e: React.MouseEvent) => void
   defaultDurationSec: number
   defaultVolume: number
 }
@@ -32,6 +33,7 @@ export default function PlaylistItemRow({
   onPlay,
   onRemove,
   onUpdate,
+  onContextMenu,
   defaultDurationSec,
   defaultVolume
 }: PlaylistItemRowProps) {
@@ -51,6 +53,7 @@ export default function PlaylistItemRow({
         e.preventDefault()
         onDrop()
       }}
+      onContextMenu={onContextMenu}
       className={clsx(
         'rounded-lg border transition-colors',
         isCurrent ? 'border-indigo-500/60 bg-indigo-500/10' : 'border-white/5 bg-[#1a1a1a]'
