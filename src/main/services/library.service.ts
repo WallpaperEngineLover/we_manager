@@ -5,7 +5,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { randomUUID } from 'crypto'
 import { cleanupPlaylists } from './playlist.service'
-import { getWorkshopTimesUpdated } from './workshop.service'
+import { getWorkshopTimesUpdated, getWorkshopTags } from './workshop.service'
 import { findAndMutate } from '../utils/collections'
 import { isSteamRunning, getItemDownloadStatus, getSubscribedItems } from './steam.service'
 
@@ -187,6 +187,27 @@ export function normalizeRating(raw?: string): ContentRating {
   }
 }
 
+// Derived from the item's Steam Workshop tags for wallpapers that never finished
+// downloading (no local project.json), so failed downloads still land in the
+// right type/rating filters instead of "uncategorized".
+function deriveTypeFromTags(tags: string[]): WallpaperType | undefined {
+  const match = tags.find((t) => ['Video', 'Web', 'Application', 'Scene'].includes(t))
+  return match ? normalizeType(match) : undefined
+}
+
+function deriveRatingFromTags(tags: string[]): ContentRating | undefined {
+  const match = tags.find((t) => ['Everyone', 'Questionable', 'Mature'].includes(t))
+  return match ? normalizeRating(match) : undefined
+}
+
+async function safeGetWorkshopTags(ids: string[]): Promise<Map<string, string[]>> {
+  try {
+    return await getWorkshopTags(ids)
+  } catch {
+    return new Map()
+  }
+}
+
 export function getDirSize(dirPath: string): number {
   let total = 0
   try {
@@ -242,24 +263,29 @@ function buildMeta(
 function buildIncompleteMeta(
   workshopId: string,
   localPath: string,
-  existing?: WallpaperMeta
+  existing?: WallpaperMeta,
+  workshopTags?: string[]
 ): WallpaperMeta {
   const now = Date.now()
   const { downloading, failed } = isSteamRunning()
     ? getItemDownloadStatus(BigInt(workshopId))
     : { downloading: true, failed: false }
+  const tags = workshopTags
+    ? [...new Set([...(existing?.tags ?? []), ...workshopTags])]
+    : (existing?.tags ?? [])
   return {
     id: workshopId,
     title: existing?.title ?? `Wallpaper ${workshopId}`,
-    type: existing?.type ?? 'scene',
-    contentRating: existing?.contentRating ?? 'uncategorized',
+    type: (workshopTags && deriveTypeFromTags(workshopTags)) ?? existing?.type ?? 'scene',
+    contentRating:
+      (workshopTags && deriveRatingFromTags(workshopTags)) ?? existing?.contentRating ?? 'uncategorized',
     localPath,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     subscribed: true,
     appliedCount: existing?.appliedCount ?? 0,
     source: 'workshop',
-    tags: existing?.tags ?? [],
+    tags,
     categories: existing?.categories ?? [],
     downloading,
     downloadFailed: failed
@@ -273,7 +299,8 @@ export async function importWallpaperById(workshopId: string): Promise<Wallpaper
   const existing = getWallpaper(workshopId) ?? undefined
   const pj = readProjectJson(localPath)
   if (!pj) {
-    const meta = buildIncompleteMeta(workshopId, localPath, existing)
+    const tags = await safeGetWorkshopTags([workshopId])
+    const meta = buildIncompleteMeta(workshopId, localPath, existing, tags.get(workshopId))
     upsertWallpaper(meta)
     return meta
   }
@@ -308,20 +335,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     }
   }
 
-  const trackIncomplete = (id: string, localPath: string): void => {
-    const existing = wallpapers[id]
-    const meta = buildIncompleteMeta(id, localPath, existing)
-    if (!existing) {
-      wallpapers[id] = meta
-      imported++
-    } else if (existing.downloading !== meta.downloading || existing.downloadFailed !== meta.downloadFailed) {
-      wallpapers[id] = { ...existing, downloading: meta.downloading, downloadFailed: meta.downloadFailed }
-      skipped++
-    } else {
-      skipped++
-    }
-  }
-
+  const incomplete: { id: string; localPath: string }[] = []
   const toRebuild: { entry: fs.Dirent; localPath: string; pj: ProjectJson }[] = []
   const cacheHits: string[] = []
   for (const entry of entries) {
@@ -331,7 +345,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     const pj = readProjectJson(localPath)
 
     if (!pj) {
-      trackIncomplete(entry.name, localPath)
+      incomplete.push({ id: entry.name, localPath })
       continue
     }
 
@@ -349,7 +363,34 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   // at all (the download failed before writing anything, or hasn't started)
   for (const id of subscribedIds) {
     if (onDisk.has(id)) continue
-    trackIncomplete(id, path.join(workshopPath, id))
+    incomplete.push({ id, localPath: path.join(workshopPath, id) })
+  }
+
+  const incompleteTags = await safeGetWorkshopTags(incomplete.map((i) => i.id))
+  for (const { id, localPath } of incomplete) {
+    const existing = wallpapers[id]
+    const meta = buildIncompleteMeta(id, localPath, existing, incompleteTags.get(id))
+    if (!existing) {
+      wallpapers[id] = meta
+      imported++
+    } else if (
+      existing.downloading !== meta.downloading ||
+      existing.downloadFailed !== meta.downloadFailed ||
+      existing.type !== meta.type ||
+      existing.contentRating !== meta.contentRating
+    ) {
+      wallpapers[id] = {
+        ...existing,
+        downloading: meta.downloading,
+        downloadFailed: meta.downloadFailed,
+        type: meta.type,
+        contentRating: meta.contentRating,
+        tags: meta.tags
+      }
+      skipped++
+    } else {
+      skipped++
+    }
   }
 
   const timesUpdated = await safeGetWorkshopTimesUpdated([

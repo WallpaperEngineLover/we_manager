@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Play, Loader2, Check, X, ThumbsUp, Trash2, ExternalLink, Download, Archive, AlertTriangle, RotateCw, Plus } from 'lucide-react'
+import { Play, Loader2, Check, X, ThumbsUp, Trash2, ExternalLink, Download, Archive, AlertTriangle, RotateCw, Plus, FolderOpen } from 'lucide-react'
 import type { WallpaperMeta } from '@shared/types'
 import clsx from 'clsx'
 import { getPreviewSrc } from '../../utils/preview'
@@ -144,6 +144,12 @@ export default function WallpaperCard({
       setError((err as Error).message)
       setUnsubState('idle')
     }
+  }
+
+  async function handleOpenLocally(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!wallpaper.localPath) return
+    await window.electronAPI.shell.openPath(wallpaper.localPath)
   }
 
   const previewSrc = getPreviewSrc(wallpaper)
@@ -332,6 +338,18 @@ export default function WallpaperCard({
           >
             <ExternalLink size={11} />
             {!compact && 'Steam'}
+          </button>
+          <button
+            onClick={handleOpenLocally}
+            disabled={!wallpaper.localPath}
+            title={wallpaper.localPath ? 'Open wallpaper folder' : 'Local files not found'}
+            className={clsx(
+              'flex items-center gap-1 rounded bg-white/5 text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50',
+              compact ? 'p-1.5' : 'px-2 py-1'
+            )}
+          >
+            <FolderOpen size={11} />
+            {!compact && 'Open'}
           </button>
         </div>
       </div>

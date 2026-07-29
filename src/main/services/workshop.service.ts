@@ -70,6 +70,21 @@ export async function getWorkshopTimesUpdated(
   return map
 }
 
+// Steam tags an item's type ("Video", "Scene", ...) and age rating ("Everyone", ...)
+// alongside its genre/resolution tags, so this works even for items that never
+// finished downloading and have no local project.json to read that from.
+export async function getWorkshopTags(publishedFileIds: string[]): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>()
+  if (publishedFileIds.length === 0) return map
+
+  const client = getClient()
+  const result = await client.workshop.getItems(publishedFileIds.map((id) => BigInt(id)))
+  for (const item of result.items) {
+    if (item) map.set(item.publishedFileId.toString(), item.tags ?? [])
+  }
+  return map
+}
+
 function transformItem(
   item: NonNullable<Awaited<ReturnType<ReturnType<typeof getClient>['workshop']['getItem']>>>,
   subscribedSet: Set<string>

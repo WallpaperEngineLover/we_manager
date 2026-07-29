@@ -55,7 +55,7 @@ function getUgcFfi(): UgcFfi {
     const libPath = path.join(
       path.dirname(require.resolve('steamworks.js')),
       'dist', 'linux64', 'libsteam_api.so'
-    )
+    ).replace(/app\.asar(?!\.unpacked)/, 'app.asar.unpacked')
     const steamLib = koffi.load(libPath)
     const ugcPtrType = koffi.pointer(koffi.opaque('ISteamUGC'))
     const getSteamUGC = steamLib.func('SteamAPI_SteamUGC_v020', ugcPtrType, [])
