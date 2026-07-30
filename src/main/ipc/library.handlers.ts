@@ -51,4 +51,8 @@ export function registerLibraryHandlers(): void {
   ipcMain.handle(IpcChannels.LIBRARY_RESET_FPS_OVERRIDES, () => {
     return library.resetAllFpsOverrides()
   })
+
+  ipcMain.handle(IpcChannels.LIBRARY_CHECK_UNAVAILABLE, () => {
+    return library.checkUnavailableWallpapers()
+  })
 }

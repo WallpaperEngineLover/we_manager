@@ -106,4 +106,8 @@ export function registerSteamHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.STEAM_INSTALL_INFO, (_e, itemId: string) => {
     return steam.getInstallInfo(BigInt(itemId))
   })
+
+  ipcMain.handle(IpcChannels.STEAM_GET_AUTHOR_INFO, (_e, steamId: string) => {
+    return steam.getAuthorInfo(steamId)
+  })
 }

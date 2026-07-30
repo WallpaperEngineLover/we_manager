@@ -2,6 +2,7 @@ export const IpcChannels = {
   // Workshop browsing (steamworks.js)
   WORKSHOP_QUERY: 'workshop:query',
   WORKSHOP_GET_ITEM: 'workshop:get-item',
+  WORKSHOP_QUERY_BY_CREATOR: 'workshop:query-by-creator',
 
   // Steamworks operations
   STEAM_SUBSCRIBE: 'steam:subscribe',
@@ -15,6 +16,7 @@ export const IpcChannels = {
   STEAM_OPEN_WORKSHOP: 'steam:open-workshop',
   STEAM_GET_VOTED_IDS: 'steam:get-voted-ids',
   STEAM_REDOWNLOAD: 'steam:redownload',
+  STEAM_GET_AUTHOR_INFO: 'steam:get-author-info',
 
   // Library management
   LIBRARY_GET_ALL: 'library:get-all',
@@ -28,6 +30,7 @@ export const IpcChannels = {
   LIBRARY_SCAN: 'library:scan',
   LIBRARY_DISTINCT_TAGS: 'library:distinct-tags',
   LIBRARY_RESET_FPS_OVERRIDES: 'library:reset-fps-overrides',
+  LIBRARY_CHECK_UNAVAILABLE: 'library:check-unavailable',
 
   // Folders
   FOLDERS_GET_ALL: 'folders:get-all',
@@ -48,6 +51,7 @@ export const IpcChannels = {
   CONFIG_GET: 'config:get',
   CONFIG_SET_WORKSHOP_PATH: 'config:set-workshop-path',
   CONFIG_SET_DEFAULT_FPS: 'config:set-default-fps',
+  CONFIG_SET_RECOMMENDED_FPS: 'config:set-recommended-fps',
   CONFIG_SET_LWE_REPO: 'config:set-lwe-repo',
   CONFIG_SET_LWE_CMAKE_ARGS: 'config:set-lwe-cmake-args',
   CONFIG_SET_BACKUP_PATH: 'config:set-backup-path',
@@ -103,6 +107,9 @@ export const IpcChannels = {
   LWE_LAUNCH: 'lwe:launch',
   LWE_STOP: 'lwe:stop',
   LWE_KILL_ALL: 'lwe:kill-all',
+  LWE_LIST_OBJECTS: 'lwe:list-objects',
+  LWE_HOTSWAP_SETTINGS: 'lwe:hotswap-settings',
+  LWE_LIST_PROPERTIES: 'lwe:list-properties',
 
   // Desktop icons overlay
   DESKTOP_ICONS_SET_ENABLED: 'desktop-icons:set-enabled',

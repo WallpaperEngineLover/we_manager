@@ -17,6 +17,7 @@ interface AppConfig {
   autostartMinimized: boolean
   autostartPlaylistId: string | null
   killLweOnQuit: boolean
+  recommendedFpsEnabled: boolean
 }
 
 const store = new Store<AppConfig>({
@@ -24,6 +25,7 @@ const store = new Store<AppConfig>({
   defaults: {
     workshopPath: null,
     defaultFps: null,
+    recommendedFpsEnabled: false,
     lweRepoUrl: null,
     lweRepoBranch: null,
     lweCmakeArgs: null,
@@ -114,6 +116,15 @@ export function setDefaultFps(fps: number | null): void {
   store.set('defaultFps', fps)
 }
 
+/** When enabled, video wallpapers without a manual FPS override are launched at their own native frame rate. */
+export function getRecommendedFpsEnabled(): boolean {
+  return store.get('recommendedFpsEnabled')
+}
+
+export function setRecommendedFpsEnabled(enabled: boolean): void {
+  store.set('recommendedFpsEnabled', enabled)
+}
+
 /** Custom linux-wallpaperengine repo (git URL or local path); null = official repo. */
 export function getLweRepoUrl(): string | null {
   return store.get('lweRepoUrl')
@@ -159,12 +170,9 @@ export function importWEConfigFile(sourcePath: string): string {
   //   D:/Games/SteamLibrary/steamapps/workshop/content/431960/...
   //   C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/...
   // We need to replace everything up to and including "431960/" with the configured workshop path + "/"
-  // Match any path prefix ending in /431960/ (Windows or Linux style)
   const appId = String(WE_APP_ID)
   const pattern = new RegExp(
-    // Matches: optional drive letter + any path chars + /431960/
     `[A-Za-z]:[^"]*?/steamapps/workshop/content/${appId}/|` +
-    // Also match Linux-style paths
     `/[^"]*?/steamapps/workshop/content/${appId}/`,
     'g'
   )

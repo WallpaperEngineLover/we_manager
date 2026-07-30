@@ -45,7 +45,41 @@ export interface WallpaperMeta {
   downloading?: boolean
   downloadFailed?: boolean
   fpsOverride?: number
+  volumeOverride?: number
+  /** Forces the "xray" scene effect's reveal spot to cover the whole masked area instead of following the mouse */
+  xrayFullReveal?: boolean
   backedUp?: boolean
+  /** Set by a "check unavailable" scan: true if the item has been removed from the Steam Workshop */
+  unavailable?: boolean
+  /** Object/layer ids or names to force-hide via linux-wallpaperengine --disable-object */
+  disabledObjects?: string[]
+  /** Object/layer ids or names to force-show via linux-wallpaperengine --enable-object */
+  enabledObjects?: string[]
+  /** Property name -> override value, applied via linux-wallpaperengine --set-property name=value */
+  propertyOverrides?: Record<string, string>
+}
+
+export interface LweSceneObject {
+  id: string
+  name: string
+  type: 'image' | 'particle' | 'text' | 'sound' | 'unknown'
+}
+
+export interface LweProperty {
+  name: string
+  type: 'slider' | 'boolean' | 'color' | 'combo' | 'text' | 'scene-texture' | 'file' | 'textinput' | 'unknown'
+  text?: string
+  value: string
+  min?: number
+  max?: number
+  step?: number
+  options?: { value: string; label: string }[]
+}
+
+export interface WorkshopAuthorInfo {
+  steamId: string
+  name: string
+  avatarUrl: string
 }
 
 export interface WorkshopItem {
@@ -76,6 +110,14 @@ export interface WorkshopQueryResult {
   items: WorkshopItem[]
   page: number
   totalResults: number
+}
+
+export interface CreatorWorkshopQueryParams {
+  searchText?: string
+  tags?: string[]
+  excludedTags?: string[]
+  queryType?: WorkshopQueryType
+  page?: number
 }
 
 export interface ApplyWallpaperOptions {

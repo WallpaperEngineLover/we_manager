@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull } from 'lucide-react'
+import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull, Film } from 'lucide-react'
 import type { LweStatus, LweInstallProgress, LinuxDistro } from '../../../../shared/types'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
@@ -15,10 +15,10 @@ export default function SettingsView() {
   const [importStatus, setImportStatus] = useState<string | null>(null)
   const [defaultFps, setDefaultFps] = useState<string>('')
   const [fpsSaved, setFpsSaved] = useState(false)
+  const [recommendedFpsEnabled, setRecommendedFpsEnabled] = useState(false)
   const [resetFpsConfirm, setResetFpsConfirm] = useState(false)
   const [resetFpsMsg, setResetFpsMsg] = useState<string | null>(null)
 
-  // linux-wallpaperengine state
   const [lweStatus, setLweStatus] = useState<LweStatus | null>(null)
   const [lweRepoUrl, setLweRepoUrl] = useState('')
   const [lweRepoBranch, setLweRepoBranch] = useState('')
@@ -34,15 +34,12 @@ export default function SettingsView() {
   const [killingLwe, setKillingLwe] = useState(false)
   const [killMsg, setKillMsg] = useState<string | null>(null)
 
-  // Desktop icons overlay
   const [desktopIconsEnabled, setDesktopIconsEnabled] = useState(false)
 
-  // Backup
   const [backupPath, setBackupPath] = useState('')
   const [backupSaved, setBackupSaved] = useState(false)
   const [autoUnsubscribeAfterBackup, setAutoUnsubscribeAfterBackup] = useState(false)
 
-  // System tray & autostart
   const [trayEnabled, setTrayEnabled] = useState(false)
   const [killLweOnQuit, setKillLweOnQuit] = useState(false)
   const [autostartSupported, setAutostartSupported] = useState(false)
@@ -55,6 +52,7 @@ export default function SettingsView() {
     window.electronAPI.config.get().then((cfg) => {
       setWorkshopPath(cfg.workshopPath ?? cfg.defaultWorkshopPath)
       setDefaultFps(cfg.defaultFps != null ? String(cfg.defaultFps) : '')
+      setRecommendedFpsEnabled(cfg.recommendedFpsEnabled)
       setLweRepoUrl(cfg.lweRepoUrl ?? '')
       setLweRepoBranch(cfg.lweRepoBranch ?? '')
       setLweCmakeArgs(cfg.lweCmakeArgs ?? '')
@@ -74,7 +72,6 @@ export default function SettingsView() {
     window.electronAPI.playlist.getAll().then((all) => setPlaylists(all.map((p) => ({ id: p.id, title: p.title }))))
   }, [])
 
-  // Listen for install progress events
   useEffect(() => {
     const unsub = window.electronAPI.on.lweInstallProgress((progress) => {
       setLweProgress(progress)
@@ -191,6 +188,12 @@ export default function SettingsView() {
     setTimeout(() => setFpsSaved(false), 2000)
   }
 
+  async function handleRecommendedFpsToggle() {
+    const newVal = !recommendedFpsEnabled
+    setRecommendedFpsEnabled(newVal)
+    await window.electronAPI.config.setRecommendedFpsEnabled(newVal)
+  }
+
   async function handleResetFpsOverrides() {
     if (!resetFpsConfirm) { setResetFpsConfirm(true); return }
     setResetFpsConfirm(false)
@@ -258,7 +261,6 @@ export default function SettingsView() {
       <h2 className="text-lg font-semibold text-gray-100">Settings</h2>
 
       <div className="mt-6 max-w-lg space-y-8">
-        {/* Workshop path */}
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
             Workshop folder
@@ -294,7 +296,6 @@ export default function SettingsView() {
           </button>
         </div>
 
-        {/* Backup folder */}
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
             Backup folder
@@ -352,7 +353,6 @@ export default function SettingsView() {
           </label>
         </div>
 
-        {/* LWE launch options */}
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
             Wallpaper Engine Options
@@ -385,6 +385,32 @@ export default function SettingsView() {
                   {fpsSaved ? 'Saved!' : 'Save'}
                 </button>
               </div>
+            </div>
+            <div>
+              <label className="mt-1 flex items-center gap-3 cursor-pointer">
+                <button
+                  onClick={handleRecommendedFpsToggle}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    recommendedFpsEnabled ? 'bg-indigo-600' : 'bg-white/10'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                      recommendedFpsEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+                <span className="flex items-center gap-2 text-sm text-gray-300">
+                  <Film size={16} />
+                  Recommended video settings
+                </span>
+              </label>
+              <p className="mt-2 text-xs text-gray-600">
+                Reads each video wallpaper's actual frame rate and launches it at that FPS
+                instead of the default limit, which fixes stutter on videos that don't
+                match it. Wallpapers with a manual FPS override are unaffected. Requires
+                ffprobe (part of ffmpeg).
+              </p>
             </div>
             <div>
               <label className="block text-xs text-gray-400 mb-1">Reset per-wallpaper FPS</label>
@@ -423,7 +449,6 @@ export default function SettingsView() {
           </div>
         </div>
 
-        {/* Import WE config */}
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
             Wallpaper Engine Config
@@ -445,7 +470,6 @@ export default function SettingsView() {
           )}
         </div>
 
-        {/* linux-wallpaperengine */}
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
             linux-wallpaperengine
@@ -455,7 +479,6 @@ export default function SettingsView() {
             scenes directly on your desktop.
           </p>
 
-          {/* Custom source repository */}
           <div className="mt-3 space-y-2">
             <label className="block text-xs text-gray-400">Source repository</label>
             <p className="text-xs text-gray-600">
@@ -553,7 +576,6 @@ export default function SettingsView() {
               )}
 
               <div className="flex flex-wrap gap-2">
-                {/* Install build deps */}
                 <button
                   onClick={handleInstallDeps}
                   disabled={isBusy || !distro || distro === 'unknown'}
@@ -572,7 +594,6 @@ export default function SettingsView() {
                   {depsInstalling ? 'Installing deps...' : 'Install build dependencies'}
                 </button>
 
-                {/* Build & install lwe */}
                 <button
                   onClick={handleInstallLwe}
                   disabled={isBusy}
@@ -601,7 +622,6 @@ export default function SettingsView() {
             </div>
           )}
 
-          {/* Kill stray processes */}
           <div className="mt-4">
             <button
               onClick={handleKillAllLwe}
@@ -642,7 +662,6 @@ export default function SettingsView() {
             </label>
           </div>
 
-          {/* Install progress */}
           {lweProgress && (
             <div className="mt-3 space-y-2">
               <div className="flex items-center gap-2">
@@ -667,7 +686,6 @@ export default function SettingsView() {
           )}
         </div>
 
-        {/* Desktop icons overlay */}
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
             Desktop Icons
@@ -696,7 +714,6 @@ export default function SettingsView() {
           </label>
         </div>
 
-        {/* System tray & startup */}
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
             System Tray &amp; Startup

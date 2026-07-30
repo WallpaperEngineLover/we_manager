@@ -6,7 +6,8 @@ import * as path from 'path'
 import { detectDisplayServer, detectDesktopEnv, isCommandAvailable } from '../utils/platform'
 import type { WallpaperBackend, WallpaperEnvironment, WallpaperMeta } from '@shared/types'
 import { getLweStatus, launchLweAsync } from './lwe.service'
-import { getDefaultFps } from './config.service'
+import { getDefaultFps, getRecommendedFpsEnabled } from './config.service'
+import { findWallpaperVideoFile, getVideoFps } from '../utils/video'
 
 const execFileAsync = promisify(execFile)
 
@@ -208,8 +209,23 @@ export async function applyWallpaperMeta(
   const lwe = getLweStatus()
 
   if (isAnimated && os.platform() === 'linux' && lwe.installed) {
-    const fps = options.fps ?? wallpaper.fpsOverride ?? getDefaultFps() ?? undefined
-    await launchLweAsync(wallpaper.localPath, { fps, volume: options.volume })
+    let fps = options.fps ?? wallpaper.fpsOverride
+    if (fps === undefined && wallpaper.type === 'video' && getRecommendedFpsEnabled()) {
+      const videoFile = findWallpaperVideoFile(wallpaper.localPath, wallpaper.file)
+      if (videoFile) fps = await getVideoFps(videoFile)
+    }
+    fps = fps ?? getDefaultFps() ?? undefined
+    const volume = options.volume ?? wallpaper.volumeOverride
+    await launchLweAsync(wallpaper.localPath, {
+      fps,
+      volume,
+      disabledObjects: wallpaper.disabledObjects,
+      enabledObjects: wallpaper.enabledObjects,
+      propertyOverrides: wallpaper.propertyOverrides,
+      // Explicit even when off: xray state lives on the running LWE process, not per-wallpaper,
+      // so a hot-reload into a wallpaper with xray off must actively clear a previous wallpaper's "on".
+      xrayFullReveal: wallpaper.xrayFullReveal ?? false
+    })
     return wallpaper.localPath
   }
 

@@ -20,14 +20,17 @@ import {
   Eye,
   ThumbsUp,
   ThumbsDown,
-  Archive
+  Archive,
+  User
 } from 'lucide-react'
 import clsx from 'clsx'
 import type { Playlist, PlaylistPlaybackState, PlaylistSettings } from '@shared/types'
 import PlaylistItemRow from './PlaylistItemRow'
 import WallpaperPickerModal from './WallpaperPickerModal'
 import { useClickOutside } from '../../hooks/useClickOutside'
-import { openWorkshopPage } from '../../utils/steam'
+import { useClampedPosition, useFlipSide } from '../../hooks/useContextMenuPosition'
+import { openWorkshopPage, isWorkshopId } from '../../utils/steam'
+import { useToast } from '../common/Toast'
 
 const SORT_OPTIONS: { value: PlaylistSettings['sortBy']; label: string }[] = [
   { value: 'manual', label: 'Manual order' },
@@ -35,8 +38,13 @@ const SORT_OPTIONS: { value: PlaylistSettings['sortBy']; label: string }[] = [
   { value: 'createdAt', label: 'Date added' }
 ]
 
-export default function PlaylistsView() {
+interface PlaylistsViewProps {
+  onBrowseCreator?: (creatorSteamId: string) => void
+}
+
+export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
   const queryClient = useQueryClient()
+  const { showToast } = useToast()
   const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
@@ -54,7 +62,10 @@ export default function PlaylistsView() {
     showFolderSub: boolean
   } | null>(null)
   const ctxMenuRef = useRef<HTMLDivElement>(null)
+  const folderSubRef = useRef<HTMLDivElement>(null)
   useClickOutside(ctxMenuRef, () => setCtxMenu(null), !!ctxMenu)
+  const ctxPos = useClampedPosition(ctxMenuRef, ctxMenu)
+  const folderSubSide = useFlipSide(folderSubRef, !!ctxMenu?.showFolderSub)
 
   const { data: playlists = [] } = useQuery({
     queryKey: ['playlists'],
@@ -193,6 +204,26 @@ export default function PlaylistsView() {
     if (!ctxMenu) return
     openWorkshopPage(ctxMenu.wallpaperId)
     closeCtxMenu()
+  }
+
+  async function ctxBrowseCreator() {
+    if (!ctxMenu) return
+    const wallpaperId = ctxMenu.wallpaperId
+    closeCtxMenu()
+    let creatorSteamId = ctxWallpaper?.authorSteamId
+    if (!creatorSteamId && isWorkshopId(wallpaperId)) {
+      try {
+        const item = await window.electronAPI.workshop.getItem(wallpaperId)
+        creatorSteamId = item?.creatorSteamId
+      } catch {
+        creatorSteamId = undefined
+      }
+    }
+    if (creatorSteamId) {
+      onBrowseCreator?.(creatorSteamId)
+    } else {
+      showToast('Could not find creator info for this wallpaper')
+    }
   }
 
   async function ctxBackup() {
@@ -590,7 +621,7 @@ export default function PlaylistsView() {
         <div
           ref={ctxMenuRef}
           className="fixed z-50 min-w-[200px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
-          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          style={{ left: ctxPos?.x ?? ctxMenu.x, top: ctxPos?.y ?? ctxMenu.y }}
         >
           {ctxHasBackupable && isBackupConfigured && (
             <button
@@ -647,6 +678,17 @@ export default function PlaylistsView() {
             </button>
           )}
 
+          {ctxWallpaper &&
+            ctxWallpaper.source !== 'local' &&
+            (ctxWallpaper.authorSteamId || isWorkshopId(ctxWallpaper.id)) && (
+            <button
+              onClick={ctxBrowseCreator}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+            >
+              <User size={12} /> Browse wallpapers from this creator
+            </button>
+          )}
+
           <div className="my-1 border-t border-white/5" />
 
           <div className="relative">
@@ -658,7 +700,13 @@ export default function PlaylistsView() {
               <ChevronRight size={12} className="ml-auto" />
             </button>
             {ctxMenu.showFolderSub && (
-              <div className="absolute left-full top-0 ml-1 min-w-[160px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl">
+              <div
+                ref={folderSubRef}
+                className={clsx(
+                  'absolute top-0 min-w-[160px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl',
+                  folderSubSide === 'left' ? 'right-full mr-1' : 'left-full ml-1'
+                )}
+              >
                 {ctxMoveTargets.length === 0 && (
                   <div className="px-3 py-1.5 text-gray-500">No other folders</div>
                 )}

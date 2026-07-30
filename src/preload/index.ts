@@ -4,15 +4,19 @@ import type {
   WorkshopQueryParams,
   WorkshopQueryResult,
   WorkshopItem,
+  CreatorWorkshopQueryParams,
   WallpaperMeta,
   WallpaperFolder,
   LibraryFilters,
+  WorkshopAuthorInfo,
   ApplyWallpaperOptions,
   DownloadProgressEvent,
   WallpaperEnvironment,
   LweStatus,
   LweInstallProgress,
   LinuxDistro,
+  LweSceneObject,
+  LweProperty,
   BackupProgressEvent,
   Playlist,
   PlaylistSettings,
@@ -24,7 +28,12 @@ const api = {
     query: (params: WorkshopQueryParams): Promise<WorkshopQueryResult> =>
       ipcRenderer.invoke(IpcChannels.WORKSHOP_QUERY, params),
     getItem: (publishedFileId: string): Promise<WorkshopItem | null> =>
-      ipcRenderer.invoke(IpcChannels.WORKSHOP_GET_ITEM, publishedFileId)
+      ipcRenderer.invoke(IpcChannels.WORKSHOP_GET_ITEM, publishedFileId),
+    queryByCreator: (
+      creatorSteamId: string,
+      params?: CreatorWorkshopQueryParams
+    ): Promise<WorkshopQueryResult> =>
+      ipcRenderer.invoke(IpcChannels.WORKSHOP_QUERY_BY_CREATOR, creatorSteamId, params)
   },
 
   steam: {
@@ -46,7 +55,9 @@ const api = {
     openWorkshopItem: (itemId: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.STEAM_OPEN_WORKSHOP, itemId),
     getVotedIds: (): Promise<string[]> =>
-      ipcRenderer.invoke(IpcChannels.STEAM_GET_VOTED_IDS)
+      ipcRenderer.invoke(IpcChannels.STEAM_GET_VOTED_IDS),
+    getAuthorInfo: (steamId: string): Promise<WorkshopAuthorInfo | null> =>
+      ipcRenderer.invoke(IpcChannels.STEAM_GET_AUTHOR_INFO, steamId)
   },
 
   library: {
@@ -70,7 +81,9 @@ const api = {
     distinctTags: (): Promise<string[]> =>
       ipcRenderer.invoke(IpcChannels.LIBRARY_DISTINCT_TAGS),
     resetFpsOverrides: (): Promise<{ count: number }> =>
-      ipcRenderer.invoke(IpcChannels.LIBRARY_RESET_FPS_OVERRIDES)
+      ipcRenderer.invoke(IpcChannels.LIBRARY_RESET_FPS_OVERRIDES),
+    checkUnavailable: (): Promise<{ checked: number; unavailable: number }> =>
+      ipcRenderer.invoke(IpcChannels.LIBRARY_CHECK_UNAVAILABLE)
   },
 
   config: {
@@ -79,6 +92,7 @@ const api = {
       defaultWorkshopPath: string
       isConfigured: boolean
       defaultFps: number | null
+      recommendedFpsEnabled: boolean
       lweRepoUrl: string | null
       lweRepoBranch: string | null
       lweCmakeArgs: string | null
@@ -97,6 +111,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_WORKSHOP_PATH, p),
     setDefaultFps: (fps: number | null): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DEFAULT_FPS, fps),
+    setRecommendedFpsEnabled: (enabled: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_RECOMMENDED_FPS, enabled),
     setLweRepo: (url: string | null, branch: string | null): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_LWE_REPO, url, branch),
     setLweCmakeArgs: (args: string | null): Promise<{ ok: boolean }> =>
@@ -209,7 +225,18 @@ const api = {
     stop: (): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.LWE_STOP),
     killAll: (): Promise<{ ok: boolean; message: string }> =>
-      ipcRenderer.invoke(IpcChannels.LWE_KILL_ALL)
+      ipcRenderer.invoke(IpcChannels.LWE_KILL_ALL),
+    listObjects: (wallpaperPath: string): Promise<LweSceneObject[]> =>
+      ipcRenderer.invoke(IpcChannels.LWE_LIST_OBJECTS, wallpaperPath),
+    hotswapSettings: (options: {
+      disabledObjects?: string[]
+      enabledObjects?: string[]
+      volume?: number
+      xray?: boolean
+    }): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.LWE_HOTSWAP_SETTINGS, options),
+    listProperties: (wallpaperPath: string): Promise<LweProperty[]> =>
+      ipcRenderer.invoke(IpcChannels.LWE_LIST_PROPERTIES, wallpaperPath)
   },
 
   backup: {

@@ -6,6 +6,8 @@ import {
   isWorkshopPathConfigured,
   getDefaultFps,
   setDefaultFps,
+  getRecommendedFpsEnabled,
+  setRecommendedFpsEnabled,
   getLweRepoUrl,
   getLweRepoBranch,
   setLweRepo,
@@ -41,6 +43,7 @@ export function registerConfigHandlers(): void {
     defaultWorkshopPath: getDefaultWorkshopPath(),
     isConfigured: isWorkshopPathConfigured(),
     defaultFps: getDefaultFps(),
+    recommendedFpsEnabled: getRecommendedFpsEnabled(),
     lweRepoUrl: getLweRepoUrl(),
     lweRepoBranch: getLweRepoBranch(),
     lweCmakeArgs: getLweCmakeArgs(),
@@ -99,6 +102,11 @@ export function registerConfigHandlers(): void {
     return { ok: true }
   })
 
+  ipcMain.handle(IpcChannels.CONFIG_SET_RECOMMENDED_FPS, (_e, enabled: boolean) => {
+    setRecommendedFpsEnabled(enabled)
+    return { ok: true }
+  })
+
   ipcMain.handle(IpcChannels.CONFIG_SET_LWE_REPO, (_e, url: string | null, branch: string | null) => {
     setLweRepo(url, branch)
     return { ok: true }
@@ -137,9 +145,7 @@ export function registerConfigHandlers(): void {
   })
 
   ipcMain.handle(IpcChannels.CONFIG_IMPORT_WE, (_e, sourcePath: string) => {
-    // 1. Copy + fix paths
     const destPath = importWEConfigFile(sourcePath)
-    // 2. Import folders/playlists into our library store
     const result = importWEConfig(destPath)
     return { ...result, configPath: destPath }
   })

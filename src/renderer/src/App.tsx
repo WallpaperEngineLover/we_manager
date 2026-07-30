@@ -33,6 +33,12 @@ export default function App() {
   const [activeView, setActiveView] = useState<View>('workshop')
   const [setupDone, setSetupDone] = useState<boolean | null>(null)
   const [defaultPath, setDefaultPath] = useState('')
+  const [creatorFilter, setCreatorFilter] = useState<string | null>(null)
+
+  function browseCreator(steamId: string) {
+    setCreatorFilter(steamId)
+    setActiveView('workshop')
+  }
 
   useEffect(() => {
     window.electronAPI.config.get().then((cfg) => {
@@ -57,9 +63,15 @@ export default function App() {
         <div className="flex flex-1 overflow-hidden">
           <Sidebar activeView={activeView} onNavigate={setActiveView} />
           <main className="flex-1 overflow-hidden">
-            {activeView === 'workshop' && <WorkshopBrowser />}
-            {activeView === 'library' && <LibraryView />}
-            {activeView === 'playlists' && <PlaylistsView />}
+            {activeView === 'workshop' && (
+              <WorkshopBrowser
+                creatorFilter={creatorFilter}
+                onClearCreatorFilter={() => setCreatorFilter(null)}
+                onBrowseCreator={browseCreator}
+              />
+            )}
+            {activeView === 'library' && <LibraryView onBrowseCreator={browseCreator} />}
+            {activeView === 'playlists' && <PlaylistsView onBrowseCreator={browseCreator} />}
             {activeView === 'settings' && <SettingsView />}
           </main>
         </div>

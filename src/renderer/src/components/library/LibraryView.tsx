@@ -21,19 +21,26 @@ import {
   ThumbsDown,
   Eraser,
   Archive,
-  AlertTriangle
+  AlertTriangle,
+  Heart,
+  User,
+  WifiOff,
+  ShieldAlert
 } from 'lucide-react'
 import WallpaperCard from './WallpaperCard'
 import PreviewSizeToggle from '../common/PreviewSizeToggle'
+import DetailSidebar from '../common/DetailSidebar'
 import { useToast } from '../common/Toast'
 import type { LibraryFilters, WallpaperFolder, LweStatus } from '@shared/types'
 import clsx from 'clsx'
 import { WE_TYPES, WE_LIBRARY_AGE_RATINGS } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
 import { useClickOutside } from '../../hooks/useClickOutside'
+import { useClampedPosition, useFlipSide } from '../../hooks/useContextMenuPosition'
 import { toggle } from '../../utils/array'
 import { forEachIgnoringErrors } from '../../utils/async'
-import { openWorkshopPage } from '../../utils/steam'
+import { openWorkshopPage, isWorkshopId } from '../../utils/steam'
+import { getPreviewSrc } from '../../utils/preview'
 
 const STORAGE_KEY = 'we-library-filters'
 
@@ -43,6 +50,8 @@ interface LibraryFilterState {
   genres: string[]
   sources: string[]
   failedOnly: boolean
+  likedOnly: boolean
+  unavailableOnly: boolean
 }
 
 const DEFAULT_STATE: LibraryFilterState = {
@@ -50,7 +59,9 @@ const DEFAULT_STATE: LibraryFilterState = {
   ageRatings: [],
   genres: [],
   sources: [],
-  failedOnly: false
+  failedOnly: false,
+  likedOnly: false,
+  unavailableOnly: false
 }
 
 const TYPE_MAP: Record<string, string> = {
@@ -76,6 +87,24 @@ function loadFilters(): LibraryFilterState {
     return raw ? { ...DEFAULT_STATE, ...JSON.parse(raw) } : DEFAULT_STATE
   } catch {
     return DEFAULT_STATE
+  }
+}
+
+const SORT_STORAGE_KEY = 'we-library-sort'
+
+interface SortState {
+  sortBy: LibraryFilters['sortBy']
+  sortDir: 'asc' | 'desc'
+}
+
+const DEFAULT_SORT: SortState = { sortBy: 'updatedAt', sortDir: 'desc' }
+
+function loadSort(): SortState {
+  try {
+    const raw = localStorage.getItem(SORT_STORAGE_KEY)
+    return raw ? { ...DEFAULT_SORT, ...JSON.parse(raw) } : DEFAULT_SORT
+  } catch {
+    return DEFAULT_SORT
   }
 }
 
@@ -197,12 +226,13 @@ function FolderMenu({
   const ref = useRef<HTMLDivElement>(null)
 
   useClickOutside(ref, onClose)
+  const pos = useClampedPosition(ref, { x, y })
 
   return (
     <div
       ref={ref}
       className="fixed z-50 min-w-[140px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
-      style={{ left: x, top: y }}
+      style={{ left: pos?.x ?? x, top: pos?.y ?? y }}
     >
       <button
         onClick={onRename}
@@ -227,12 +257,18 @@ interface Marquee {
   endY: number
 }
 
-export default function LibraryView() {
+interface LibraryViewProps {
+  onBrowseCreator?: (creatorSteamId: string) => void
+}
+
+export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [sortBy, setSortBy] = useState<LibraryFilters['sortBy']>('updatedAt')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [sortBy, setSortBy] = useState<LibraryFilters['sortBy']>(() => loadSort().sortBy)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => loadSort().sortDir)
   const [filterState, setFilterState] = useState<LibraryFilterState>(loadFilters)
+  const [showFilters, setShowFilters] = useState(true)
+  const [detailId, setDetailId] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<{
     imported: number
@@ -240,12 +276,10 @@ export default function LibraryView() {
     removed: number
   } | null>(null)
 
-  // Pagination
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [previewSize, setPreviewSize] = usePreviewSize()
 
-  // Folder state
   const [activeFolder, setActiveFolder] = useState<string | null>(null) // null = "All"
   const [folderMenu, setFolderMenu] = useState<{
     folder: WallpaperFolder
@@ -255,14 +289,12 @@ export default function LibraryView() {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
 
-  // Selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [lastClickedId, setLastClickedId] = useState<string | null>(null)
   const [marquee, setMarquee] = useState<Marquee | null>(null)
   const marqueeActive = useRef(false)
   const gridRef = useRef<HTMLDivElement>(null)
 
-  // Wallpaper context menu state
   const [ctxMenu, setCtxMenu] = useState<{
     x: number
     y: number
@@ -270,12 +302,19 @@ export default function LibraryView() {
     showFolderSub: boolean
   } | null>(null)
   const ctxMenuRef = useRef<HTMLDivElement>(null)
+  const folderSubRef = useRef<HTMLDivElement>(null)
 
   useClickOutside(ctxMenuRef, () => setCtxMenu(null), !!ctxMenu)
+  const ctxPos = useClampedPosition(ctxMenuRef, ctxMenu)
+  const folderSubSide = useFlipSide(folderSubRef, !!ctxMenu?.showFolderSub)
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filterState))
   }, [filterState])
+
+  useEffect(() => {
+    localStorage.setItem(SORT_STORAGE_KEY, JSON.stringify({ sortBy, sortDir }))
+  }, [sortBy, sortDir])
 
   function updateFilter<K extends 'types' | 'ageRatings' | 'genres' | 'sources'>(key: K, tag: string) {
     setFilterState((prev) => ({ ...prev, [key]: toggle(prev[key], tag) }))
@@ -285,12 +324,22 @@ export default function LibraryView() {
     setFilterState((prev) => ({ ...prev, failedOnly: !prev.failedOnly }))
   }
 
+  function toggleLikedOnly() {
+    setFilterState((prev) => ({ ...prev, likedOnly: !prev.likedOnly }))
+  }
+
+  function toggleUnavailableOnly() {
+    setFilterState((prev) => ({ ...prev, unavailableOnly: !prev.unavailableOnly }))
+  }
+
   const activeCount =
     filterState.types.length +
     filterState.ageRatings.length +
     filterState.genres.length +
     filterState.sources.length +
-    (filterState.failedOnly ? 1 : 0)
+    (filterState.failedOnly ? 1 : 0) +
+    (filterState.likedOnly ? 1 : 0) +
+    (filterState.unavailableOnly ? 1 : 0)
 
   // Refresh the library once a background download (subscribe or redownload) settles,
   // so the downloading/downloadFailed badges stay in sync without a manual Scan.
@@ -326,6 +375,13 @@ export default function LibraryView() {
     queryFn: () => window.electronAPI.folders.getAll()
   })
 
+  const { data: votedIds } = useQuery({
+    queryKey: ['steam-voted-ids'],
+    queryFn: () => window.electronAPI.steam.getVotedIds(),
+    staleTime: Infinity
+  })
+  const votedSet = useMemo(() => new Set(votedIds ?? []), [votedIds])
+
   // Client-side OR filtering for multiple types / ratings / genres
   const filtered = useMemo(() => {
     return allWallpapers.filter((w) => {
@@ -347,11 +403,12 @@ export default function LibraryView() {
         if (!sources.includes(w.source)) return false
       }
       if (filterState.failedOnly && !w.downloadFailed) return false
+      if (filterState.likedOnly && !votedSet.has(w.id)) return false
+      if (filterState.unavailableOnly && !w.unavailable) return false
       return true
     })
-  }, [allWallpapers, filterState])
+  }, [allWallpapers, filterState, votedSet])
 
-  // Set of all existing library wallpaper IDs (for cross-referencing)
   const existingIds = useMemo(
     () => new Set(allWallpapers.map((w) => w.id)),
     [allWallpapers]
@@ -359,6 +416,17 @@ export default function LibraryView() {
 
   const failedCount = useMemo(
     () => allWallpapers.filter((w) => w.downloadFailed).length,
+    [allWallpapers]
+  )
+
+  const unavailableCount = useMemo(
+    () => allWallpapers.filter((w) => w.unavailable).length,
+    [allWallpapers]
+  )
+
+  // Removed-from-workshop items with local content that hasn't been backed up yet
+  const unavailableNotBackedUp = useMemo(
+    () => allWallpapers.filter((w) => w.unavailable && !w.backedUp),
     [allWallpapers]
   )
 
@@ -404,7 +472,6 @@ export default function LibraryView() {
     return filtered.filter((w) => set.has(w.id))
   }, [filtered, activeFolder, folders, allFolderItemIds])
 
-  // Pagination
   const totalItems = allWallpapersForView.length
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
   const safePage = Math.min(page, totalPages)
@@ -413,7 +480,6 @@ export default function LibraryView() {
     [allWallpapersForView, safePage, pageSize]
   )
 
-  // Reset page when filters/folder/search/sort change
   useEffect(() => { setPage(1) }, [filterState, activeFolder, search, sortBy, sortDir, pageSize])
 
   // Count for "All" sidebar button: unsorted items only
@@ -431,13 +497,6 @@ export default function LibraryView() {
     queryKey: ['lwe-status'],
     queryFn: () => window.electronAPI.lwe.status()
   })
-
-  const { data: votedIds } = useQuery({
-    queryKey: ['steam-voted-ids'],
-    queryFn: () => window.electronAPI.steam.getVotedIds(),
-    staleTime: Infinity
-  })
-  const votedSet = useMemo(() => new Set(votedIds ?? []), [votedIds])
 
   const { data: config } = useQuery({
     queryKey: ['config'],
@@ -493,6 +552,40 @@ export default function LibraryView() {
       setBackupStatus(`Backup scan: ${result.imported} imported, ${result.linked} linked.`)
     } finally {
       setBackupScanning(false)
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+    }
+  }
+
+  const [checkingUnavailable, setCheckingUnavailable] = useState(false)
+  const [backingUpUnavailable, setBackingUpUnavailable] = useState(false)
+
+  async function handleCheckUnavailable() {
+    setCheckingUnavailable(true)
+    setBackupStatus(null)
+    try {
+      const result = await window.electronAPI.library.checkUnavailable()
+      setBackupStatus(
+        `Checked ${result.checked} workshop item(s): ${result.unavailable} no longer available on the workshop.`
+      )
+    } finally {
+      setCheckingUnavailable(false)
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+    }
+  }
+
+  async function handleBackupAllUnavailable() {
+    if (unavailableNotBackedUp.length === 0) return
+    setBackingUpUnavailable(true)
+    setBackupStatus(null)
+    try {
+      const result = await window.electronAPI.backup.selection(
+        unavailableNotBackedUp.map((w) => w.id)
+      )
+      setBackupStatus(
+        `Backed up ${result.backedUp}${result.unsubscribed > 0 ? ` (${result.unsubscribed} unsubscribed)` : ''}${result.failed > 0 ? `, ${result.failed} failed` : ''}.`
+      )
+    } finally {
+      setBackingUpUnavailable(false)
       queryClient.invalidateQueries({ queryKey: ['library'] })
     }
   }
@@ -563,7 +656,6 @@ export default function LibraryView() {
     refetchFolders()
   }
 
-  // Drop handler: add wallpaper(s) to folder via drag
   const handleDrop = useCallback(
     async (folderId: string, wallpaperId: string) => {
       // If the dragged item is in the selection, add all selected items
@@ -576,7 +668,6 @@ export default function LibraryView() {
     [refetchFolders, selectedIds]
   )
 
-  // Card click handler: normal = select single, ctrl = toggle, shift = range
   const handleCardSelect = useCallback(
     (wallpaperId: string, e: React.MouseEvent) => {
       if (e.ctrlKey || e.metaKey) {
@@ -612,7 +703,6 @@ export default function LibraryView() {
     [lastClickedId, wallpapers]
   )
 
-  // Marquee selection handlers
   const handleMarqueeStart = useCallback(
     (e: React.MouseEvent) => {
       // Only start marquee when clicking on the grid background, not on a card
@@ -629,7 +719,6 @@ export default function LibraryView() {
       marqueeActive.current = true
       setMarquee({ startX: x, startY: y, endX: x, endY: y })
 
-      // Clear selection unless ctrl is held
       if (!e.ctrlKey && !e.metaKey) {
         setSelectedIds(new Set())
       }
@@ -660,7 +749,6 @@ export default function LibraryView() {
     const container = gridRef.current
     if (!container) return
 
-    // Calculate marquee rectangle in container-relative coordinates
     const mx1 = Math.min(marquee.startX, marquee.endX)
     const my1 = Math.min(marquee.startY, marquee.endY)
     const mx2 = Math.max(marquee.startX, marquee.endX)
@@ -678,13 +766,11 @@ export default function LibraryView() {
 
     cards.forEach((card) => {
       const cardRect = card.getBoundingClientRect()
-      // Convert card rect to container-relative coordinates
       const cx1 = cardRect.left - containerRect.left + container.scrollLeft
       const cy1 = cardRect.top - containerRect.top + container.scrollTop
       const cx2 = cx1 + cardRect.width
       const cy2 = cy1 + cardRect.height
 
-      // Check intersection
       if (cx1 < mx2 && cx2 > mx1 && cy1 < my2 && cy2 > my1) {
         const id = card.getAttribute('data-wallpaper-id')
         if (id) hits.add(id)
@@ -692,7 +778,6 @@ export default function LibraryView() {
     })
 
     setSelectedIds((prev) => {
-      // If ctrl was held during start, merge with existing
       const next = new Set(prev)
       hits.forEach((id) => next.add(id))
       return next
@@ -701,13 +786,11 @@ export default function LibraryView() {
     setMarquee(null)
   }, [marquee])
 
-  // Clear selection when folder changes
   useEffect(() => {
     setSelectedIds(new Set())
     setLastClickedId(null)
   }, [activeFolder])
 
-  // Keyboard: Escape clears selection, Ctrl+A selects all
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -730,7 +813,6 @@ export default function LibraryView() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [wallpapers, selectedIds, currentPlaylistId])
 
-  // Compute marquee rect for rendering (in container-relative px)
   const marqueeRect = marquee
     ? {
         left: Math.min(marquee.startX, marquee.endX),
@@ -757,19 +839,32 @@ export default function LibraryView() {
     setCtxMenu(null)
   }
 
-  // Get WallpaperMeta objects for context menu items
   const ctxWallpapers = useMemo(() => {
     if (!ctxMenu) return []
     const idSet = new Set(ctxMenu.ids)
     return wallpapers.filter((w) => idSet.has(w.id))
   }, [ctxMenu, wallpapers])
 
-  async function ctxUnsubscribe() {
-    if (!ctxMenu) return
-    await forEachIgnoringErrors(ctxMenu.ids, (id) => window.electronAPI.steam.unsubscribe(id))
-    closeCtxMenu()
+  async function unsubscribeIds(ids: string[]) {
+    await forEachIgnoringErrors(ids, (id) => window.electronAPI.steam.unsubscribe(id))
     queryClient.invalidateQueries({ queryKey: ['library'] })
     refetchFolders()
+  }
+
+  async function ctxUnsubscribe() {
+    if (!ctxMenu) return
+    const ids = ctxMenu.ids
+    closeCtxMenu()
+    await unsubscribeIds(ids)
+  }
+
+  async function handleApplyDetail(id: string) {
+    try {
+      await window.electronAPI.wallpaper.apply({ wallpaperId: id })
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+    } catch (err) {
+      showToast((err as Error).message)
+    }
   }
 
   async function ctxVote(up: boolean) {
@@ -783,6 +878,26 @@ export default function LibraryView() {
     if (!ctxMenu) return
     for (const id of ctxMenu.ids) openWorkshopPage(id)
     closeCtxMenu()
+  }
+
+  async function ctxBrowseCreator() {
+    const wallpaper = ctxWallpapers[0]
+    if (!wallpaper) return
+    closeCtxMenu()
+    let creatorSteamId = wallpaper.authorSteamId
+    if (!creatorSteamId && isWorkshopId(wallpaper.id)) {
+      try {
+        const item = await window.electronAPI.workshop.getItem(wallpaper.id)
+        creatorSteamId = item?.creatorSteamId
+      } catch {
+        creatorSteamId = undefined
+      }
+    }
+    if (creatorSteamId) {
+      onBrowseCreator?.(creatorSteamId)
+    } else {
+      showToast('Could not find creator info for this wallpaper')
+    }
   }
 
   async function ctxBackup() {
@@ -836,11 +951,13 @@ export default function LibraryView() {
     closeCtxMenu()
   }
 
-  // Check if any of the context menu items are video type
   const ctxHasVideo = ctxWallpapers.some((w) => w.type === 'video' && w.file)
   const ctxHasBackupable = ctxWallpapers.some((w) => w.source === 'workshop')
+  const ctxCanBrowseCreator =
+    ctxWallpapers.length === 1 &&
+    ctxWallpapers[0]?.source !== 'local' &&
+    (!!ctxWallpapers[0]?.authorSteamId || isWorkshopId(ctxWallpapers[0]?.id ?? ''))
 
-  // Folder membership of the selected wallpapers, for the context menu
   const ctxCurrentFolderIds = ctxMenu
     ? new Set(ctxMenu.ids.map((id) => folderOfItem.get(id)).filter((id): id is string => !!id))
     : new Set<string>()
@@ -850,10 +967,26 @@ export default function LibraryView() {
     (f) => !(ctxCurrentFolderIds.size === 1 && ctxCurrentFolderIds.has(f.id))
   )
 
+  const detailWallpaper = detailId ? wallpapers.find((w) => w.id === detailId) : undefined
+
   return (
     <div className="flex h-full flex-col">
-      {/* Header bar */}
       <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
+        <button
+          onClick={() => setShowFilters((v) => !v)}
+          className={clsx(
+            'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
+            showFilters || activeCount > 0
+              ? 'bg-indigo-600 text-white'
+              : 'bg-white/5 text-gray-300 hover:bg-white/10'
+          )}
+        >
+          <SlidersHorizontal size={14} />
+          Filters
+          {activeCount > 0 && (
+            <span className="rounded-full bg-white/20 px-1.5 text-xs">{activeCount}</span>
+          )}
+        </button>
         <div className="relative max-w-md flex-1">
           <Search
             size={16}
@@ -922,12 +1055,23 @@ export default function LibraryView() {
           )}
           Scan backups
         </button>
+        <button
+          onClick={handleCheckUnavailable}
+          disabled={checkingUnavailable}
+          title="Check the workshop for wallpapers that have been removed"
+          className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
+        >
+          {checkingUnavailable ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <WifiOff size={14} />
+          )}
+          Check unavailable
+        </button>
       </div>
 
-      {/* Filter row */}
+      {showFilters && (
       <div className="flex flex-wrap items-center gap-2 border-b border-white/5 px-4 py-2">
-        <SlidersHorizontal size={12} className="text-gray-600" />
-
         <div className="flex gap-0.5">
           {WE_TYPES.filter((t) =>
             ['Scene', 'Video', 'Web', 'Application'].includes(t.tag)
@@ -988,6 +1132,43 @@ export default function LibraryView() {
           )}
         </button>
 
+        <button
+          onClick={toggleLikedOnly}
+          title="Show only wallpapers you've liked on Steam"
+          className={clsx(
+            'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+            filterState.likedOnly
+              ? 'bg-pink-600 text-white'
+              : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+          )}
+        >
+          <Heart size={12} />
+          Liked
+        </button>
+
+        <button
+          onClick={toggleUnavailableOnly}
+          title={
+            unavailableNotBackedUp.length > 0
+              ? `Show only wallpapers removed from the Steam Workshop (${unavailableNotBackedUp.length} of these have no backup yet)`
+              : 'Show only wallpapers removed from the Steam Workshop'
+          }
+          className={clsx(
+            'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+            filterState.unavailableOnly
+              ? 'bg-amber-600 text-white'
+              : unavailableCount > 0
+                ? 'text-amber-400 hover:bg-white/5'
+                : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+          )}
+        >
+          <WifiOff size={12} />
+          Unavailable
+          {unavailableCount > 0 && (
+            <span className="rounded-full bg-black/30 px-1.5">{unavailableCount}</span>
+          )}
+        </button>
+
         <div className="h-3 w-px bg-white/10" />
 
         <TagDropdown
@@ -1005,28 +1186,51 @@ export default function LibraryView() {
           </button>
         )}
 
-        {selectedIds.size > 0 && (
-          <button
-            onClick={handleBackupSelection}
-            disabled={backingUpSelection || !isBackupConfigured}
-            title={isBackupConfigured ? 'Back up selected wallpapers' : 'Configure a backup folder in Settings first'}
-            className="ml-auto flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10 disabled:opacity-50"
-          >
-            {backingUpSelection ? (
-              <Loader2 size={12} className="animate-spin" />
-            ) : (
-              <Archive size={12} />
-            )}
-            Backup selection
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {unavailableNotBackedUp.length > 0 && (
+            <button
+              onClick={handleBackupAllUnavailable}
+              disabled={backingUpUnavailable || !isBackupConfigured}
+              title={
+                isBackupConfigured
+                  ? `Back up the ${unavailableNotBackedUp.length} removed-from-workshop wallpaper(s) that don't have a backup yet (${unavailableCount - unavailableNotBackedUp.length} already do)`
+                  : 'Configure a backup folder in Settings first'
+              }
+              className="flex items-center gap-1.5 rounded-lg bg-amber-600/80 px-3 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
+            >
+              {backingUpUnavailable ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <ShieldAlert size={12} />
+              )}
+              Backup all unavailable ({unavailableNotBackedUp.length})
+            </button>
+          )}
 
-        <span className={clsx('text-xs text-gray-600', selectedIds.size === 0 && 'ml-auto')}>
-          {selectedIds.size > 0
-            ? `${selectedIds.size} selected / ${wallpapers.length} wallpapers`
-            : `${wallpapers.length} wallpapers`}
-        </span>
+          {selectedIds.size > 0 && (
+            <button
+              onClick={handleBackupSelection}
+              disabled={backingUpSelection || !isBackupConfigured}
+              title={isBackupConfigured ? 'Back up selected wallpapers' : 'Configure a backup folder in Settings first'}
+              className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10 disabled:opacity-50"
+            >
+              {backingUpSelection ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Archive size={12} />
+              )}
+              Backup selection
+            </button>
+          )}
+
+          <span className="text-xs text-gray-600">
+            {selectedIds.size > 0
+              ? `${selectedIds.size} selected / ${wallpapers.length} wallpapers`
+              : `${wallpapers.length} wallpapers`}
+          </span>
+        </div>
       </div>
+      )}
 
       {scanResult && (
         <div className="border-b border-white/5 px-4 py-2 text-xs text-gray-400">
@@ -1040,9 +1244,7 @@ export default function LibraryView() {
         </div>
       )}
 
-      {/* Main content: folder sidebar + grid */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Folder sidebar */}
         <div className="flex w-48 flex-col border-r border-white/5 overflow-y-auto">
           <div className="flex items-center justify-between px-3 pt-3 pb-1">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
@@ -1079,7 +1281,6 @@ export default function LibraryView() {
             </div>
           )}
 
-          {/* Default */}
           <button
             onClick={() => setActiveFolder(null)}
             className={clsx(
@@ -1094,7 +1295,6 @@ export default function LibraryView() {
             <span className="text-gray-600">{unsortedCount}</span>
           </button>
 
-          {/* Inline new folder input */}
           {creatingFolder && (
             <div className="flex items-center gap-1 px-3 py-1.5">
               <FolderPlus size={14} className="shrink-0 text-gray-500" />
@@ -1113,7 +1313,6 @@ export default function LibraryView() {
             </div>
           )}
 
-          {/* Folder list */}
           {folders.map((folder) => (
             <button
               key={folder.id}
@@ -1160,7 +1359,6 @@ export default function LibraryView() {
           ))}
         </div>
 
-        {/* Card grid */}
         <div
           ref={gridRef}
           className="relative flex-1 overflow-y-auto p-4 select-none"
@@ -1190,7 +1388,6 @@ export default function LibraryView() {
               )}
             </div>
           )}
-          {/* Folder cards in "All" view */}
           {!activeFolder && folders.length > 0 && (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4 mb-4">
               {folders.map((folder) => (
@@ -1260,11 +1457,11 @@ export default function LibraryView() {
                 }
                 onSelect={(e) => handleCardSelect(wallpaper.id, e)}
                 onContextMenu={(e) => openWallpaperCtxMenu(e, wallpaper.id)}
+                onOpenDetail={() => setDetailId(wallpaper.id)}
               />
             ))}
           </div>
 
-          {/* Pagination */}
           {totalPages > 1 && (
             <div className="mt-6 flex items-center justify-center gap-2">
               <button
@@ -1287,7 +1484,6 @@ export default function LibraryView() {
             </div>
           )}
 
-          {/* Marquee selection rectangle */}
           {marqueeRect && marqueeRect.width > 3 && marqueeRect.height > 3 && (
             <div
               className="pointer-events-none absolute z-20 border border-indigo-500 bg-indigo-500/15"
@@ -1300,9 +1496,41 @@ export default function LibraryView() {
             />
           )}
         </div>
+
+        {detailId && detailWallpaper && (
+          <DetailSidebar
+            id={detailId}
+            fallbackTitle={detailWallpaper.title}
+            fallbackPreviewUrl={getPreviewSrc(detailWallpaper)}
+            fallbackTags={detailWallpaper.tags}
+            fallbackAuthorSteamId={detailWallpaper.authorSteamId}
+            localFileSize={detailWallpaper.fileSize}
+            isSubscribed={detailWallpaper.subscribed}
+            isLiked={votedSet.has(detailId)}
+            canPlay={
+              !!detailWallpaper.localPath &&
+              !detailWallpaper.downloading &&
+              !detailWallpaper.downloadFailed
+            }
+            lweInstalled={lweStatus?.installed ?? false}
+            onClose={() => setDetailId(null)}
+            onSubscribe={async () => {
+              await window.electronAPI.steam.subscribe(detailId)
+              queryClient.invalidateQueries({ queryKey: ['library'] })
+            }}
+            onUnsubscribe={() => unsubscribeIds([detailId])}
+            onLiked={() => {
+              queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
+                old ? [...old, detailId] : [detailId]
+              )
+              queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })
+            }}
+            onPlay={() => handleApplyDetail(detailId)}
+            onBrowseCreator={onBrowseCreator}
+          />
+        )}
       </div>
 
-      {/* Folder context menu */}
       {folderMenu && (
         <FolderMenu
           x={folderMenu.x}
@@ -1317,12 +1545,11 @@ export default function LibraryView() {
         />
       )}
 
-      {/* Wallpaper context menu */}
       {ctxMenu && (
         <div
           ref={ctxMenuRef}
           className="fixed z-50 min-w-[200px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
-          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          style={{ left: ctxPos?.x ?? ctxMenu.x, top: ctxPos?.y ?? ctxMenu.y }}
         >
           {ctxMenu.ids.length > 1 && (
             <div className="px-3 py-1 text-xs text-gray-600 border-b border-white/5 mb-1">
@@ -1385,6 +1612,15 @@ export default function LibraryView() {
             </button>
           )}
 
+          {ctxCanBrowseCreator && (
+            <button
+              onClick={ctxBrowseCreator}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+            >
+              <User size={12} /> Browse wallpapers from this creator
+            </button>
+          )}
+
           <div className="my-1 border-t border-white/5" />
 
           <div className="relative">
@@ -1396,7 +1632,13 @@ export default function LibraryView() {
               <ChevronRight size={12} className="ml-auto" />
             </button>
             {ctxMenu.showFolderSub && (
-              <div className="absolute left-full top-0 ml-1 min-w-[160px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl">
+              <div
+                ref={folderSubRef}
+                className={clsx(
+                  'absolute top-0 min-w-[160px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl',
+                  folderSubSide === 'left' ? 'right-full mr-1' : 'left-full ml-1'
+                )}
+              >
                 {ctxMoveTargets.length === 0 && (
                   <div className="px-3 py-1.5 text-gray-500">No other folders</div>
                 )}

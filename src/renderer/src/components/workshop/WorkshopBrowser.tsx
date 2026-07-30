@@ -1,8 +1,21 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { useInfiniteQuery } from '@tanstack/react-query'
-import { Search, Loader2, SlidersHorizontal, X, ChevronDown, ChevronRight } from 'lucide-react'
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  Search,
+  Loader2,
+  SlidersHorizontal,
+  X,
+  ChevronDown,
+  ChevronRight,
+  User,
+  ExternalLink,
+  Play,
+  Download
+} from 'lucide-react'
 import WorkshopCard from './WorkshopCard'
 import PreviewSizeToggle from '../common/PreviewSizeToggle'
+import DetailSidebar from '../common/DetailSidebar'
+import { useToast } from '../common/Toast'
 import type { WorkshopQueryType } from '@shared/types'
 import clsx from 'clsx'
 import {
@@ -15,9 +28,11 @@ import {
 } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
 import { useClickOutside } from '../../hooks/useClickOutside'
+import { useClampedPosition } from '../../hooks/useContextMenuPosition'
+import { useSubscriptionQueue } from '../../hooks/useSubscriptionQueue'
 import { toggle } from '../../utils/array'
 import { forEachIgnoringErrors } from '../../utils/async'
-import { openWorkshopPage } from '../../utils/steam'
+import { openWorkshopPage, openProfilePage } from '../../utils/steam'
 
 const STORAGE_KEY = 'we-workshop-filters'
 const STORAGE_VERSION = 2
@@ -134,28 +149,54 @@ interface CtxMenu {
   ids: string[]
 }
 
-export default function WorkshopBrowser() {
+interface Marquee {
+  startX: number
+  startY: number
+  endX: number
+  endY: number
+}
+
+interface WorkshopBrowserProps {
+  creatorFilter?: string | null
+  onClearCreatorFilter?: () => void
+  onBrowseCreator?: (creatorSteamId: string) => void
+}
+
+export default function WorkshopBrowser({
+  creatorFilter = null,
+  onClearCreatorFilter,
+  onBrowseCreator
+}: WorkshopBrowserProps) {
+  const queryClient = useQueryClient()
+  const { showToast } = useToast()
+  const { entries: subscribeEntries, enqueue: enqueueSubscribe, clear: clearSubscribeEntries } =
+    useSubscriptionQueue(() => queryClient.invalidateQueries({ queryKey: ['library'] }))
   const [searchText, setSearchText] = useState('')
   const [queryType, setQueryType] = useState<WorkshopQueryType>('RankedByPublicationDate')
   const [showFilters, setShowFilters] = useState(true)
   const [filters, setFilters] = useState<WorkshopFilterState>(loadFilters)
   const [selection, setSelection] = useState<Set<string>>(new Set())
+  const [lastClickedId, setLastClickedId] = useState<string | null>(null)
+  const [marquee, setMarquee] = useState<Marquee | null>(null)
+  const marqueeActive = useRef(false)
+  const gridRef = useRef<HTMLDivElement>(null)
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null)
   const ctxRef = useRef<HTMLDivElement>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [previewSize, setPreviewSize] = usePreviewSize()
+  const [detailId, setDetailId] = useState<string | null>(null)
 
   useClickOutside(ctxRef, () => setCtxMenu(null), !!ctxMenu)
+  const ctxPos = useClampedPosition(ctxRef, ctxMenu)
 
   useEffect(() => {
     saveFilters(filters)
   }, [filters])
 
-  // Reset to page 1 when query params change
   useEffect(() => {
     setPage(1)
-  }, [searchText, queryType, filters, pageSize])
+  }, [searchText, queryType, filters, pageSize, creatorFilter])
 
   function update<K extends keyof WorkshopFilterState>(key: K, tag: string) {
     setFilters((prev) => ({ ...prev, [key]: toggle(prev[key] as string[], tag) }))
@@ -204,19 +245,13 @@ export default function WorkshopBrowser() {
     setFilters((prev) => ({ ...DEFAULT_STATE, filterMode: prev.filterMode }))
   }
 
-  function toggleSelect(id: string) {
-    setSelection((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
   const openCtxMenu = useCallback(
     (e: React.MouseEvent, itemId: string) => {
       e.preventDefault()
       const ids = selection.has(itemId) ? [...selection] : [itemId]
+      if (!selection.has(itemId)) {
+        setSelection(new Set(ids))
+      }
       setCtxMenu({ x: e.clientX, y: e.clientY, ids })
     },
     [selection]
@@ -226,21 +261,29 @@ export default function WorkshopBrowser() {
     setCtxMenu(null)
   }
 
-  async function ctxSubscribe() {
+  function ctxSubscribe() {
     if (!ctxMenu) return
-    await forEachIgnoringErrors(ctxMenu.ids, (id) => window.electronAPI.steam.subscribe(id))
+    enqueueSubscribe(ctxMenu.ids)
     closeCtxMenu()
+  }
+
+  async function unsubscribeIds(ids: string[]) {
+    clearSubscribeEntries(ids)
+    await forEachIgnoringErrors(ids, (id) => window.electronAPI.steam.unsubscribe(id))
+    queryClient.invalidateQueries({ queryKey: ['library'] })
   }
 
   async function ctxUnsubscribe() {
     if (!ctxMenu) return
-    await forEachIgnoringErrors(ctxMenu.ids, (id) => window.electronAPI.steam.unsubscribe(id))
+    const ids = ctxMenu.ids
     closeCtxMenu()
+    await unsubscribeIds(ids)
   }
 
   async function ctxVote(up: boolean) {
     if (!ctxMenu) return
     await forEachIgnoringErrors(ctxMenu.ids, (id) => window.electronAPI.steam.vote(id, up))
+    if (up) queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })
     closeCtxMenu()
   }
 
@@ -250,16 +293,29 @@ export default function WorkshopBrowser() {
     closeCtxMenu()
   }
 
+  function ctxPlay() {
+    if (!ctxMenu || ctxMenu.ids.length !== 1) return
+    handlePlay(ctxMenu.ids[0])
+    closeCtxMenu()
+  }
+
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error } =
     useInfiniteQuery({
-      queryKey: ['workshop', searchText, queryType, steamTags],
+      queryKey: ['workshop', creatorFilter, searchText, queryType, steamTags],
       queryFn: ({ pageParam = 1 }) =>
-        window.electronAPI.workshop.query({
-          searchText: searchText || undefined,
-          queryType,
-          tags: steamTags.length > 0 ? steamTags : undefined,
-          page: pageParam as number
-        }),
+        creatorFilter
+          ? window.electronAPI.workshop.queryByCreator(creatorFilter, {
+              searchText: searchText || undefined,
+              queryType,
+              tags: steamTags.length > 0 ? steamTags : undefined,
+              page: pageParam as number
+            })
+          : window.electronAPI.workshop.query({
+              searchText: searchText || undefined,
+              queryType,
+              tags: steamTags.length > 0 ? steamTags : undefined,
+              page: pageParam as number
+            }),
       getNextPageParam: (lastPage, allPages) => {
         const fetched = allPages.length * 50
         return fetched < lastPage.totalResults ? allPages.length + 1 : undefined
@@ -271,6 +327,48 @@ export default function WorkshopBrowser() {
     () => data?.pages.flatMap((p) => p.items) ?? [],
     [data]
   )
+
+  const { data: votedIds } = useQuery({
+    queryKey: ['steam-voted-ids'],
+    queryFn: () => window.electronAPI.steam.getVotedIds(),
+    staleTime: Infinity
+  })
+  const votedSet = useMemo(() => new Set(votedIds ?? []), [votedIds])
+
+  const { data: libraryWallpapers = [] } = useQuery({
+    queryKey: ['library'],
+    queryFn: () => window.electronAPI.library.getAll()
+  })
+  const playableSet = useMemo(
+    () =>
+      new Set(
+        libraryWallpapers
+          .filter((w) => w.localPath && !w.downloading && !w.downloadFailed)
+          .map((w) => w.id)
+      ),
+    [libraryWallpapers]
+  )
+
+  const { data: lweStatus } = useQuery({
+    queryKey: ['lwe-status'],
+    queryFn: () => window.electronAPI.lwe.status()
+  })
+
+  async function handlePlay(id: string) {
+    try {
+      await window.electronAPI.wallpaper.apply({ wallpaperId: id })
+    } catch (err) {
+      showToast((err as Error).message)
+    }
+  }
+
+  function ctxBrowseCreator() {
+    if (!ctxMenu || ctxMenu.ids.length !== 1) return
+    const item = allItems.find((i) => i.publishedFileId === ctxMenu.ids[0])
+    if (!item) return
+    onBrowseCreator?.(item.creatorSteamId)
+    closeCtxMenu()
+  }
 
   // In OR mode: client-side OR filtering for multi-selected categories
   const items = useMemo(() => {
@@ -307,9 +405,154 @@ export default function WorkshopBrowser() {
 
   const assetSelected = filters.types.includes('Asset') || effectiveTypes.length === 0
 
+  // Card click handler: normal = select single, ctrl = toggle, shift = range
+  const handleCardSelect = useCallback(
+    (itemId: string, e: React.MouseEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        setSelection((prev) => {
+          const next = new Set(prev)
+          if (next.has(itemId)) next.delete(itemId)
+          else next.add(itemId)
+          return next
+        })
+        setLastClickedId(itemId)
+      } else if (e.shiftKey && lastClickedId) {
+        const ids = paginatedItems.map((i) => i.publishedFileId)
+        const from = ids.indexOf(lastClickedId)
+        const to = ids.indexOf(itemId)
+        if (from !== -1 && to !== -1) {
+          const start = Math.min(from, to)
+          const end = Math.max(from, to)
+          const rangeIds = ids.slice(start, end + 1)
+          setSelection((prev) => {
+            const next = new Set(prev)
+            for (const id of rangeIds) next.add(id)
+            return next
+          })
+        }
+      } else {
+        setSelection(new Set([itemId]))
+        setLastClickedId(itemId)
+      }
+    },
+    [lastClickedId, paginatedItems]
+  )
+
+  const handleMarqueeStart = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('[data-workshop-id]')) return
+    if (e.button !== 0) return
+
+    const container = gridRef.current
+    if (!container) return
+
+    const rect = container.getBoundingClientRect()
+    const x = e.clientX - rect.left + container.scrollLeft
+    const y = e.clientY - rect.top + container.scrollTop
+
+    marqueeActive.current = true
+    setMarquee({ startX: x, startY: y, endX: x, endY: y })
+
+    if (!e.ctrlKey && !e.metaKey) {
+      setSelection(new Set())
+    }
+  }, [])
+
+  const handleMarqueeMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!marqueeActive.current || !marquee) return
+
+      const container = gridRef.current
+      if (!container) return
+
+      const rect = container.getBoundingClientRect()
+      const x = e.clientX - rect.left + container.scrollLeft
+      const y = e.clientY - rect.top + container.scrollTop
+
+      setMarquee((prev) => (prev ? { ...prev, endX: x, endY: y } : null))
+    },
+    [marquee]
+  )
+
+  const handleMarqueeEnd = useCallback(() => {
+    if (!marqueeActive.current || !marquee) return
+    marqueeActive.current = false
+
+    const container = gridRef.current
+    if (!container) return
+
+    const mx1 = Math.min(marquee.startX, marquee.endX)
+    const my1 = Math.min(marquee.startY, marquee.endY)
+    const mx2 = Math.max(marquee.startX, marquee.endX)
+    const my2 = Math.max(marquee.startY, marquee.endY)
+
+    if (Math.abs(mx2 - mx1) < 5 && Math.abs(my2 - my1) < 5) {
+      setMarquee(null)
+      return
+    }
+
+    const containerRect = container.getBoundingClientRect()
+    const cards = container.querySelectorAll('[data-workshop-id]')
+    const hits = new Set<string>()
+
+    cards.forEach((card) => {
+      const cardRect = card.getBoundingClientRect()
+      const cx1 = cardRect.left - containerRect.left + container.scrollLeft
+      const cy1 = cardRect.top - containerRect.top + container.scrollTop
+      const cx2 = cx1 + cardRect.width
+      const cy2 = cy1 + cardRect.height
+
+      if (cx1 < mx2 && cx2 > mx1 && cy1 < my2 && cy2 > my1) {
+        const id = card.getAttribute('data-workshop-id')
+        if (id) hits.add(id)
+      }
+    })
+
+    setSelection((prev) => {
+      const next = new Set(prev)
+      hits.forEach((id) => next.add(id))
+      return next
+    })
+
+    setMarquee(null)
+  }, [marquee])
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setSelection(new Set())
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        const active = document.activeElement
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
+        e.preventDefault()
+        setSelection(new Set(paginatedItems.map((i) => i.publishedFileId)))
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [paginatedItems])
+
+  const marqueeRect = marquee
+    ? {
+        left: Math.min(marquee.startX, marquee.endX),
+        top: Math.min(marquee.startY, marquee.endY),
+        width: Math.abs(marquee.endX - marquee.startX),
+        height: Math.abs(marquee.endY - marquee.startY)
+      }
+    : null
+
+  const detailItem = detailId ? allItems.find((i) => i.publishedFileId === detailId) : undefined
+  const detailSubscribeState = detailId ? subscribeEntries.get(detailId)?.state : undefined
+  const detailSubscribed = detailItem
+    ? detailItem.isSubscribed ||
+      detailSubscribeState === 'download-queued' ||
+      detailSubscribeState === 'downloading' ||
+      detailSubscribeState === 'done' ||
+      detailSubscribeState === 'download-error'
+    : false
+
   return (
     <div className="flex h-full flex-col">
-      {/* Header bar */}
       <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
         <button
           onClick={() => setShowFilters((v) => !v)}
@@ -356,13 +599,41 @@ export default function WorkshopBrowser() {
             <X size={14} /> Reset
           </button>
         )}
+        {selection.size > 0 && (
+          <>
+            <span className="text-xs text-gray-500">{selection.size} selected</span>
+            <button
+              onClick={() => enqueueSubscribe([...selection])}
+              className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-500"
+            >
+              <Download size={14} /> Subscribe selection
+            </button>
+          </>
+        )}
       </div>
 
-      {/* Body: optional filter sidebar + content grid */}
+      {creatorFilter && (
+        <div className="flex items-center gap-2 border-b border-white/5 bg-indigo-600/10 px-4 py-2 text-xs text-indigo-200">
+          <User size={12} />
+          <span>Showing wallpapers from this creator</span>
+          <button
+            onClick={() => openProfilePage(creatorFilter)}
+            className="flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-gray-300 hover:bg-white/10"
+          >
+            <ExternalLink size={11} /> View Steam profile
+          </button>
+          <button
+            onClick={() => onClearCreatorFilter?.()}
+            className="ml-auto flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-gray-300 hover:bg-white/10"
+          >
+            <X size={11} /> Clear
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-1 overflow-hidden">
         {showFilters && (
           <div className="w-52 flex-shrink-0 overflow-y-auto border-r border-white/5 bg-[#0d0d0d] px-3 py-3 space-y-3">
-            {/* AND / OR toggle */}
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500">Match</span>
               <div className="flex rounded-md overflow-hidden text-xs">
@@ -523,7 +794,14 @@ export default function WorkshopBrowser() {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto p-4">
+        <div
+          ref={gridRef}
+          className="relative flex-1 overflow-y-auto p-4 select-none"
+          onMouseDown={handleMarqueeStart}
+          onMouseMove={handleMarqueeMove}
+          onMouseUp={handleMarqueeEnd}
+          onMouseLeave={handleMarqueeEnd}
+        >
           {isLoading && (
             <div className="flex h-40 items-center justify-center text-gray-500">
               <Loader2 size={24} className="animate-spin" />
@@ -552,17 +830,36 @@ export default function WorkshopBrowser() {
                 key={item.publishedFileId}
                 item={item}
                 selected={selection.has(item.publishedFileId)}
-                onToggleSelect={() => toggleSelect(item.publishedFileId)}
+                isLiked={votedSet.has(item.publishedFileId)}
+                canPlay={playableSet.has(item.publishedFileId)}
+                lweInstalled={lweStatus?.installed ?? false}
+                subscribeState={subscribeEntries.get(item.publishedFileId)?.state}
+                downloadPercentage={subscribeEntries.get(item.publishedFileId)?.percentage}
+                onSelect={(e) => handleCardSelect(item.publishedFileId, e)}
                 onContextMenu={(e) => openCtxMenu(e, item.publishedFileId)}
+                onLiked={() => queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })}
+                onPlay={() => handlePlay(item.publishedFileId)}
+                onSubscribe={() => enqueueSubscribe([item.publishedFileId])}
+                onOpenDetail={() => setDetailId(item.publishedFileId)}
               />
             ))}
           </div>
+          {marqueeRect && marqueeRect.width > 3 && marqueeRect.height > 3 && (
+            <div
+              className="pointer-events-none absolute z-20 border border-indigo-500 bg-indigo-500/15"
+              style={{
+                left: marqueeRect.left,
+                top: marqueeRect.top,
+                width: marqueeRect.width,
+                height: marqueeRect.height
+              }}
+            />
+          )}
           {isFetchingNextPage && (
             <div className="mt-4 flex justify-center text-gray-500">
               <Loader2 size={20} className="animate-spin" />
             </div>
           )}
-          {/* Pagination controls */}
           {totalFiltered > 0 && (
             <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3">
               <div className="flex items-center gap-2 text-xs text-gray-400">
@@ -599,19 +896,49 @@ export default function WorkshopBrowser() {
             </div>
           )}
         </div>
+
+        {detailId && detailItem && (
+          <DetailSidebar
+            id={detailId}
+            fallbackTitle={detailItem.title}
+            fallbackPreviewUrl={detailItem.previewUrl}
+            fallbackTags={detailItem.tags}
+            fallbackAuthorSteamId={detailItem.creatorSteamId}
+            isSubscribed={detailSubscribed}
+            isLiked={votedSet.has(detailId)}
+            canPlay={playableSet.has(detailId)}
+            lweInstalled={lweStatus?.installed ?? false}
+            onClose={() => setDetailId(null)}
+            onSubscribe={() => enqueueSubscribe([detailId])}
+            onUnsubscribe={() => unsubscribeIds([detailId])}
+            onLiked={() => queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })}
+            onPlay={() => handlePlay(detailId)}
+            onBrowseCreator={onBrowseCreator}
+          />
+        )}
       </div>
 
-      {/* Context menu */}
       {ctxMenu && (
         <div
           ref={ctxRef}
           className="fixed z-50 min-w-[180px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
-          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          style={{ left: ctxPos?.x ?? ctxMenu.x, top: ctxPos?.y ?? ctxMenu.y }}
         >
           {ctxMenu.ids.length > 1 && (
             <div className="px-3 py-1 text-xs text-gray-600 border-b border-white/5 mb-1">
               {ctxMenu.ids.length} items selected
             </div>
+          )}
+          {ctxMenu.ids.length === 1 && playableSet.has(ctxMenu.ids[0]) && (
+            <>
+              <button
+                onClick={ctxPlay}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+              >
+                <Play size={12} /> Play wallpaper
+              </button>
+              <div className="my-1 border-t border-white/5" />
+            </>
           )}
           <button
             onClick={ctxSubscribe}
@@ -645,6 +972,14 @@ export default function WorkshopBrowser() {
           >
             Open in Steam Workshop
           </button>
+          {ctxMenu.ids.length === 1 && (
+            <button
+              onClick={ctxBrowseCreator}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+            >
+              <User size={12} /> Browse wallpapers from this creator
+            </button>
+          )}
         </div>
       )}
     </div>

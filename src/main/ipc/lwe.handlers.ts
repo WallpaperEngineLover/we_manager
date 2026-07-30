@@ -1,6 +1,6 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
-import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, stopLwe, isLweRunning, killAllLweProcesses } from '../services/lwe.service'
+import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, stopLwe, isLweRunning, killAllLweProcesses, listLweObjects, hotswapLweSettings, listLweProperties } from '../services/lwe.service'
 import { invalidateEnvCache } from '../services/wallpaper.service'
 
 export function registerLweHandlers(win: BrowserWindow): void {
@@ -41,5 +41,33 @@ export function registerLweHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(IpcChannels.LWE_KILL_ALL, async () => {
     return await killAllLweProcesses()
+  })
+
+  ipcMain.handle(IpcChannels.LWE_LIST_OBJECTS, async (_e, wallpaperPath: string) => {
+    // Some wallpapers have project data linux-wallpaperengine itself can't parse; treat that as "no objects" rather than a hard error
+    try {
+      return await listLweObjects(wallpaperPath)
+    } catch (err) {
+      console.warn('[LWE] list-objects failed for', wallpaperPath, ':', (err as Error).message)
+      return []
+    }
+  })
+
+  ipcMain.handle(
+    IpcChannels.LWE_HOTSWAP_SETTINGS,
+    (_e, options: { disabledObjects?: string[]; enabledObjects?: string[]; volume?: number; xray?: boolean }) => {
+      return { ok: hotswapLweSettings(options) }
+    }
+  )
+
+  ipcMain.handle(IpcChannels.LWE_LIST_PROPERTIES, async (_e, wallpaperPath: string) => {
+    // Same reasoning as list-objects: some wallpapers have properties linux-wallpaperengine
+    // itself can't parse, treat that as "no properties" rather than a hard error.
+    try {
+      return await listLweProperties(wallpaperPath)
+    } catch (err) {
+      console.warn('[LWE] list-properties failed for', wallpaperPath, ':', (err as Error).message)
+      return []
+    }
   })
 }

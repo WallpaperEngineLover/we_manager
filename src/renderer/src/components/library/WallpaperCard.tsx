@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Play, Loader2, Check, X, ThumbsUp, Trash2, ExternalLink, Download, Archive, AlertTriangle, RotateCw, Plus, FolderOpen } from 'lucide-react'
+import { Play, Loader2, Check, X, ThumbsUp, Trash2, ExternalLink, Download, Archive, AlertTriangle, RotateCw, Plus, FolderOpen, WifiOff } from 'lucide-react'
 import type { WallpaperMeta } from '@shared/types'
 import clsx from 'clsx'
 import { getPreviewSrc } from '../../utils/preview'
@@ -21,6 +21,7 @@ interface WallpaperCardProps {
   onRedownloaded?: () => void
   onSelect?: (e: React.MouseEvent) => void
   onContextMenu?: (e: React.MouseEvent) => void
+  onOpenDetail?: () => void
 }
 
 export default function WallpaperCard({
@@ -36,7 +37,8 @@ export default function WallpaperCard({
   onAddedToPlaylist,
   onRedownloaded,
   onSelect,
-  onContextMenu
+  onContextMenu,
+  onOpenDetail
 }: WallpaperCardProps) {
   const { showToast } = useToast()
   const [isApplying, setIsApplying] = useState(false)
@@ -173,7 +175,6 @@ export default function WallpaperCard({
           : 'hover:ring-1 hover:ring-indigo-500/50'
       )}
     >
-      {/* Selection checkbox */}
       <div
         className={clsx(
           'absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border transition-all',
@@ -185,7 +186,13 @@ export default function WallpaperCard({
         <Check size={12} />
       </div>
 
-      <div className="aspect-video overflow-hidden bg-[#111] relative">
+      <div
+        className="aspect-video overflow-hidden bg-[#111] relative cursor-pointer"
+        onClick={(e) => {
+          e.stopPropagation()
+          onOpenDetail?.()
+        }}
+      >
         {previewSrc ? (
           <img
             src={previewSrc}
@@ -233,6 +240,14 @@ export default function WallpaperCard({
             title="Backed up locally"
           >
             <Archive size={12} />
+          </div>
+        )}
+        {wallpaper.unavailable && (
+          <div
+            className="absolute bottom-2 left-2 flex h-5 w-5 items-center justify-center rounded bg-amber-600/80 text-white"
+            title="Removed from the Steam Workshop - back it up before it's lost"
+          >
+            <WifiOff size={12} />
           </div>
         )}
       </div>
@@ -354,7 +369,6 @@ export default function WallpaperCard({
         </div>
       </div>
 
-      {/* Apply button */}
       <div className="absolute right-2 top-2">
         <button
           onClick={handleApply}

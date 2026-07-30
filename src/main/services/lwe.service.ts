@@ -1,11 +1,11 @@
-import { execFile, spawn, type ChildProcess } from 'child_process'
+import { execFile, execFileSync, spawn, type ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import type { BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
-import type { LweStatus, LweInstallProgress, LinuxDistro } from '@shared/types'
+import type { LweStatus, LweInstallProgress, LinuxDistro, LweSceneObject, LweProperty } from '@shared/types'
 import {
   isCommandAvailable,
   invalidateCommandCache,
@@ -315,7 +315,6 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       encoding: 'utf8'
     })
 
-    // Build
     send({ stage: 'building', message: 'Compiling (this may take a few minutes)...', percentage: 40 })
     const cores = Math.max(1, os.cpus().length - 1)
     await execFileAsync('make', ['-j', String(cores)], {
@@ -373,6 +372,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
 
     // Invalidate cache so next status check re-detects
     invalidateCommandCache(LWE_BINARY)
+    invalidateObjectFlagsSupport()
 
     const status = getLweStatus()
     if (status.installed) {
@@ -435,7 +435,6 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
     return { ok: false, message: 'linux-wallpaperengine is not installed.' }
   }
 
-  // Stop any running instance first
   stopLwe()
 
   const elevate = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
@@ -485,8 +484,8 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
 
     try { fs.rmSync(getLweManifestPath(), { force: true }) } catch { /* ignore */ }
 
-    // Invalidate caches
     invalidateCommandCache(LWE_BINARY)
+    invalidateObjectFlagsSupport()
 
     return { ok: true, message: 'linux-wallpaperengine has been uninstalled.' }
   } catch (err) {
@@ -538,7 +537,6 @@ function getLweLdLibraryPath(): string {
     '/usr/local/lib64',
     '/usr/local/lib'
   ]
-  // Only include paths that actually exist
   const paths = candidates.filter(p => {
     try { return fs.statSync(p).isDirectory() } catch { return false }
   })
@@ -578,7 +576,6 @@ function buildLweEnvVars(): string[] {
   const sessionType = process.env.XDG_SESSION_TYPE
   if (sessionType) vars.push(`XDG_SESSION_TYPE=${sessionType}`)
 
-  // DISPLAY for X11/XWayland
   if (process.env.DISPLAY) vars.push(`DISPLAY=${process.env.DISPLAY}`)
 
   // XDG_RUNTIME_DIR is needed for the Wayland socket
@@ -587,10 +584,42 @@ function buildLweEnvVars(): string[] {
   return vars
 }
 
-/** Build the common LWE args (assets dir, screen roots, fps, volume). */
+// Not every linux-wallpaperengine build has --list-objects/--disable-object/--enable-object
+// (they're recent additions), so probe --help once and cache the result rather than assuming.
+let objectFlagsSupported: boolean | null = null
+
+function invalidateObjectFlagsSupport(): void {
+  objectFlagsSupported = null
+}
+
+function supportsObjectFlags(): boolean {
+  if (objectFlagsSupported !== null) return objectFlagsSupported
+  try {
+    const binaryPath = getLweBinaryPath()
+    const envVars = buildLweEnvVars()
+    const stdout = execFileSync('env', [...envVars, binaryPath, '--help'], {
+      timeout: 5_000,
+      encoding: 'utf8',
+      maxBuffer: 2 * 1024 * 1024
+    })
+    objectFlagsSupported = stdout.includes('--list-objects')
+  } catch {
+    objectFlagsSupported = false
+  }
+  return objectFlagsSupported
+}
+
+/** Build the common LWE args (assets dir, screen roots, fps, volume, object overrides). */
 function buildLweArgs(
   wallpaperPath: string,
-  options: { screenRoot?: string; fps?: number; volume?: number }
+  options: {
+    screenRoot?: string
+    fps?: number
+    volume?: number
+    disabledObjects?: string[]
+    enabledObjects?: string[]
+    propertyOverrides?: Record<string, string>
+  }
 ): string[] {
   const args: string[] = []
   const assetsDir = findWeAssetsDir()
@@ -606,6 +635,13 @@ function buildLweArgs(
 
   if (options.fps) args.push('--fps', String(options.fps))
   if (options.volume !== undefined) args.push('--volume', String(options.volume))
+  if ((options.disabledObjects?.length || options.enabledObjects?.length) && supportsObjectFlags()) {
+    for (const id of options.disabledObjects ?? []) args.push('--disable-object', id)
+    for (const id of options.enabledObjects ?? []) args.push('--enable-object', id)
+  }
+  for (const [name, value] of Object.entries(options.propertyOverrides ?? {})) {
+    args.push('--set-property', `${name}=${value}`)
+  }
   args.push(wallpaperPath)
   return args
 }
@@ -630,13 +666,64 @@ function hotReloadLwe(wallpaperPath: string): boolean {
   }
 }
 
+/**
+ * Pushes layer/volume/xray changes to an already-running instance via the extended
+ * key=value control file, without touching the background path. Layers, volume and
+ * xray are independent in the protocol: a volume-only request never reloads the
+ * project, and a layers-only request doesn't need to resend the path. disabledObjects/
+ * enabledObjects being present (even as empty arrays) is what tells the engine to
+ * replace its override lists - omit both to leave layers untouched. xray toggles the
+ * "xray" scene effect's reveal spot between following the mouse (off) and covering the
+ * whole masked area (on) - it's a live-only setting with no launch-time equivalent, so
+ * it has to be pushed here even right after a fresh launch.
+ */
+export function hotswapLweSettings(options: {
+  disabledObjects?: string[]
+  enabledObjects?: string[]
+  volume?: number
+  xray?: boolean
+}): boolean {
+  if (!activeProcess || activeProcess.exitCode !== null) return false
+
+  const lines: string[] = []
+  if (options.disabledObjects !== undefined || options.enabledObjects !== undefined) {
+    lines.push('layers=1')
+    for (const id of options.disabledObjects ?? []) lines.push(`disable-object=${id}`)
+    for (const id of options.enabledObjects ?? []) lines.push(`enable-object=${id}`)
+  }
+  if (options.volume !== undefined) lines.push(`volume=${options.volume}`)
+  if (options.xray !== undefined) lines.push(`xray=${options.xray ? 'on' : 'off'}`)
+  if (lines.length === 0) return false
+
+  try {
+    fs.writeFileSync(getControlFilePath(), lines.join('\n') + '\n')
+    activeProcess.kill('SIGUSR1')
+    console.log('[LWE] Hotswap settings sent:', lines.join(' '))
+    return true
+  } catch (err) {
+    console.error('[LWE] Hotswap settings failed:', err)
+    return false
+  }
+}
+
 /** Launch LWE and resolve after 2s if still running; reject if it exits with error (so UI can show message). */
 export function launchLweAsync(
   wallpaperPath: string,
-  options: { screenRoot?: string; fps?: number; volume?: number } = {}
+  options: {
+    screenRoot?: string
+    fps?: number
+    volume?: number
+    disabledObjects?: string[]
+    enabledObjects?: string[]
+    propertyOverrides?: Record<string, string>
+    xrayFullReveal?: boolean
+  } = {}
 ): Promise<void> {
-  // Hot-reload if already running
+  // Hot-reload if already running. xray has no launch flag and the running instance
+  // keeps its own xray state across a background swap, so it needs an explicit push
+  // even when the new wallpaper wants it off.
   if (isLweRunning() && hotReloadLwe(wallpaperPath)) {
+    if (options.xrayFullReveal !== undefined) hotswapLweSettings({ xray: options.xrayFullReveal })
     return Promise.resolve()
   }
 
@@ -675,8 +762,13 @@ export function launchLweAsync(
     }
 
     let settled = false
+    // A rapid stop+relaunch can leave the old process still shutting down (CEF/GL
+    // teardown isn't instant) when its exit event finally arrives - only clear
+    // activeProcess if it's still pointing at this child, not a newer one that
+    // superseded it, otherwise the newer launch's own "still running" resolve
+    // check below never passes and its promise hangs forever.
     const cleanup = () => {
-      activeProcess = null
+      if (activeProcess === child) activeProcess = null
     }
 
     child.on('exit', (code) => {
@@ -706,10 +798,132 @@ export function launchLweAsync(
     setTimeout(() => {
       if (!settled && activeProcess === child && child.exitCode === null) {
         settled = true
+        if (options.xrayFullReveal) hotswapLweSettings({ xray: true })
         resolve()
       }
     }, 2000)
   })
+}
+
+// Matches lines like "  123 - Layer Name (image)" printed by --list-objects
+const OBJECT_LINE_RE = /^\s*(\S+)\s-\s(.*)\s\((image|particle|text|sound|unknown)\)\s*$/
+
+function parseLweObjectList(output: string): LweSceneObject[] {
+  const objects: LweSceneObject[] = []
+  for (const line of output.split('\n')) {
+    const m = line.match(OBJECT_LINE_RE)
+    if (m) objects.push({ id: m[1], name: m[2], type: m[3] as LweSceneObject['type'] })
+  }
+  return objects
+}
+
+// Returns [] for non-scene wallpapers (video/web print no objects)
+export async function listLweObjects(wallpaperPath: string): Promise<LweSceneObject[]> {
+  const status = getLweStatus()
+  if (!status.installed) throw new Error('linux-wallpaperengine is not installed.')
+  // Older builds silently ignore unknown flags and fall through to actually rendering the
+  // wallpaper instead of exiting, so this must never be sent to a binary that doesn't support it.
+  if (!supportsObjectFlags()) return []
+
+  const binaryPath = getLweBinaryPath()
+  const args = ['--list-objects']
+  const assetsDir = findWeAssetsDir()
+  if (assetsDir) args.push('--assets-dir', assetsDir)
+  args.push(wallpaperPath)
+
+  const envVars = buildLweEnvVars()
+  try {
+    const { stdout } = await execFileAsync('env', [...envVars, binaryPath, ...args], {
+      timeout: 15_000,
+      maxBuffer: 5 * 1024 * 1024,
+      encoding: 'utf8'
+    })
+    return parseLweObjectList(stdout)
+  } catch (err) {
+    const e = err as Error & { stdout?: string; stderr?: string }
+    const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
+    throw new Error(`Failed to list wallpaper objects: ${msg}`)
+  }
+}
+
+// Parses --list-properties output, e.g.:
+//   background_edit_brightness - slider
+//   	Text: Brightness
+//   	Min: 0
+//   	Max: 200
+//   	Step: 0
+//   	Value: 100.000000
+//
+//   clock_font - combo
+//   	Text: ui_clock_font
+//   	Value: impact
+//   Values:
+//   		segoe ui = ui_clock_font_4
+// Combo option values (before " = ") can contain spaces (e.g. font names), so that
+// line can't be split on whitespace - only on the literal " = " separator.
+const PROPERTY_HEADER_RE =
+  /^(\S+) - (slider|boolean|color|combo|text|scene texture|file|textinput)$/
+const PROPERTY_DETAIL_RE = /^\t(Text|Value|Min|Max|Step): (.*)$/
+const PROPERTY_COMBO_OPTION_RE = /^\t\t(.+?) = (.*)$/
+
+function parseLweProperties(output: string): LweProperty[] {
+  const properties: LweProperty[] = []
+  let current: LweProperty | null = null
+
+  for (const line of output.split('\n')) {
+    const header = line.match(PROPERTY_HEADER_RE)
+    if (header) {
+      if (current) properties.push(current)
+      const type = header[2] === 'scene texture' ? 'scene-texture' : (header[2] as LweProperty['type'])
+      current = { name: header[1], type, value: '' }
+      continue
+    }
+    if (!current) continue
+
+    const comboOption = line.match(PROPERTY_COMBO_OPTION_RE)
+    if (comboOption) {
+      current.options ??= []
+      current.options.push({ value: comboOption[1], label: comboOption[2] })
+      continue
+    }
+
+    const detail = line.match(PROPERTY_DETAIL_RE)
+    if (detail) {
+      const [, key, value] = detail
+      if (key === 'Text') current.text = value
+      else if (key === 'Value') current.value = value
+      else if (key === 'Min') current.min = parseFloat(value)
+      else if (key === 'Max') current.max = parseFloat(value)
+      else if (key === 'Step') current.step = parseFloat(value)
+    }
+  }
+  if (current) properties.push(current)
+  return properties
+}
+
+export async function listLweProperties(wallpaperPath: string): Promise<LweProperty[]> {
+  const status = getLweStatus()
+  if (!status.installed) throw new Error('linux-wallpaperengine is not installed.')
+
+  const binaryPath = getLweBinaryPath()
+  const args = ['--list-properties']
+  const assetsDir = findWeAssetsDir()
+  if (assetsDir) args.push('--assets-dir', assetsDir)
+  args.push(wallpaperPath)
+
+  const envVars = buildLweEnvVars()
+  try {
+    const { stdout } = await execFileAsync('env', [...envVars, binaryPath, ...args], {
+      timeout: 15_000,
+      maxBuffer: 5 * 1024 * 1024,
+      encoding: 'utf8'
+    })
+    return parseLweProperties(stdout)
+  } catch (err) {
+    const e = err as Error & { stdout?: string; stderr?: string }
+    const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
+    throw new Error(`Failed to list wallpaper properties: ${msg}`)
+  }
 }
 
 export function stopLwe(): void {

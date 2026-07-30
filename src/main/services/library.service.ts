@@ -5,7 +5,12 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { randomUUID } from 'crypto'
 import { cleanupPlaylists } from './playlist.service'
-import { getWorkshopTimesUpdated, getWorkshopTags } from './workshop.service'
+import {
+  getWorkshopTimesUpdated,
+  getWorkshopTags,
+  getWorkshopAuthors,
+  getUnavailableWorkshopItems
+} from './workshop.service'
 import { findAndMutate } from '../utils/collections'
 import { isSteamRunning, getItemDownloadStatus, getSubscribedItems } from './steam.service'
 
@@ -52,7 +57,6 @@ export function getAllWallpapers(filters?: LibraryFilters): WallpaperMeta[] {
     results = results.filter((w) => filters.categories!.some((cat) => w.categories.includes(cat)))
   }
 
-  // Sort
   const sortBy = filters?.sortBy ?? 'updatedAt'
   const dir = filters?.sortDir === 'asc' ? 1 : -1
 
@@ -208,6 +212,14 @@ async function safeGetWorkshopTags(ids: string[]): Promise<Map<string, string[]>
   }
 }
 
+async function safeGetWorkshopAuthors(ids: string[]): Promise<Map<string, string>> {
+  try {
+    return await getWorkshopAuthors(ids)
+  } catch {
+    return new Map()
+  }
+}
+
 export function getDirSize(dirPath: string): number {
   let total = 0
   try {
@@ -236,10 +248,18 @@ function buildMeta(
   localPath: string,
   pj: ProjectJson | null,
   existing?: WallpaperMeta,
-  workshopTimeUpdated?: number
+  workshopTimeUpdated?: number,
+  authorSteamId?: string
 ): WallpaperMeta {
   const now = Date.now()
   const { downloading: _d, downloadFailed: _df, ...existingRest } = existing ?? { appliedCount: 0, categories: [] }
+  // project.json can land on disk before the preview image it references has
+  // finished downloading (the watcher imports shortly after the folder shows
+  // up) - pointing previewLocal at a file that doesn't exist yet makes the
+  // wallpaper:// protocol handler fail with net::ERR_FILE_NOT_FOUND. Leaving
+  // it unset here falls back to the "No preview" placeholder, and the next
+  // library scan picks up the real file once it exists.
+  const previewPath = pj?.preview ? path.join(localPath, pj.preview) : undefined
   return {
     ...existingRest,
     id: workshopId,
@@ -247,7 +267,7 @@ function buildMeta(
     type: normalizeType(pj?.type),
     contentRating: normalizeRating(pj?.contentrating),
     description: pj?.description,
-    previewLocal: pj?.preview ? path.join(localPath, pj.preview) : undefined,
+    previewLocal: previewPath && fs.existsSync(previewPath) ? previewPath : undefined,
     previewUrl: undefined,
     localPath,
     file: pj?.file,
@@ -256,7 +276,8 @@ function buildMeta(
     updatedAt: workshopTimeUpdated ? workshopTimeUpdated * 1000 : (existing?.updatedAt ?? now),
     subscribed: true,
     source: 'workshop',
-    tags: pj?.tags ?? existing?.tags ?? []
+    tags: pj?.tags ?? existing?.tags ?? [],
+    authorSteamId: authorSteamId ?? existing?.authorSteamId
   }
 }
 
@@ -264,7 +285,8 @@ function buildIncompleteMeta(
   workshopId: string,
   localPath: string,
   existing?: WallpaperMeta,
-  workshopTags?: string[]
+  workshopTags?: string[],
+  authorSteamId?: string
 ): WallpaperMeta {
   const now = Date.now()
   const { downloading, failed } = isSteamRunning()
@@ -288,7 +310,8 @@ function buildIncompleteMeta(
     tags,
     categories: existing?.categories ?? [],
     downloading,
-    downloadFailed: failed
+    downloadFailed: failed,
+    authorSteamId: authorSteamId ?? existing?.authorSteamId
   }
 }
 
@@ -297,16 +320,18 @@ export async function importWallpaperById(workshopId: string): Promise<Wallpaper
   if (!fs.existsSync(localPath)) return null
 
   const existing = getWallpaper(workshopId) ?? undefined
+  const authorSteamId =
+    existing?.authorSteamId ?? (await safeGetWorkshopAuthors([workshopId])).get(workshopId)
   const pj = readProjectJson(localPath)
   if (!pj) {
     const tags = await safeGetWorkshopTags([workshopId])
-    const meta = buildIncompleteMeta(workshopId, localPath, existing, tags.get(workshopId))
+    const meta = buildIncompleteMeta(workshopId, localPath, existing, tags.get(workshopId), authorSteamId)
     upsertWallpaper(meta)
     return meta
   }
 
   const timesUpdated = await safeGetWorkshopTimesUpdated([workshopId])
-  const meta = buildMeta(workshopId, localPath, pj, existing, timesUpdated.get(workshopId))
+  const meta = buildMeta(workshopId, localPath, pj, existing, timesUpdated.get(workshopId), authorSteamId)
   upsertWallpaper(meta)
   return meta
 }
@@ -366,10 +391,18 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     incomplete.push({ id, localPath: path.join(workshopPath, id) })
   }
 
+  // Author never changes once known, so only fetch it for items that don't have it yet
+  const missingAuthorIds = [
+    ...incomplete.map((i) => i.id),
+    ...toRebuild.map(({ entry }) => entry.name),
+    ...cacheHits
+  ].filter((id) => !wallpapers[id]?.authorSteamId)
+  const authors = await safeGetWorkshopAuthors(missingAuthorIds)
+
   const incompleteTags = await safeGetWorkshopTags(incomplete.map((i) => i.id))
   for (const { id, localPath } of incomplete) {
     const existing = wallpapers[id]
-    const meta = buildIncompleteMeta(id, localPath, existing, incompleteTags.get(id))
+    const meta = buildIncompleteMeta(id, localPath, existing, incompleteTags.get(id), authors.get(id))
     if (!existing) {
       wallpapers[id] = meta
       imported++
@@ -377,7 +410,8 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
       existing.downloading !== meta.downloading ||
       existing.downloadFailed !== meta.downloadFailed ||
       existing.type !== meta.type ||
-      existing.contentRating !== meta.contentRating
+      existing.contentRating !== meta.contentRating ||
+      existing.authorSteamId !== meta.authorSteamId
     ) {
       wallpapers[id] = {
         ...existing,
@@ -385,7 +419,8 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
         downloadFailed: meta.downloadFailed,
         type: meta.type,
         contentRating: meta.contentRating,
-        tags: meta.tags
+        tags: meta.tags,
+        authorSteamId: meta.authorSteamId
       }
       skipped++
     } else {
@@ -404,7 +439,8 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
       localPath,
       pj,
       wallpapers[entry.name] ?? undefined,
-      timesUpdated.get(entry.name)
+      timesUpdated.get(entry.name),
+      authors.get(entry.name)
     )
     imported++
   }
@@ -412,10 +448,16 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   let resynced = false
   for (const id of cacheHits) {
     const seconds = timesUpdated.get(id)
-    if (seconds === undefined) continue
-    const newUpdatedAt = seconds * 1000
-    if (wallpapers[id].updatedAt !== newUpdatedAt) {
-      wallpapers[id] = { ...wallpapers[id], updatedAt: newUpdatedAt }
+    const authorId = authors.get(id)
+    const patch: Partial<WallpaperMeta> = {}
+    if (seconds !== undefined && wallpapers[id].updatedAt !== seconds * 1000) {
+      patch.updatedAt = seconds * 1000
+    }
+    if (authorId && wallpapers[id].authorSteamId !== authorId) {
+      patch.authorSteamId = authorId
+    }
+    if (Object.keys(patch).length > 0) {
+      wallpapers[id] = { ...wallpapers[id], ...patch }
       resynced = true
     }
   }
@@ -433,7 +475,40 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   return { imported, skipped, removed }
 }
 
-// Folders
+// Flags library items whose Steam Workshop listing has been taken down (the
+// author deleted it, Valve removed it, etc). Those items can never be
+// re-downloaded once lost locally, which is what "backup all unavailable"
+// is for - only workshop-sourced items with local content are worth checking.
+export async function checkUnavailableWallpapers(): Promise<{ checked: number; unavailable: number }> {
+  if (!isSteamRunning()) return { checked: 0, unavailable: 0 }
+
+  const wallpapers = store.get('wallpapers')
+  const candidates = Object.values(wallpapers).filter(
+    (w) => w.source === 'workshop' && !!w.localPath && !w.downloading
+  )
+  if (candidates.length === 0) return { checked: 0, unavailable: 0 }
+
+  let unavailableIds: Set<string>
+  try {
+    unavailableIds = await getUnavailableWorkshopItems(candidates.map((w) => w.id))
+  } catch {
+    // Steam request failed outright - leave existing unavailable flags alone
+    // rather than reporting everything as available again.
+    return { checked: 0, unavailable: 0 }
+  }
+
+  let changed = false
+  for (const w of candidates) {
+    const flag = unavailableIds.has(w.id)
+    if (!!w.unavailable !== flag) {
+      wallpapers[w.id] = { ...w, unavailable: flag }
+      changed = true
+    }
+  }
+  if (changed) store.set('wallpapers', wallpapers)
+
+  return { checked: candidates.length, unavailable: unavailableIds.size }
+}
 
 export function getAllFolders(): WallpaperFolder[] {
   return store.get('folders')

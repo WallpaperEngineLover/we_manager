@@ -1,6 +1,6 @@
 import * as path from 'path'
 import { WE_APP_ID } from '@shared/constants'
-import type { DownloadProgressEvent } from '@shared/types'
+import type { DownloadProgressEvent, WorkshopAuthorInfo } from '@shared/types'
 
 let client: ReturnType<typeof import('steamworks.js')['init']> | null = null
 
@@ -97,7 +97,7 @@ export async function getVotedUpItemIds(): Promise<string[]> {
   while (true) {
     const r = await c.workshop.getUserItems(
       page, accountId,
-      2 /* VotedUp */, 0 /* Items */,
+      2 /* VotedUp */, 13 /* UGCType.All, since WE items span multiple subtypes */,
       1 /* CreationOrderDesc */,
       { consumer: WE_APP_ID }
     )
@@ -145,6 +145,26 @@ export function getInstallInfo(itemId: bigint): { folder: string; sizeOnDisk: nu
     if (!info) return null
     return { folder: info.folder, sizeOnDisk: Number(info.sizeOnDisk) }
   } catch {
+    return null
+  }
+}
+
+// steamworks.js only exposes persona info for the local player/friends, so this
+// pulls it from the public community profile XML instead. Cached for the process lifetime.
+const authorInfoCache = new Map<string, WorkshopAuthorInfo | null>()
+
+export async function getAuthorInfo(steamId: string): Promise<WorkshopAuthorInfo | null> {
+  if (authorInfoCache.has(steamId)) return authorInfoCache.get(steamId) ?? null
+  try {
+    const res = await fetch(`https://steamcommunity.com/profiles/${steamId}?xml=1`)
+    const xml = await res.text()
+    const name = xml.match(/<steamID><!\[CDATA\[([\s\S]*?)\]\]><\/steamID>/)?.[1]
+    const avatarUrl = xml.match(/<avatarFull><!\[CDATA\[([\s\S]*?)\]\]><\/avatarFull>/)?.[1]
+    const info = name && avatarUrl ? { steamId, name, avatarUrl } : null
+    authorInfoCache.set(steamId, info)
+    return info
+  } catch {
+    authorInfoCache.set(steamId, null)
     return null
   }
 }

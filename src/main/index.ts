@@ -56,10 +56,15 @@ function createWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
-  // Serve local wallpaper files via custom protocol
-  protocol.handle('wallpaper', (request) => {
+  protocol.handle('wallpaper', async (request) => {
     const filePath = decodeURIComponent(request.url.replace('wallpaper://', ''))
-    return net.fetch(pathToFileURL(filePath).toString())
+    try {
+      return await net.fetch(pathToFileURL(filePath).toString())
+    } catch {
+      // File not on disk yet (e.g. still downloading) - a rejected fetch here
+      // would otherwise surface as an uncaught net::ERR_FILE_NOT_FOUND
+      return new Response(null, { status: 404 })
+    }
   })
 
   const steamOk = initSteam()
