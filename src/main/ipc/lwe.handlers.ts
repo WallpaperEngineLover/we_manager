@@ -55,7 +55,19 @@ export function registerLweHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(
     IpcChannels.LWE_HOTSWAP_SETTINGS,
-    (_e, options: { disabledObjects?: string[]; enabledObjects?: string[]; volume?: number; xray?: boolean }) => {
+    (
+      _e,
+      options: {
+        disabledObjects?: string[]
+        enabledObjects?: string[]
+        volume?: number
+        xray?: boolean
+        scaling?: string
+        zoom?: number
+        disableParallax?: boolean
+        cornerColor?: string
+      }
+    ) => {
       return { ok: hotswapLweSettings(options) }
     }
   )

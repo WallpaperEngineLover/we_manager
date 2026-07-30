@@ -1,5 +1,8 @@
 export type WallpaperType = 'scene' | 'video' | 'web' | 'application'
 
+/** Matches linux-wallpaperengine's --scaling choices */
+export type ScalingMode = 'default' | 'stretch' | 'fit' | 'fill' | 'center'
+
 export type WallpaperBackend =
   | 'swww'
   | 'swaybg'
@@ -48,6 +51,17 @@ export interface WallpaperMeta {
   volumeOverride?: number
   /** Forces the "xray" scene effect's reveal spot to cover the whole masked area instead of following the mouse */
   xrayFullReveal?: boolean
+  /** How the wallpaper is scaled to fit the screen, applied via linux-wallpaperengine --scaling */
+  scalingMode?: ScalingMode
+  /** Manual zoom layered on top of scalingMode via linux-wallpaperengine --zoom (1 = no extra zoom) */
+  zoom?: number
+  /** Force-disables the scene's mouse parallax effect via linux-wallpaperengine --disable-parallax */
+  disableParallax?: boolean
+  /**
+   * Color shown outside the wallpaper's bounds (Center/Fit letterboxing, zoomed-out scaling) as a
+   * "RRGGBB"/"RRGGBBAA" hex string, applied via linux-wallpaperengine --corner-color. Default: black.
+   */
+  cornerColor?: string
   backedUp?: boolean
   /** Set by a "check unavailable" scan: true if the item has been removed from the Steam Workshop */
   unavailable?: boolean

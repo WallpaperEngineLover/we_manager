@@ -233,6 +233,10 @@ const api = {
       enabledObjects?: string[]
       volume?: number
       xray?: boolean
+      scaling?: string
+      zoom?: number
+      disableParallax?: boolean
+      cornerColor?: string
     }): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.LWE_HOTSWAP_SETTINGS, options),
     listProperties: (wallpaperPath: string): Promise<LweProperty[]> =>

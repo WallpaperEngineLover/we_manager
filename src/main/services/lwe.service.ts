@@ -619,6 +619,10 @@ function buildLweArgs(
     disabledObjects?: string[]
     enabledObjects?: string[]
     propertyOverrides?: Record<string, string>
+    scalingMode?: string
+    zoom?: number
+    disableParallax?: boolean
+    cornerColor?: string
   }
 ): string[] {
   const args: string[] = []
@@ -635,6 +639,10 @@ function buildLweArgs(
 
   if (options.fps) args.push('--fps', String(options.fps))
   if (options.volume !== undefined) args.push('--volume', String(options.volume))
+  if (options.scalingMode) args.push('--scaling', options.scalingMode)
+  if (options.zoom !== undefined) args.push('--zoom', String(options.zoom))
+  if (options.disableParallax) args.push('--disable-parallax')
+  if (options.cornerColor) args.push('--corner-color', options.cornerColor)
   if ((options.disabledObjects?.length || options.enabledObjects?.length) && supportsObjectFlags()) {
     for (const id of options.disabledObjects ?? []) args.push('--disable-object', id)
     for (const id of options.enabledObjects ?? []) args.push('--enable-object', id)
@@ -667,21 +675,29 @@ function hotReloadLwe(wallpaperPath: string): boolean {
 }
 
 /**
- * Pushes layer/volume/xray changes to an already-running instance via the extended
- * key=value control file, without touching the background path. Layers, volume and
- * xray are independent in the protocol: a volume-only request never reloads the
- * project, and a layers-only request doesn't need to resend the path. disabledObjects/
- * enabledObjects being present (even as empty arrays) is what tells the engine to
- * replace its override lists - omit both to leave layers untouched. xray toggles the
- * "xray" scene effect's reveal spot between following the mouse (off) and covering the
- * whole masked area (on) - it's a live-only setting with no launch-time equivalent, so
- * it has to be pushed here even right after a fresh launch.
+ * Pushes layer/volume/xray/scaling/zoom/parallax changes to an already-running instance via the
+ * extended key=value control file, without touching the background path. Each field is independent
+ * in the protocol: a volume-only request never reloads the project, and a layers-only request
+ * doesn't need to resend the path. disabledObjects/enabledObjects being present (even as empty
+ * arrays) is what tells the engine to replace its override lists - omit both to leave layers
+ * untouched. xray toggles the "xray" scene effect's reveal spot between following the mouse (off)
+ * and covering the whole masked area (on) - it's a live-only setting with no launch-time
+ * equivalent, so it has to be pushed here even right after a fresh launch. scaling/zoom apply to
+ * every screen currently rendering (the engine doesn't scope these to a single screen), matching
+ * how volume/xray are global rather than per-screen here. disableParallax is a straight passthrough
+ * to the engine's --disable-parallax setting, which every parallax-capable scene object reads live.
+ * cornerColor is a hex "RRGGBB"/"RRGGBBAA" string, only visible where the engine's clamp mode is
+ * border (the default).
  */
 export function hotswapLweSettings(options: {
   disabledObjects?: string[]
   enabledObjects?: string[]
   volume?: number
   xray?: boolean
+  scaling?: string
+  zoom?: number
+  disableParallax?: boolean
+  cornerColor?: string
 }): boolean {
   if (!activeProcess || activeProcess.exitCode !== null) return false
 
@@ -693,6 +709,10 @@ export function hotswapLweSettings(options: {
   }
   if (options.volume !== undefined) lines.push(`volume=${options.volume}`)
   if (options.xray !== undefined) lines.push(`xray=${options.xray ? 'on' : 'off'}`)
+  if (options.scaling !== undefined) lines.push(`scaling=${options.scaling}`)
+  if (options.zoom !== undefined) lines.push(`zoom=${options.zoom}`)
+  if (options.disableParallax !== undefined) lines.push(`disable-parallax=${options.disableParallax ? 'on' : 'off'}`)
+  if (options.cornerColor !== undefined) lines.push(`corner-color=${options.cornerColor}`)
   if (lines.length === 0) return false
 
   try {
@@ -717,13 +737,26 @@ export function launchLweAsync(
     enabledObjects?: string[]
     propertyOverrides?: Record<string, string>
     xrayFullReveal?: boolean
+    scalingMode?: string
+    zoom?: number
+    disableParallax?: boolean
+    cornerColor?: string
   } = {}
 ): Promise<void> {
   // Hot-reload if already running. xray has no launch flag and the running instance
   // keeps its own xray state across a background swap, so it needs an explicit push
-  // even when the new wallpaper wants it off.
+  // even when the new wallpaper wants it off. Scaling/zoom/parallax/cornerColor do have launch
+  // flags, but a hot-reload doesn't restart the process (so launch args never get re-read) -
+  // the running instance keeps whatever the previous wallpaper set, so they need the same
+  // explicit push, defaulting to "no override" when the new wallpaper doesn't set them.
   if (isLweRunning() && hotReloadLwe(wallpaperPath)) {
     if (options.xrayFullReveal !== undefined) hotswapLweSettings({ xray: options.xrayFullReveal })
+    hotswapLweSettings({
+      scaling: options.scalingMode ?? 'default',
+      zoom: options.zoom ?? 1,
+      disableParallax: options.disableParallax ?? false,
+      cornerColor: options.cornerColor ?? '000000'
+    })
     return Promise.resolve()
   }
 

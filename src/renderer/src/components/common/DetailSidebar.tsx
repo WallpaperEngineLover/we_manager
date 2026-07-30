@@ -23,12 +23,25 @@ import {
   ToggleLeft,
   ToggleRight,
   SlidersHorizontal,
-  ScanEye
+  ScanEye,
+  Maximize,
+  ZoomIn,
+  ZoomOut,
+  Move3d,
+  Palette
 } from 'lucide-react'
 import clsx from 'clsx'
 import { openWorkshopPage, openProfilePage, isWorkshopId } from '../../utils/steam'
 import { WE_TYPES, WE_AGE_RATINGS, WE_RESOLUTION_GROUPS } from '../../constants/weFilters'
-import type { LweSceneObject, LweProperty, WallpaperMeta } from '@shared/types'
+import type { LweSceneObject, LweProperty, WallpaperMeta, ScalingMode } from '@shared/types'
+
+const SCALING_MODE_OPTIONS: { value: ScalingMode; label: string }[] = [
+  { value: 'default', label: 'Default' },
+  { value: 'stretch', label: 'Stretch' },
+  { value: 'fill', label: 'Fill (crop to fit)' },
+  { value: 'fit', label: 'Fit (letterbox)' },
+  { value: 'center', label: 'Center (native size)' }
+]
 
 const TYPE_TAGS = new Set(WE_TYPES.map((i) => i.tag))
 const AGE_TAGS = new Set(WE_AGE_RATINGS.map((i) => i.tag))
@@ -327,7 +340,11 @@ export default function DetailSidebar({
         disabledObjects: patch.disabledObjects,
         enabledObjects: patch.enabledObjects,
         volume: patch.volumeOverride,
-        xray: patch.xrayFullReveal
+        xray: patch.xrayFullReveal,
+        scaling: patch.scalingMode,
+        zoom: patch.zoom,
+        disableParallax: patch.disableParallax,
+        cornerColor: patch.cornerColor
       })
       if (!ok) {
         await window.electronAPI.lwe.stop()
@@ -393,6 +410,58 @@ export default function DetailSidebar({
       await persistAndMaybeRelaunch({ xrayFullReveal: !xrayFullReveal })
     } finally {
       setIsCommittingXray(false)
+    }
+  }
+
+  const [isCommittingScaling, setIsCommittingScaling] = useState(false)
+  const scalingMode = libraryMeta?.scalingMode ?? 'default'
+
+  async function commitScaling(mode: ScalingMode) {
+    if (isCommittingScaling || mode === scalingMode) return
+    setIsCommittingScaling(true)
+    try {
+      await persistAndMaybeRelaunch({ scalingMode: mode })
+    } finally {
+      setIsCommittingScaling(false)
+    }
+  }
+
+  const [zoomDraft, setZoomDraft] = useState<number | null>(null)
+  const [isCommittingZoom, setIsCommittingZoom] = useState(false)
+  const zoomPercent = zoomDraft ?? Math.round((libraryMeta?.zoom ?? 1) * 100)
+
+  async function commitZoom(percent: number) {
+    setIsCommittingZoom(true)
+    try {
+      await persistAndMaybeRelaunch({ zoom: percent / 100 })
+    } finally {
+      setZoomDraft(null)
+      setIsCommittingZoom(false)
+    }
+  }
+
+  const [isCommittingCornerColor, setIsCommittingCornerColor] = useState(false)
+  const cornerColor = libraryMeta?.cornerColor ?? '#000000'
+
+  async function commitCornerColor(color: string) {
+    setIsCommittingCornerColor(true)
+    try {
+      await persistAndMaybeRelaunch({ cornerColor: color })
+    } finally {
+      setIsCommittingCornerColor(false)
+    }
+  }
+
+  const [isCommittingParallax, setIsCommittingParallax] = useState(false)
+  const disableParallax = libraryMeta?.disableParallax ?? false
+
+  async function toggleParallax() {
+    if (isCommittingParallax) return
+    setIsCommittingParallax(true)
+    try {
+      await persistAndMaybeRelaunch({ disableParallax: !disableParallax })
+    } finally {
+      setIsCommittingParallax(false)
     }
   }
 
@@ -552,6 +621,85 @@ export default function DetailSidebar({
           </div>
         )}
 
+        {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
+          <div className="border-t border-white/5 pt-3">
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <Maximize size={12} />
+              <span className="flex-1 text-left">Scaling</span>
+              {isActive && (
+                <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
+                  live
+                </span>
+              )}
+              {isCommittingScaling && <Loader2 size={11} className="animate-spin" />}
+            </div>
+            <select
+              value={scalingMode}
+              disabled={isCommittingScaling}
+              onChange={(e) => commitScaling(e.target.value as ScalingMode)}
+              className="w-full rounded bg-white/5 px-1.5 py-1 text-xs text-gray-300 outline-none disabled:opacity-50 [&>option]:bg-[#1a1a1a]"
+            >
+              {SCALING_MODE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
+          <div className="border-t border-white/5 pt-3">
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              {zoomPercent < 100 ? <ZoomOut size={12} /> : <ZoomIn size={12} />}
+              <span className="flex-1 text-left">Zoom</span>
+              {isActive && (
+                <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
+                  live
+                </span>
+              )}
+              {isCommittingZoom && <Loader2 size={11} className="animate-spin" />}
+              <span className="normal-case text-gray-400">{zoomPercent}%</span>
+            </div>
+            <input
+              type="range"
+              min={25}
+              max={300}
+              step={1}
+              value={zoomPercent}
+              disabled={isCommittingZoom}
+              onChange={(e) => setZoomDraft(Number(e.target.value))}
+              onMouseUp={(e) => commitZoom(Number(e.currentTarget.value))}
+              onTouchEnd={(e) => commitZoom(Number(e.currentTarget.value))}
+              onKeyUp={(e) => commitZoom(Number(e.currentTarget.value))}
+              className="w-full accent-indigo-500 disabled:opacity-50"
+            />
+          </div>
+        )}
+
+        {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
+          <div className="border-t border-white/5 pt-3">
+            <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <Palette size={12} />
+              <span className="flex-1 text-left">Corner color</span>
+              {isActive && (
+                <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
+                  live
+                </span>
+              )}
+              {isCommittingCornerColor && <Loader2 size={11} className="animate-spin" />}
+              <input
+                type="color"
+                value={cornerColor}
+                disabled={isCommittingCornerColor}
+                onChange={(e) => commitCornerColor(e.target.value)}
+                title="Color shown outside the wallpaper's bounds (letterboxing / zoomed-out scaling)"
+                className="h-5 w-8 shrink-0 cursor-pointer rounded border border-white/10 bg-transparent p-0 disabled:opacity-50"
+              />
+            </label>
+          </div>
+        )}
+
         {localPath && lweInstalled && libraryMeta?.type === 'video' && (
           <div className="border-t border-white/5 pt-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -597,6 +745,27 @@ export default function DetailSidebar({
               {isCommittingXray ? (
                 <Loader2 size={14} className="animate-spin text-gray-500" />
               ) : xrayFullReveal ? (
+                <ToggleRight size={14} className="text-indigo-400" />
+              ) : (
+                <ToggleLeft size={14} className="text-gray-600" />
+              )}
+            </button>
+            <button
+              onClick={toggleParallax}
+              disabled={isCommittingParallax}
+              title="Force-disable the mouse parallax effect on this wallpaper's layers"
+              className="mt-1.5 flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
+            >
+              <Move3d size={12} />
+              <span className="flex-1 text-left">Disable parallax</span>
+              {isActive && (
+                <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
+                  live
+                </span>
+              )}
+              {isCommittingParallax ? (
+                <Loader2 size={14} className="animate-spin text-gray-500" />
+              ) : disableParallax ? (
                 <ToggleRight size={14} className="text-indigo-400" />
               ) : (
                 <ToggleLeft size={14} className="text-gray-600" />

@@ -224,7 +224,12 @@ export async function applyWallpaperMeta(
       propertyOverrides: wallpaper.propertyOverrides,
       // Explicit even when off: xray state lives on the running LWE process, not per-wallpaper,
       // so a hot-reload into a wallpaper with xray off must actively clear a previous wallpaper's "on".
-      xrayFullReveal: wallpaper.xrayFullReveal ?? false
+      xrayFullReveal: wallpaper.xrayFullReveal ?? false,
+      scalingMode: wallpaper.scalingMode,
+      zoom: wallpaper.zoom,
+      // Explicit even when off, same reasoning as xrayFullReveal above.
+      disableParallax: wallpaper.disableParallax ?? false,
+      cornerColor: wallpaper.cornerColor
     })
     return wallpaper.localPath
   }
