@@ -350,10 +350,13 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   let skipped = 0
   let removed = 0
 
-  // Remove wallpapers whose directories no longer exist on disk, unless Steam
+  // Remove workshop wallpapers whose directories no longer exist on disk, unless Steam
   // still has them subscribed (those get tracked below instead, so a failed
-  // or never-started download doesn't just vanish from the library)
+  // or never-started download doesn't just vanish from the library). Only source:'workshop'
+  // entries live under workshopPath - local imports and backups (source:'local'/'backup') are
+  // never on disk here, so including them in this check would delete them on every scan.
   for (const id of Object.keys(wallpapers)) {
+    if (wallpapers[id].source !== 'workshop') continue
     if (!onDisk.has(id) && !subscribedIds.has(id)) {
       delete wallpapers[id]
       removed++
