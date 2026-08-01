@@ -229,7 +229,8 @@ export async function applyWallpaperMeta(
       zoom: wallpaper.zoom,
       // Explicit even when off, same reasoning as xrayFullReveal above.
       disableParallax: wallpaper.disableParallax ?? false,
-      cornerColor: wallpaper.cornerColor
+      cornerColor: wallpaper.cornerColor,
+      speed: wallpaper.playbackSpeed
     })
     return wallpaper.localPath
   }

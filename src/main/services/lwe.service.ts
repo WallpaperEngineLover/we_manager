@@ -623,6 +623,7 @@ function buildLweArgs(
     zoom?: number
     disableParallax?: boolean
     cornerColor?: string
+    speed?: number
   }
 ): string[] {
   const args: string[] = []
@@ -643,6 +644,7 @@ function buildLweArgs(
   if (options.zoom !== undefined) args.push('--zoom', String(options.zoom))
   if (options.disableParallax) args.push('--disable-parallax')
   if (options.cornerColor) args.push('--corner-color', options.cornerColor)
+  if (options.speed !== undefined) args.push('--speed', String(options.speed))
   if ((options.disabledObjects?.length || options.enabledObjects?.length) && supportsObjectFlags()) {
     for (const id of options.disabledObjects ?? []) args.push('--disable-object', id)
     for (const id of options.enabledObjects ?? []) args.push('--enable-object', id)
@@ -659,13 +661,79 @@ function getControlFilePath(): string {
   return path.join(getXdgRuntimeDir(), 'lwe-control')
 }
 
+/**
+ * Tracks a still-running LWE process across app restarts. `activeProcess` is an in-memory handle
+ * that dies with this Electron process, but the LWE child is spawned detached/unref'd so it
+ * survives independently - after the app is closed and reopened, `activeProcess` comes back null
+ * even though the OS process is still alive. resolveActivePid() below covers that gap.
+ */
+function getPidFilePath(): string {
+  return path.join(getXdgRuntimeDir(), 'lwe-pid')
+}
+
+function writePidFile(pid: number): void {
+  try {
+    fs.writeFileSync(getPidFilePath(), String(pid))
+  } catch (err) {
+    console.error('[LWE] Failed to write pid file:', err)
+  }
+}
+
+function clearPidFile(): void {
+  try {
+    fs.rmSync(getPidFilePath(), { force: true })
+  } catch { /* best effort */ }
+}
+
+/** True if `pid` is alive and actually looks like a linux-wallpaperengine process (not a recycled PID). */
+function isLweProcess(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+  } catch {
+    return false
+  }
+
+  try {
+    const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8')
+    return cmdline.includes(LWE_BINARY)
+  } catch {
+    // /proc unreadable (e.g. owned by another user) - we already know it's alive, best effort
+    return true
+  }
+}
+
+/**
+ * Resolves the PID to signal for hotswap/stop, preferring the in-memory child handle (cheap,
+ * exact) and falling back to the persisted pid file (recovers tracking after an app restart).
+ */
+function resolveActivePid(): number | null {
+  if (activeProcess && activeProcess.exitCode === null && activeProcess.pid !== undefined) {
+    return activeProcess.pid
+  }
+
+  let stored: number | null = null
+  try {
+    stored = parseInt(fs.readFileSync(getPidFilePath(), 'utf8').trim(), 10)
+  } catch {
+    return null
+  }
+
+  if (!Number.isInteger(stored) || !isLweProcess(stored)) {
+    clearPidFile()
+    return null
+  }
+
+  return stored
+}
+
 /** Hot-reload: write new wallpaper path to control file and send SIGUSR1. */
 function hotReloadLwe(wallpaperPath: string): boolean {
-  if (!activeProcess || activeProcess.exitCode !== null) return false
+  const pid = resolveActivePid()
+  if (pid === null) return false
 
   try {
     fs.writeFileSync(getControlFilePath(), wallpaperPath + '\n')
-    activeProcess.kill('SIGUSR1')
+    process.kill(pid, 'SIGUSR1')
     console.log('[LWE] Hot-reload signal sent for:', wallpaperPath)
     return true
   } catch (err) {
@@ -687,7 +755,10 @@ function hotReloadLwe(wallpaperPath: string): boolean {
  * how volume/xray are global rather than per-screen here. disableParallax is a straight passthrough
  * to the engine's --disable-parallax setting, which every parallax-capable scene object reads live.
  * cornerColor is a hex "RRGGBB"/"RRGGBBAA" string, only visible where the engine's clamp mode is
- * border (the default).
+ * border (the default). speed is a positive multiplier, live like scaling/zoom/parallax/
+ * cornerColor. propertyOverrides (WE customize sliders/checkboxes/combos) trigger the same
+ * lightweight reload as layers instead of a live setter, since they're baked into the scene
+ * graph at parse time - every key in the map is sent, not just changed ones.
  */
 export function hotswapLweSettings(options: {
   disabledObjects?: string[]
@@ -698,8 +769,11 @@ export function hotswapLweSettings(options: {
   zoom?: number
   disableParallax?: boolean
   cornerColor?: string
+  speed?: number
+  propertyOverrides?: Record<string, string>
 }): boolean {
-  if (!activeProcess || activeProcess.exitCode !== null) return false
+  const pid = resolveActivePid()
+  if (pid === null) return false
 
   const lines: string[] = []
   if (options.disabledObjects !== undefined || options.enabledObjects !== undefined) {
@@ -713,11 +787,15 @@ export function hotswapLweSettings(options: {
   if (options.zoom !== undefined) lines.push(`zoom=${options.zoom}`)
   if (options.disableParallax !== undefined) lines.push(`disable-parallax=${options.disableParallax ? 'on' : 'off'}`)
   if (options.cornerColor !== undefined) lines.push(`corner-color=${options.cornerColor}`)
+  if (options.speed !== undefined) lines.push(`speed=${options.speed}`)
+  for (const [name, value] of Object.entries(options.propertyOverrides ?? {})) {
+    lines.push(`property=${name}=${value}`)
+  }
   if (lines.length === 0) return false
 
   try {
     fs.writeFileSync(getControlFilePath(), lines.join('\n') + '\n')
-    activeProcess.kill('SIGUSR1')
+    process.kill(pid, 'SIGUSR1')
     console.log('[LWE] Hotswap settings sent:', lines.join(' '))
     return true
   } catch (err) {
@@ -741,21 +819,26 @@ export function launchLweAsync(
     zoom?: number
     disableParallax?: boolean
     cornerColor?: string
+    speed?: number
   } = {}
 ): Promise<void> {
   // Hot-reload if already running. xray has no launch flag and the running instance
   // keeps its own xray state across a background swap, so it needs an explicit push
-  // even when the new wallpaper wants it off. Scaling/zoom/parallax/cornerColor do have launch
-  // flags, but a hot-reload doesn't restart the process (so launch args never get re-read) -
-  // the running instance keeps whatever the previous wallpaper set, so they need the same
-  // explicit push, defaulting to "no override" when the new wallpaper doesn't set them.
+  // even when the new wallpaper wants it off. Scaling/zoom/parallax/cornerColor/speed do have
+  // launch flags, but a hot-reload doesn't restart the process (so launch args never get
+  // re-read) - the running instance keeps whatever the previous wallpaper set, so they need the
+  // same explicit push, defaulting to "no override" when the new wallpaper doesn't set them.
+  // propertyOverrides is pushed the same way - the engine only reapplies whatever's currently in
+  // its settings map on reload, which otherwise would still be the previous wallpaper's values.
   if (isLweRunning() && hotReloadLwe(wallpaperPath)) {
     if (options.xrayFullReveal !== undefined) hotswapLweSettings({ xray: options.xrayFullReveal })
     hotswapLweSettings({
       scaling: options.scalingMode ?? 'default',
       zoom: options.zoom ?? 1,
       disableParallax: options.disableParallax ?? false,
-      cornerColor: options.cornerColor ?? '000000'
+      cornerColor: options.cornerColor ?? '000000',
+      speed: options.speed ?? 1,
+      propertyOverrides: options.propertyOverrides ?? {}
     })
     return Promise.resolve()
   }
@@ -778,6 +861,7 @@ export function launchLweAsync(
       detached: true
     })
     activeProcess = child
+    if (child.pid !== undefined) writePidFile(child.pid)
 
     const stderrChunks: Buffer[] = []
     if (child.stdout) {
@@ -801,7 +885,10 @@ export function launchLweAsync(
     // superseded it, otherwise the newer launch's own "still running" resolve
     // check below never passes and its promise hangs forever.
     const cleanup = () => {
-      if (activeProcess === child) activeProcess = null
+      if (activeProcess === child) {
+        activeProcess = null
+        clearPidFile()
+      }
     }
 
     child.on('exit', (code) => {
@@ -960,21 +1047,24 @@ export async function listLweProperties(wallpaperPath: string): Promise<LwePrope
 }
 
 export function stopLwe(): void {
-  if (activeProcess) {
+  const pid = resolveActivePid()
+  if (pid !== null) {
     try {
-      activeProcess.kill('SIGTERM')
+      process.kill(pid, 'SIGTERM')
     } catch { /* already dead */ }
-    activeProcess = null
   }
+  activeProcess = null
+  clearPidFile()
 }
 
 export function isLweRunning(): boolean {
-  return activeProcess !== null && activeProcess.exitCode === null
+  return resolveActivePid() !== null
 }
 
 /** Force-kill every linux-wallpaperengine process on the system, including ones this app isn't tracking. */
 export async function killAllLweProcesses(): Promise<{ ok: boolean; message: string }> {
   activeProcess = null
+  clearPidFile()
 
   try {
     const { stdout } = await execFileAsync('pkill', ['-9', '-f', '-c', LWE_BINARY])

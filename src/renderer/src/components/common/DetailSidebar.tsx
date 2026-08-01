@@ -28,7 +28,8 @@ import {
   ZoomIn,
   ZoomOut,
   Move3d,
-  Palette
+  Palette,
+  Gauge
 } from 'lucide-react'
 import clsx from 'clsx'
 import { openWorkshopPage, openProfilePage, isWorkshopId } from '../../utils/steam'
@@ -327,10 +328,9 @@ export default function DetailSidebar({
   )
   const propertyOverrides = libraryMeta?.propertyOverrides ?? {}
 
-  // Persists a settings patch and, if this wallpaper is currently playing, pushes it live.
-  // Layers/volume go through the lightweight control-file hotswap (no restart); if that
-  // fails (e.g. an older linux-wallpaperengine build without the extended protocol), fall
-  // back to a full stop+relaunch so the change still takes effect one way or another.
+  // Persists a settings patch and, if this wallpaper is currently playing, pushes it live via
+  // the control-file hotswap (no process restart). Falls back to a full stop+relaunch if the
+  // push fails, e.g. an older linux-wallpaperengine build without the extended protocol.
   async function persistAndMaybeRelaunch(patch: Partial<WallpaperMeta>) {
     const updated = await window.electronAPI.library.update(id, patch)
     queryClient.setQueryData(['library-item', id], updated)
@@ -344,7 +344,9 @@ export default function DetailSidebar({
         scaling: patch.scalingMode,
         zoom: patch.zoom,
         disableParallax: patch.disableParallax,
-        cornerColor: patch.cornerColor
+        cornerColor: patch.cornerColor,
+        speed: patch.playbackSpeed,
+        propertyOverrides: patch.propertyOverrides
       })
       if (!ok) {
         await window.electronAPI.lwe.stop()
@@ -374,8 +376,6 @@ export default function DetailSidebar({
     }
   }
 
-  // --set-property is launch-time only (no hotswap support for it yet), so this always
-  // falls through to persistAndMaybeRelaunch's full stop+relaunch fallback when active.
   async function commitProperty(name: string, value: string) {
     if (committingProperty) return
     setCommittingProperty(name)
@@ -437,6 +437,20 @@ export default function DetailSidebar({
     } finally {
       setZoomDraft(null)
       setIsCommittingZoom(false)
+    }
+  }
+
+  const [speedDraft, setSpeedDraft] = useState<number | null>(null)
+  const [isCommittingSpeed, setIsCommittingSpeed] = useState(false)
+  const speedPercent = speedDraft ?? Math.round((libraryMeta?.playbackSpeed ?? 1) * 100)
+
+  async function commitSpeed(percent: number) {
+    setIsCommittingSpeed(true)
+    try {
+      await persistAndMaybeRelaunch({ playbackSpeed: percent / 100 })
+    } finally {
+      setSpeedDraft(null)
+      setIsCommittingSpeed(false)
     }
   }
 
@@ -672,6 +686,36 @@ export default function DetailSidebar({
               onMouseUp={(e) => commitZoom(Number(e.currentTarget.value))}
               onTouchEnd={(e) => commitZoom(Number(e.currentTarget.value))}
               onKeyUp={(e) => commitZoom(Number(e.currentTarget.value))}
+              className="w-full accent-indigo-500 disabled:opacity-50"
+            />
+          </div>
+        )}
+
+        {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
+          <div className="border-t border-white/5 pt-3">
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <Gauge size={12} />
+              <span className="flex-1 text-left">Playback speed</span>
+              {isActive && (
+                <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
+                  live
+                </span>
+              )}
+              {isCommittingSpeed && <Loader2 size={11} className="animate-spin" />}
+              <span className="normal-case text-gray-400">{speedPercent}%</span>
+            </div>
+            <input
+              type="range"
+              min={10}
+              max={200}
+              step={5}
+              value={speedPercent}
+              disabled={isCommittingSpeed}
+              onChange={(e) => setSpeedDraft(Number(e.target.value))}
+              onMouseUp={(e) => commitSpeed(Number(e.currentTarget.value))}
+              onTouchEnd={(e) => commitSpeed(Number(e.currentTarget.value))}
+              onKeyUp={(e) => commitSpeed(Number(e.currentTarget.value))}
+              title="Slows down or speeds up particles, animated effects and scripts (100% = normal speed)"
               className="w-full accent-indigo-500 disabled:opacity-50"
             />
           </div>

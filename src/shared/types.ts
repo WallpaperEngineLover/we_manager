@@ -62,6 +62,11 @@ export interface WallpaperMeta {
    * "RRGGBB"/"RRGGBBAA" hex string, applied via linux-wallpaperengine --corner-color. Default: black.
    */
   cornerColor?: string
+  /**
+   * Global playback speed multiplier for animations/particles/effects, applied via
+   * linux-wallpaperengine --speed (1 = normal speed, less than 1 = slower)
+   */
+  playbackSpeed?: number
   backedUp?: boolean
   /** Set by a "check unavailable" scan: true if the item has been removed from the Steam Workshop */
   unavailable?: boolean

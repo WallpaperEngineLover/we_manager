@@ -237,6 +237,8 @@ const api = {
       zoom?: number
       disableParallax?: boolean
       cornerColor?: string
+      speed?: number
+      propertyOverrides?: Record<string, string>
     }): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.LWE_HOTSWAP_SETTINGS, options),
     listProperties: (wallpaperPath: string): Promise<LweProperty[]> =>

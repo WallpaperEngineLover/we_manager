@@ -66,6 +66,8 @@ export function registerLweHandlers(win: BrowserWindow): void {
         zoom?: number
         disableParallax?: boolean
         cornerColor?: string
+        speed?: number
+        propertyOverrides?: Record<string, string>
       }
     ) => {
       return { ok: hotswapLweSettings(options) }
