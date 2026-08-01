@@ -20,6 +20,21 @@ import { DEFAULT_LWE_REPO } from '@shared/constants'
 
 const execFileAsync = promisify(execFile)
 
+/**
+ * Env for spawning the engine's own cmake/make, stripped of AppImage runtime vars. When
+ * we_manager itself runs as an AppImage, AppRun sets LD_LIBRARY_PATH (and friends) to point into
+ * its own ephemeral /tmp/.mount_XXXXXXX mount so its bundled Electron libs resolve - inheriting
+ * that into the engine's build lets CMake's library search pick up we_manager's own bundled
+ * libEGL.so etc. and cache that dead path in CMakeCache.txt once the mount is gone.
+ */
+function buildCleanBuildEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env }
+  for (const key of ['LD_LIBRARY_PATH', 'LD_PRELOAD', 'APPDIR', 'APPIMAGE', 'OWD', 'ARGV0']) {
+    delete env[key]
+  }
+  return env
+}
+
 const LWE_BINARY = 'linux-wallpaperengine'
 const BUILD_DIR = path.join(os.tmpdir(), 'lwe-build')
 
@@ -303,6 +318,8 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     const cmakeBuild = path.join(BUILD_DIR, 'build')
     fs.mkdirSync(cmakeBuild, { recursive: true })
 
+    const buildEnv = buildCleanBuildEnv()
+
     // cmake configure downloads CEF on first run, which can take several minutes
     send({ stage: 'building', message: 'Running cmake (downloading CEF if needed, may take a few minutes)...', percentage: 25 })
     await execFileAsync('cmake', [
@@ -314,6 +331,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       ...parseExtraCmakeArgs(getLweCmakeArgs())
     ], {
       cwd: cmakeBuild,
+      env: buildEnv,
       timeout: 600_000,
       maxBuffer: 10 * 1024 * 1024,
       encoding: 'utf8'
@@ -323,6 +341,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     const cores = Math.max(1, os.cpus().length - 1)
     await execFileAsync('make', ['-j', String(cores)], {
       cwd: cmakeBuild,
+      env: buildEnv,
       timeout: 600_000,
       maxBuffer: 10 * 1024 * 1024,
       encoding: 'utf8'
