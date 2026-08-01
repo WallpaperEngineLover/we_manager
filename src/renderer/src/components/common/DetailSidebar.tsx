@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   X,
@@ -29,7 +29,8 @@ import {
   ZoomOut,
   Move3d,
   Palette,
-  Gauge
+  Gauge,
+  Zap
 } from 'lucide-react'
 import clsx from 'clsx'
 import { openWorkshopPage, openProfilePage, isWorkshopId } from '../../utils/steam'
@@ -356,6 +357,19 @@ export default function DetailSidebar({
     }
   }
 
+  const livePreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Pushes a value live while a slider is being dragged, debounced so a fast drag doesn't flood
+  // the control-file/SIGUSR1 channel. Doesn't touch the library store - mouseup/touchend/keyup
+  // still do that persisted commit, which also re-pushes the final value.
+  function previewLive(patch: { volume?: number; zoom?: number; speed?: number }) {
+    if (!isActive) return
+    if (livePreviewTimer.current) clearTimeout(livePreviewTimer.current)
+    livePreviewTimer.current = setTimeout(() => {
+      window.electronAPI.lwe.hotswapSettings(patch)
+    }, 80)
+  }
+
   async function toggleObject(objId: string) {
     if (togglingObjectId) return
     const disabled = new Set(disabledObjects)
@@ -437,6 +451,23 @@ export default function DetailSidebar({
     } finally {
       setZoomDraft(null)
       setIsCommittingZoom(false)
+    }
+  }
+
+  const [fpsDraft, setFpsDraft] = useState<number | null>(null)
+  const [isCommittingFps, setIsCommittingFps] = useState(false)
+  const fps = fpsDraft ?? libraryMeta?.fpsOverride ?? null
+
+  // fps isn't part of hotswapSettings' payload, so persistAndMaybeRelaunch's hotswap push is
+  // always a no-op for this patch and it falls through to its stop+relaunch fallback - correct
+  // here, since the FPS cap is baked into the render loop and can't be changed live.
+  async function commitFps(value: number | null) {
+    setIsCommittingFps(true)
+    try {
+      await persistAndMaybeRelaunch({ fpsOverride: value ?? undefined })
+    } finally {
+      setFpsDraft(null)
+      setIsCommittingFps(false)
     }
   }
 
@@ -682,12 +713,50 @@ export default function DetailSidebar({
               step={1}
               value={zoomPercent}
               disabled={isCommittingZoom}
-              onChange={(e) => setZoomDraft(Number(e.target.value))}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                setZoomDraft(v)
+                previewLive({ zoom: v / 100 })
+              }}
               onMouseUp={(e) => commitZoom(Number(e.currentTarget.value))}
               onTouchEnd={(e) => commitZoom(Number(e.currentTarget.value))}
               onKeyUp={(e) => commitZoom(Number(e.currentTarget.value))}
               className="w-full accent-indigo-500 disabled:opacity-50"
             />
+          </div>
+        )}
+
+        {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
+          <div className="border-t border-white/5 pt-3">
+            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <Zap size={12} />
+              <span className="flex-1 text-left">FPS limit</span>
+              {isCommittingFps && <Loader2 size={11} className="animate-spin" />}
+              <input
+                type="number"
+                min={1}
+                max={240}
+                step={1}
+                placeholder="default"
+                value={fps ?? ''}
+                disabled={isCommittingFps}
+                onChange={(e) => setFpsDraft(e.target.value === '' ? null : Number(e.target.value))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur()
+                }}
+                onBlur={(e) => {
+                  const raw = e.currentTarget.value.trim()
+                  if (raw === '') {
+                    commitFps(null)
+                    return
+                  }
+                  const parsed = Number(raw)
+                  commitFps(Number.isFinite(parsed) ? Math.min(240, Math.max(1, parsed)) : fps)
+                }}
+                title="Overrides the app-wide default FPS for this wallpaper only - changes require a relaunch, not live. Empty = use the default."
+                className="w-14 rounded bg-white/5 px-1 py-0.5 text-right normal-case text-gray-400 outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+              />
+            </div>
           </div>
         )}
 
@@ -702,7 +771,26 @@ export default function DetailSidebar({
                 </span>
               )}
               {isCommittingSpeed && <Loader2 size={11} className="animate-spin" />}
-              <span className="normal-case text-gray-400">{speedPercent}%</span>
+              <input
+                type="number"
+                min={10}
+                max={200}
+                step={5}
+                value={speedPercent}
+                disabled={isCommittingSpeed}
+                onChange={(e) => setSpeedDraft(Number(e.target.value))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur()
+                }}
+                onBlur={(e) => {
+                  const raw = Number(e.currentTarget.value)
+                  const clamped = Number.isFinite(raw) ? Math.min(200, Math.max(10, raw)) : speedPercent
+                  commitSpeed(clamped)
+                }}
+                title="Type an exact speed percentage - applies on Enter or clicking away"
+                className="w-12 rounded bg-white/5 px-1 py-0.5 text-right normal-case text-gray-400 outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+              />
+              <span className="normal-case text-gray-400">%</span>
             </div>
             <input
               type="range"
@@ -711,7 +799,11 @@ export default function DetailSidebar({
               step={5}
               value={speedPercent}
               disabled={isCommittingSpeed}
-              onChange={(e) => setSpeedDraft(Number(e.target.value))}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                setSpeedDraft(v)
+                previewLive({ speed: v / 100 })
+              }}
               onMouseUp={(e) => commitSpeed(Number(e.currentTarget.value))}
               onTouchEnd={(e) => commitSpeed(Number(e.currentTarget.value))}
               onKeyUp={(e) => commitSpeed(Number(e.currentTarget.value))}
@@ -762,7 +854,11 @@ export default function DetailSidebar({
               max={128}
               value={volume}
               disabled={isCommittingVolume}
-              onChange={(e) => setVolumeDraft(Number(e.target.value))}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                setVolumeDraft(v)
+                previewLive({ volume: v })
+              }}
               onMouseUp={(e) => commitVolume(Number(e.currentTarget.value))}
               onTouchEnd={(e) => commitVolume(Number(e.currentTarget.value))}
               onKeyUp={(e) => commitVolume(Number(e.currentTarget.value))}

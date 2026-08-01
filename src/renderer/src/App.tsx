@@ -1,4 +1,5 @@
 import { useState, useEffect, Component, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import Sidebar from './components/layout/Sidebar'
 import WorkshopBrowser from './components/workshop/WorkshopBrowser'
 import LibraryView from './components/library/LibraryView'
@@ -34,6 +35,7 @@ export default function App() {
   const [setupDone, setSetupDone] = useState<boolean | null>(null)
   const [defaultPath, setDefaultPath] = useState('')
   const [creatorFilter, setCreatorFilter] = useState<string | null>(null)
+  const queryClient = useQueryClient()
 
   function browseCreator(steamId: string) {
     setCreatorFilter(steamId)
@@ -46,6 +48,14 @@ export default function App() {
       setSetupDone(cfg.isConfigured)
     })
   }, [])
+
+  // Subscribed here (rather than in SettingsView) so an in-progress LWE build/install survives
+  // navigating to another tab and back - SettingsView unmounts on navigation, App never does.
+  useEffect(() => {
+    return window.electronAPI.on.lweInstallProgress((progress) => {
+      queryClient.setQueryData(['lwe-install-progress'], progress)
+    })
+  }, [queryClient])
 
   if (setupDone === null) return null // loading
 

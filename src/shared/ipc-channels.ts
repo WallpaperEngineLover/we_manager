@@ -52,6 +52,7 @@ export const IpcChannels = {
   CONFIG_SET_WORKSHOP_PATH: 'config:set-workshop-path',
   CONFIG_SET_DEFAULT_FPS: 'config:set-default-fps',
   CONFIG_SET_RECOMMENDED_FPS: 'config:set-recommended-fps',
+  CONFIG_SET_RECOMMENDED_WEB_FPS: 'config:set-recommended-web-fps',
   CONFIG_SET_LWE_REPO: 'config:set-lwe-repo',
   CONFIG_SET_LWE_CMAKE_ARGS: 'config:set-lwe-cmake-args',
   CONFIG_SET_BACKUP_PATH: 'config:set-backup-path',

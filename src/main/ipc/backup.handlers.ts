@@ -17,7 +17,7 @@ async function backupOne(id: string, win: BrowserWindow): Promise<{ ok: boolean;
   if (getAutoUnsubscribeAfterBackup()) {
     await steam.unsubscribeFromItem(BigInt(id))
     try {
-      fs.rmSync(wallpaper.localPath, { recursive: true, force: true })
+      await fs.promises.rm(wallpaper.localPath, { recursive: true, force: true })
     } catch {
       /* ignore */
     }

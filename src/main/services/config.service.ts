@@ -18,6 +18,7 @@ interface AppConfig {
   autostartPlaylistId: string | null
   killLweOnQuit: boolean
   recommendedFpsEnabled: boolean
+  recommendedWebFpsEnabled: boolean
 }
 
 const store = new Store<AppConfig>({
@@ -26,6 +27,7 @@ const store = new Store<AppConfig>({
     workshopPath: null,
     defaultFps: null,
     recommendedFpsEnabled: false,
+    recommendedWebFpsEnabled: false,
     lweRepoUrl: null,
     lweRepoBranch: null,
     lweCmakeArgs: null,
@@ -123,6 +125,17 @@ export function getRecommendedFpsEnabled(): boolean {
 
 export function setRecommendedFpsEnabled(enabled: boolean): void {
   store.set('recommendedFpsEnabled', enabled)
+}
+
+/** When enabled, web wallpapers without a manual FPS override launch at RECOMMENDED_WEB_FPS
+ *  instead of the default limit - CEF paints internally at that rate regardless, so a lower
+ *  default just throttles how often the engine displays what CEF already rendered. */
+export function getRecommendedWebFpsEnabled(): boolean {
+  return store.get('recommendedWebFpsEnabled')
+}
+
+export function setRecommendedWebFpsEnabled(enabled: boolean): void {
+  store.set('recommendedWebFpsEnabled', enabled)
 }
 
 /** Custom linux-wallpaperengine repo (git URL or local path); null = official repo. */

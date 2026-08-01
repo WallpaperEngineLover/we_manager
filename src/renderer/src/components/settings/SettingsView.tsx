@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull, Film } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull, Film, Globe } from 'lucide-react'
 import type { LweStatus, LweInstallProgress, LinuxDistro } from '../../../../shared/types'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
@@ -16,6 +17,7 @@ export default function SettingsView() {
   const [defaultFps, setDefaultFps] = useState<string>('')
   const [fpsSaved, setFpsSaved] = useState(false)
   const [recommendedFpsEnabled, setRecommendedFpsEnabled] = useState(false)
+  const [recommendedWebFpsEnabled, setRecommendedWebFpsEnabled] = useState(false)
   const [resetFpsConfirm, setResetFpsConfirm] = useState(false)
   const [resetFpsMsg, setResetFpsMsg] = useState<string | null>(null)
 
@@ -25,10 +27,19 @@ export default function SettingsView() {
   const [lweCmakeArgs, setLweCmakeArgs] = useState('')
   const [defaultLweRepo, setDefaultLweRepo] = useState('')
   const [repoSaved, setRepoSaved] = useState(false)
-  const [lweInstalling, setLweInstalling] = useState(false)
-  const [lweProgress, setLweProgress] = useState<LweInstallProgress | null>(null)
+  const queryClient = useQueryClient()
+  // Lives in the query cache (written from App.tsx's always-mounted subscriber) instead of local
+  // state, so an in-progress build/install survives navigating away from Settings and back -
+  // this component unmounts on navigation, the query cache doesn't.
+  const { data: lweProgress = null } = useQuery<LweInstallProgress | null>({
+    queryKey: ['lwe-install-progress'],
+    queryFn: () => null,
+    staleTime: Infinity,
+    gcTime: Infinity
+  })
+  const lweInstalling = lweProgress !== null && !['done', 'error', 'installing-deps'].includes(lweProgress.stage)
+  const depsInstalling = lweProgress?.stage === 'installing-deps'
   const [distro, setDistro] = useState<LinuxDistro | null>(null)
-  const [depsInstalling, setDepsInstalling] = useState(false)
   const [uninstalling, setUninstalling] = useState(false)
   const [uninstallMsg, setUninstallMsg] = useState<string | null>(null)
   const [killingLwe, setKillingLwe] = useState(false)
@@ -53,6 +64,7 @@ export default function SettingsView() {
       setWorkshopPath(cfg.workshopPath ?? cfg.defaultWorkshopPath)
       setDefaultFps(cfg.defaultFps != null ? String(cfg.defaultFps) : '')
       setRecommendedFpsEnabled(cfg.recommendedFpsEnabled)
+      setRecommendedWebFpsEnabled(cfg.recommendedWebFpsEnabled)
       setLweRepoUrl(cfg.lweRepoUrl ?? '')
       setLweRepoBranch(cfg.lweRepoBranch ?? '')
       setLweCmakeArgs(cfg.lweCmakeArgs ?? '')
@@ -72,17 +84,15 @@ export default function SettingsView() {
     window.electronAPI.playlist.getAll().then((all) => setPlaylists(all.map((p) => ({ id: p.id, title: p.title }))))
   }, [])
 
+  // The event subscription itself lives in App.tsx (see lwe-install-progress query above) so it
+  // survives navigation; this just reacts to the shared progress reaching a terminal stage to
+  // refresh the installed-status display, which is fine to keep local since it's re-fetched on
+  // every mount anyway.
   useEffect(() => {
-    const unsub = window.electronAPI.on.lweInstallProgress((progress) => {
-      setLweProgress(progress)
-      if (progress.stage === 'done' || progress.stage === 'error') {
-        setLweInstalling(false)
-        setDepsInstalling(false)
-        window.electronAPI.lwe.status().then(setLweStatus)
-      }
-    })
-    return unsub
-  }, [])
+    if (lweProgress?.stage === 'done' || lweProgress?.stage === 'error') {
+      window.electronAPI.lwe.status().then(setLweStatus)
+    }
+  }, [lweProgress])
 
   async function handleBrowse() {
     const picked = await window.electronAPI.config.pickFolder()
@@ -112,8 +122,11 @@ export default function SettingsView() {
     }
   }
 
+  function setLweProgress(progress: LweInstallProgress) {
+    queryClient.setQueryData(['lwe-install-progress'], progress)
+  }
+
   async function handleInstallDeps() {
-    setDepsInstalling(true)
     setLweProgress({ stage: 'installing-deps', message: 'Starting dependency installation...', percentage: 0 })
     try {
       await window.electronAPI.lwe.installDeps()
@@ -123,7 +136,6 @@ export default function SettingsView() {
         message: `Dependency installation failed: ${(err as Error).message}`,
         percentage: 0
       })
-      setDepsInstalling(false)
     }
   }
 
@@ -135,7 +147,6 @@ export default function SettingsView() {
   }
 
   async function handleInstallLwe() {
-    setLweInstalling(true)
     setLweProgress({ stage: 'cloning', message: 'Starting installation...', percentage: 0 })
     try {
       // Persist the repo/cmake-args fields first so the build uses what's on screen
@@ -148,7 +159,6 @@ export default function SettingsView() {
         message: `Installation failed: ${(err as Error).message}`,
         percentage: 0
       })
-      setLweInstalling(false)
     }
   }
 
@@ -192,6 +202,12 @@ export default function SettingsView() {
     const newVal = !recommendedFpsEnabled
     setRecommendedFpsEnabled(newVal)
     await window.electronAPI.config.setRecommendedFpsEnabled(newVal)
+  }
+
+  async function handleRecommendedWebFpsToggle() {
+    const newVal = !recommendedWebFpsEnabled
+    setRecommendedWebFpsEnabled(newVal)
+    await window.electronAPI.config.setRecommendedWebFpsEnabled(newVal)
   }
 
   async function handleResetFpsOverrides() {
@@ -413,6 +429,32 @@ export default function SettingsView() {
               </p>
             </div>
             <div>
+              <label className="mt-1 flex items-center gap-3 cursor-pointer">
+                <button
+                  onClick={handleRecommendedWebFpsToggle}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    recommendedWebFpsEnabled ? 'bg-indigo-600' : 'bg-white/10'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                      recommendedWebFpsEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+                <span className="flex items-center gap-2 text-sm text-gray-300">
+                  <Globe size={16} />
+                  Recommended web wallpaper settings
+                </span>
+              </label>
+              <p className="mt-2 text-xs text-gray-600">
+                Launches web (CEF-based) wallpapers at 60 FPS instead of the default limit.
+                The engine renders web content internally at 60 FPS regardless, so a lower
+                default just throttles how often that gets displayed, making HTML/Live2D
+                wallpapers feel choppy. Wallpapers with a manual FPS override are unaffected.
+              </p>
+            </div>
+            <div>
               <label className="block text-xs text-gray-400 mb-1">Reset per-wallpaper FPS</label>
               <p className="text-xs text-gray-600 mb-2">
                 Remove all per-wallpaper FPS overrides so they use the default.
@@ -622,6 +664,29 @@ export default function SettingsView() {
             </div>
           )}
 
+          {lweProgress && (
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-2">
+                {lweProgress.stage === 'error' ? (
+                  <XCircle size={14} className="text-red-400 shrink-0" />
+                ) : lweProgress.stage === 'done' ? (
+                  <CheckCircle size={14} className="text-green-400 shrink-0" />
+                ) : (
+                  <Loader2 size={14} className="animate-spin text-indigo-400 shrink-0" />
+                )}
+                <p className="text-xs text-gray-300 whitespace-pre-wrap break-all">{lweProgress.message}</p>
+              </div>
+              {lweProgress.stage !== 'error' && lweProgress.stage !== 'done' && (
+                <div className="h-1.5 w-full rounded-full bg-white/5">
+                  <div
+                    className="h-full rounded-full bg-indigo-500 transition-all duration-300"
+                    style={{ width: `${lweProgress.percentage}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="mt-4">
             <button
               onClick={handleKillAllLwe}
@@ -661,29 +726,6 @@ export default function SettingsView() {
               </span>
             </label>
           </div>
-
-          {lweProgress && (
-            <div className="mt-3 space-y-2">
-              <div className="flex items-center gap-2">
-                {lweProgress.stage === 'error' ? (
-                  <XCircle size={14} className="text-red-400 shrink-0" />
-                ) : lweProgress.stage === 'done' ? (
-                  <CheckCircle size={14} className="text-green-400 shrink-0" />
-                ) : (
-                  <Loader2 size={14} className="animate-spin text-indigo-400 shrink-0" />
-                )}
-                <p className="text-xs text-gray-300 whitespace-pre-wrap break-all">{lweProgress.message}</p>
-              </div>
-              {lweProgress.stage !== 'error' && lweProgress.stage !== 'done' && (
-                <div className="h-1.5 w-full rounded-full bg-white/5">
-                  <div
-                    className="h-full rounded-full bg-indigo-500 transition-all duration-300"
-                    style={{ width: `${lweProgress.percentage}%` }}
-                  />
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         <div>

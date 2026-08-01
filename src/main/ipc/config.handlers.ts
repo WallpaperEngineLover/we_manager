@@ -8,6 +8,8 @@ import {
   setDefaultFps,
   getRecommendedFpsEnabled,
   setRecommendedFpsEnabled,
+  getRecommendedWebFpsEnabled,
+  setRecommendedWebFpsEnabled,
   getLweRepoUrl,
   getLweRepoBranch,
   setLweRepo,
@@ -44,6 +46,7 @@ export function registerConfigHandlers(): void {
     isConfigured: isWorkshopPathConfigured(),
     defaultFps: getDefaultFps(),
     recommendedFpsEnabled: getRecommendedFpsEnabled(),
+    recommendedWebFpsEnabled: getRecommendedWebFpsEnabled(),
     lweRepoUrl: getLweRepoUrl(),
     lweRepoBranch: getLweRepoBranch(),
     lweCmakeArgs: getLweCmakeArgs(),
@@ -104,6 +107,11 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle(IpcChannels.CONFIG_SET_RECOMMENDED_FPS, (_e, enabled: boolean) => {
     setRecommendedFpsEnabled(enabled)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_RECOMMENDED_WEB_FPS, (_e, enabled: boolean) => {
+    setRecommendedWebFpsEnabled(enabled)
     return { ok: true }
   })
 

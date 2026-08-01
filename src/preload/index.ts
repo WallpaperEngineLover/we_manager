@@ -93,6 +93,7 @@ const api = {
       isConfigured: boolean
       defaultFps: number | null
       recommendedFpsEnabled: boolean
+      recommendedWebFpsEnabled: boolean
       lweRepoUrl: string | null
       lweRepoBranch: string | null
       lweCmakeArgs: string | null
@@ -113,6 +114,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DEFAULT_FPS, fps),
     setRecommendedFpsEnabled: (enabled: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_RECOMMENDED_FPS, enabled),
+    setRecommendedWebFpsEnabled: (enabled: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_RECOMMENDED_WEB_FPS, enabled),
     setLweRepo: (url: string | null, branch: string | null): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_LWE_REPO, url, branch),
     setLweCmakeArgs: (args: string | null): Promise<{ ok: boolean }> =>

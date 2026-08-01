@@ -6,8 +6,9 @@ import * as path from 'path'
 import { detectDisplayServer, detectDesktopEnv, isCommandAvailable } from '../utils/platform'
 import type { WallpaperBackend, WallpaperEnvironment, WallpaperMeta } from '@shared/types'
 import { getLweStatus, launchLweAsync } from './lwe.service'
-import { getDefaultFps, getRecommendedFpsEnabled } from './config.service'
+import { getDefaultFps, getRecommendedFpsEnabled, getRecommendedWebFpsEnabled } from './config.service'
 import { findWallpaperVideoFile, getVideoFps } from '../utils/video'
+import { RECOMMENDED_WEB_FPS } from '@shared/constants'
 
 const execFileAsync = promisify(execFile)
 
@@ -213,6 +214,9 @@ export async function applyWallpaperMeta(
     if (fps === undefined && wallpaper.type === 'video' && getRecommendedFpsEnabled()) {
       const videoFile = findWallpaperVideoFile(wallpaper.localPath, wallpaper.file)
       if (videoFile) fps = await getVideoFps(videoFile)
+    }
+    if (fps === undefined && wallpaper.type === 'web' && getRecommendedWebFpsEnabled()) {
+      fps = RECOMMENDED_WEB_FPS
     }
     fps = fps ?? getDefaultFps() ?? undefined
     const volume = options.volume ?? wallpaper.volumeOverride

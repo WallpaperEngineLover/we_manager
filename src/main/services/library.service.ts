@@ -12,7 +12,13 @@ import {
   getUnavailableWorkshopItems
 } from './workshop.service'
 import { findAndMutate } from '../utils/collections'
-import { isSteamRunning, getItemDownloadStatus, getSubscribedItems } from './steam.service'
+import {
+  isSteamRunning,
+  getItemDownloadStatus,
+  getSubscribedItems,
+  isItemStuckNeverDownloaded,
+  downloadItem
+} from './steam.service'
 
 interface LibraryStore {
   wallpapers: Record<string, WallpaperMeta>
@@ -204,6 +210,20 @@ function deriveRatingFromTags(tags: string[]): ContentRating | undefined {
   return match ? normalizeRating(match) : undefined
 }
 
+const RATING_RESTRICTIVENESS: Record<ContentRating, number> = {
+  uncategorized: 0,
+  everyone: 1,
+  questionable: 2,
+  mature: 3
+}
+
+// project.json's "contentrating" field and its "tags" array can disagree (an author can tag
+// something "Mature" without setting the formal rating) - always trust the stricter one.
+function stricterRating(a: ContentRating, b?: ContentRating): ContentRating {
+  if (!b) return a
+  return RATING_RESTRICTIVENESS[b] > RATING_RESTRICTIVENESS[a] ? b : a
+}
+
 async function safeGetWorkshopTags(ids: string[]): Promise<Map<string, string[]>> {
   try {
     return await getWorkshopTags(ids)
@@ -265,7 +285,7 @@ function buildMeta(
     id: workshopId,
     title: pj?.title ?? `Wallpaper ${workshopId}`,
     type: normalizeType(pj?.type),
-    contentRating: normalizeRating(pj?.contentrating),
+    contentRating: stricterRating(normalizeRating(pj?.contentrating), deriveRatingFromTags(pj?.tags ?? [])),
     description: pj?.description,
     previewLocal: previewPath && fs.existsSync(previewPath) ? previewPath : undefined,
     previewUrl: undefined,
@@ -387,10 +407,14 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     toRebuild.push({ entry, localPath, pj })
   }
 
-  // Items Steam still lists as subscribed but that never got a local folder
-  // at all (the download failed before writing anything, or hasn't started)
+  // Items Steam still lists as subscribed but that never got a local folder at all (the download
+  // failed before writing anything, or Steam never actually started it - see
+  // isItemStuckNeverDownloaded, this is more common than it sounds).
   for (const id of subscribedIds) {
     if (onDisk.has(id)) continue
+    if (isSteamRunning() && isItemStuckNeverDownloaded(BigInt(id))) {
+      downloadItem(BigInt(id))
+    }
     incomplete.push({ id, localPath: path.join(workshopPath, id) })
   }
 
@@ -452,6 +476,28 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   for (const id of cacheHits) {
     const seconds = timesUpdated.get(id)
     const authorId = authors.get(id)
+
+    // A time_updated bump means the author changed something on the Workshop side
+    // (tags, content rating, a republish) - re-read project.json instead of just
+    // touching updatedAt, otherwise a corrected rating/genre never leaves the cache
+    // until the item is removed and reimported.
+    const localPath = wallpapers[id].localPath
+    if (seconds !== undefined && wallpapers[id].updatedAt !== seconds * 1000 && localPath) {
+      const pj = readProjectJson(localPath)
+      if (pj) {
+        wallpapers[id] = buildMeta(
+          id,
+          localPath,
+          pj,
+          wallpapers[id],
+          seconds,
+          authorId ?? wallpapers[id].authorSteamId
+        )
+        resynced = true
+        continue
+      }
+    }
+
     const patch: Partial<WallpaperMeta> = {}
     if (seconds !== undefined && wallpapers[id].updatedAt !== seconds * 1000) {
       patch.updatedAt = seconds * 1000

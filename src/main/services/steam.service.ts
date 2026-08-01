@@ -33,6 +33,17 @@ export async function subscribeToItem(itemId: bigint): Promise<void> {
   await getClient().workshop.subscribe(itemId)
 }
 
+// Steam's subscribe doesn't reliably auto-download (seen with items subscribed via the Workshop
+// website rather than the Steam client) - items can sit at bare "Subscribed" forever. This is the
+// reliable kick; a no-op if already installed or downloading.
+export function downloadItem(itemId: bigint, highPriority = true): boolean {
+  try {
+    return getClient().workshop.download(itemId, highPriority)
+  } catch {
+    return false
+  }
+}
+
 export async function unsubscribeFromItem(itemId: bigint): Promise<void> {
   await getClient().workshop.unsubscribe(itemId)
 }
@@ -178,21 +189,33 @@ export function getItemState(itemId: bigint): number {
 }
 
 // EItemState flags from the Steamworks SDK (isteamugc.h)
+const ITEM_STATE_INSTALLED = 4
 const ITEM_STATE_NEEDS_UPDATE = 8
 const ITEM_STATE_DOWNLOADING = 16
 const ITEM_STATE_DOWNLOAD_PENDING = 32
+
+// True for a subscribed item Steam has never actually started fetching - not installed, not
+// mid-transfer, not even flagged as needing an update. See downloadItem() above.
+export function isItemStuckNeverDownloaded(itemId: bigint): boolean {
+  const state = getItemState(itemId)
+  const installed = (state & ITEM_STATE_INSTALLED) !== 0
+  const inProgress = (state & (ITEM_STATE_DOWNLOADING | ITEM_STATE_DOWNLOAD_PENDING | ITEM_STATE_NEEDS_UPDATE)) !== 0
+  return !installed && !inProgress
+}
 
 export function isItemDownloading(itemId: bigint): boolean {
   const state = getItemState(itemId)
   return (state & (ITEM_STATE_DOWNLOADING | ITEM_STATE_DOWNLOAD_PENDING)) !== 0
 }
 
-// NeedsUpdate stays set while Steam hasn't caught the local copy up to the
-// server version. If it's set but nothing is actively downloading/pending,
-// Steam gave up on the transfer (e.g. it errored out or the disk filled up).
+// NeedsUpdate stays set while Steam hasn't caught the local copy up to the server version. If
+// it's set but nothing is actively downloading/pending, Steam gave up on the transfer (e.g. it
+// errored out or the disk filled up). A never-downloaded item reports neither bit - treated as
+// "downloading" since the caller (scanLibrary) just kicked one off for it.
 export function getItemDownloadStatus(itemId: bigint): { downloading: boolean; failed: boolean } {
   const state = getItemState(itemId)
-  const downloading = (state & (ITEM_STATE_DOWNLOADING | ITEM_STATE_DOWNLOAD_PENDING)) !== 0
+  const downloading =
+    (state & (ITEM_STATE_DOWNLOADING | ITEM_STATE_DOWNLOAD_PENDING)) !== 0 || isItemStuckNeverDownloaded(itemId)
   const failed = !downloading && (state & ITEM_STATE_NEEDS_UPDATE) !== 0
   return { downloading, failed }
 }
