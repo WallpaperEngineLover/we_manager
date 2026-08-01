@@ -749,41 +749,21 @@ function resolveActivePid(): number | null {
   return stored
 }
 
-/** Hot-reload: write new wallpaper path to control file and send SIGUSR1. */
-function hotReloadLwe(wallpaperPath: string): boolean {
-  const pid = resolveActivePid()
-  if (pid === null) return false
-
-  try {
-    fs.writeFileSync(getControlFilePath(), wallpaperPath + '\n')
-    process.kill(pid, 'SIGUSR1')
-    console.log('[LWE] Hot-reload signal sent for:', wallpaperPath)
-    return true
-  } catch (err) {
-    console.error('[LWE] Hot-reload failed:', err)
-    return false
-  }
-}
-
 /**
- * Pushes layer/volume/xray/scaling/zoom/parallax changes to an already-running instance via the
- * extended key=value control file, without touching the background path. Each field is independent
- * in the protocol: a volume-only request never reloads the project, and a layers-only request
- * doesn't need to resend the path. disabledObjects/enabledObjects being present (even as empty
- * arrays) is what tells the engine to replace its override lists - omit both to leave layers
- * untouched. xray toggles the "xray" scene effect's reveal spot between following the mouse (off)
- * and covering the whole masked area (on) - it's a live-only setting with no launch-time
- * equivalent, so it has to be pushed here even right after a fresh launch. scaling/zoom apply to
- * every screen currently rendering (the engine doesn't scope these to a single screen), matching
- * how volume/xray are global rather than per-screen here. disableParallax is a straight passthrough
- * to the engine's --disable-parallax setting, which every parallax-capable scene object reads live.
- * cornerColor is a hex "RRGGBB"/"RRGGBBAA" string, only visible where the engine's clamp mode is
- * border (the default). speed is a positive multiplier, live like scaling/zoom/parallax/
- * cornerColor. propertyOverrides (WE customize sliders/checkboxes/combos) trigger the same
- * lightweight reload as layers instead of a live setter, since they're baked into the scene
- * graph at parse time - every key in the map is sent, not just changed ones.
+ * Pushes a background swap and/or layer/volume/xray/scaling/zoom/parallax changes to an already-
+ * running instance via the extended key=value control file. All fields are optional and
+ * independent - only the ones provided get written. All fields for one logical change must go
+ * through a single call: the engine has only one pending-request slot, so two calls in quick
+ * succession can race and silently drop whichever one wrote last. disabledObjects/enabledObjects
+ * being present (even as empty arrays) is what tells the engine to replace its override lists -
+ * omit both to leave layers untouched. xray is a live-only setting with no launch-time equivalent,
+ * so it has to be pushed here even right after a fresh launch. cornerColor is a hex
+ * "RRGGBB"/"RRGGBBAA" string, only visible where the engine's clamp mode is border (the default).
+ * propertyOverrides sends every key in the map, not just changed ones, since the engine only
+ * reapplies whatever's currently in its settings map on reload.
  */
 export function hotswapLweSettings(options: {
+  path?: string
   disabledObjects?: string[]
   enabledObjects?: string[]
   volume?: number
@@ -799,6 +779,7 @@ export function hotswapLweSettings(options: {
   if (pid === null) return false
 
   const lines: string[] = []
+  if (options.path !== undefined) lines.push(`path=${options.path}`)
   if (options.disabledObjects !== undefined || options.enabledObjects !== undefined) {
     lines.push('layers=1')
     for (const id of options.disabledObjects ?? []) lines.push(`disable-object=${id}`)
@@ -845,17 +826,16 @@ export function launchLweAsync(
     speed?: number
   } = {}
 ): Promise<void> {
-  // Hot-reload if already running. xray has no launch flag and the running instance
-  // keeps its own xray state across a background swap, so it needs an explicit push
-  // even when the new wallpaper wants it off. Scaling/zoom/parallax/cornerColor/speed do have
-  // launch flags, but a hot-reload doesn't restart the process (so launch args never get
-  // re-read) - the running instance keeps whatever the previous wallpaper set, so they need the
-  // same explicit push, defaulting to "no override" when the new wallpaper doesn't set them.
-  // propertyOverrides is pushed the same way - the engine only reapplies whatever's currently in
-  // its settings map on reload, which otherwise would still be the previous wallpaper's values.
-  if (isLweRunning() && hotReloadLwe(wallpaperPath)) {
-    if (options.xrayFullReveal !== undefined) hotswapLweSettings({ xray: options.xrayFullReveal })
+  // Hot-reload if already running. xray has no launch flag and the running instance keeps its own
+  // xray state across a background swap, so it needs an explicit push even when off. Scaling/zoom/
+  // parallax/cornerColor/speed/propertyOverrides do have launch flags, but hot-reload doesn't
+  // restart the process - the running instance keeps whatever the previous wallpaper set, so they
+  // need the same explicit push, defaulting to "no override" when the new wallpaper doesn't set them.
+  if (
+    isLweRunning() &&
     hotswapLweSettings({
+      path: wallpaperPath,
+      xray: options.xrayFullReveal,
       scaling: options.scalingMode ?? 'default',
       zoom: options.zoom ?? 1,
       disableParallax: options.disableParallax ?? false,
@@ -863,6 +843,7 @@ export function launchLweAsync(
       speed: options.speed ?? 1,
       propertyOverrides: options.propertyOverrides ?? {}
     })
+  ) {
     return Promise.resolve()
   }
 
