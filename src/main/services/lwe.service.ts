@@ -268,15 +268,19 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       send({ stage: 'cloning', message: `Copying local source from ${repo}...`, percentage: 5 })
       fs.mkdirSync(BUILD_DIR, { recursive: true })
       if (isCommandAvailable('rsync')) {
-        // --delete so files removed from the source don't linger in a reused build dir
+        // --delete so files removed from the source don't linger in a reused build dir.
+        // --no-times overrides -a's mtime preservation - the build dir is reused incrementally
+        // (see canReuseBuildCache above), so a stale source mtime can make `make` skip
+        // recompiling a changed file.
         await execFileAsync('rsync', [
-          '-a', '--delete', '--exclude=/.git', '--exclude=/build',
+          '-a', '--no-times', '--delete', '--exclude=/.git', '--exclude=/build',
           `${repo}/`, `${BUILD_DIR}/`
         ], { timeout: 120_000, maxBuffer: 10 * 1024 * 1024 })
       } else {
+        // -m on extraction, same reason as --no-times above.
         await execFileAsync('bash', [
           '-c',
-          `tar -C ${JSON.stringify(repo)} --exclude=.git --exclude=build -cf - . | tar -C ${JSON.stringify(BUILD_DIR)} -xf -`
+          `tar -C ${JSON.stringify(repo)} --exclude=.git --exclude=build -cf - . | tar -C ${JSON.stringify(BUILD_DIR)} -xmf -`
         ], { timeout: 120_000, maxBuffer: 10 * 1024 * 1024 })
       }
       fs.writeFileSync(sourceMarker, repo, 'utf8')
