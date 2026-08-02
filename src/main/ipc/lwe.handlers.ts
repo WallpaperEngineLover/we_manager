@@ -2,6 +2,7 @@ import { ipcMain, type BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, stopLwe, isLweRunning, killAllLweProcesses, listLweObjects, hotswapLweSettings, listLweProperties } from '../services/lwe.service'
 import { invalidateEnvCache } from '../services/wallpaper.service'
+import { getConnectedScreens } from '../utils/platform'
 
 export function registerLweHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.LWE_STATUS, () => {
@@ -68,11 +69,17 @@ export function registerLweHandlers(win: BrowserWindow): void {
         cornerColor?: string
         speed?: number
         propertyOverrides?: Record<string, string>
+        audioScreen?: string
+        ambientVolume?: number
       }
     ) => {
       return { ok: hotswapLweSettings(options) }
     }
   )
+
+  ipcMain.handle(IpcChannels.LWE_LIST_SCREENS, () => {
+    return getConnectedScreens()
+  })
 
   ipcMain.handle(IpcChannels.LWE_LIST_PROPERTIES, async (_e, wallpaperPath: string) => {
     // Same reasoning as list-objects: some wallpapers have properties linux-wallpaperengine

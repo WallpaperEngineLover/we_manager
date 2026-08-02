@@ -15,7 +15,7 @@ import {
   getXdgRuntimeDir
 } from '../utils/platform'
 import { getWorkshopPath, getLweManifestPath } from '../utils/paths'
-import { getLweRepoUrl, getLweRepoBranch, getLweCmakeArgs } from './config.service'
+import { getLweRepoUrl, getLweRepoBranch, getLweCmakeArgs, getAudioScreen, getAmbientVolume } from './config.service'
 import { DEFAULT_LWE_REPO } from '@shared/constants'
 
 const execFileAsync = promisify(execFile)
@@ -663,6 +663,11 @@ function buildLweArgs(
 
   if (options.fps) args.push('--fps', String(options.fps))
   if (options.volume !== undefined) args.push('--volume', String(options.volume))
+  // Global, not per-wallpaper - pulled from config.service instead of options.
+  const audioScreen = getAudioScreen()
+  if (audioScreen) args.push('--audio-screen', audioScreen)
+  const ambientVolume = getAmbientVolume()
+  if (ambientVolume !== null) args.push('--ambient-volume', String(ambientVolume))
   if (options.scalingMode) args.push('--scaling', options.scalingMode)
   if (options.zoom !== undefined) args.push('--zoom', String(options.zoom))
   if (options.disableParallax) args.push('--disable-parallax')
@@ -774,6 +779,9 @@ export function hotswapLweSettings(options: {
   cornerColor?: string
   speed?: number
   propertyOverrides?: Record<string, string>
+  /** Empty string clears the restriction back to "every screen can produce audio" */
+  audioScreen?: string
+  ambientVolume?: number
 }): boolean {
   const pid = resolveActivePid()
   if (pid === null) return false
@@ -792,6 +800,8 @@ export function hotswapLweSettings(options: {
   if (options.disableParallax !== undefined) lines.push(`disable-parallax=${options.disableParallax ? 'on' : 'off'}`)
   if (options.cornerColor !== undefined) lines.push(`corner-color=${options.cornerColor}`)
   if (options.speed !== undefined) lines.push(`speed=${options.speed}`)
+  if (options.audioScreen !== undefined) lines.push(`audio-screen=${options.audioScreen}`)
+  if (options.ambientVolume !== undefined) lines.push(`ambient-volume=${options.ambientVolume}`)
   for (const [name, value] of Object.entries(options.propertyOverrides ?? {})) {
     lines.push(`property=${name}=${value}`)
   }

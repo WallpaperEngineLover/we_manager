@@ -107,6 +107,8 @@ const api = {
       autostartMinimized: boolean
       autostartPlaylistId: string | null
       killLweOnQuit: boolean
+      audioScreen: string | null
+      ambientVolume: number | null
     }> => ipcRenderer.invoke(IpcChannels.CONFIG_GET),
     setWorkshopPath: (p: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_WORKSHOP_PATH, p),
@@ -143,7 +145,11 @@ const api = {
     ): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_AUTOSTART, enabled, minimized, playlistId),
     getAutostartSupported: (): Promise<boolean> =>
-      ipcRenderer.invoke(IpcChannels.CONFIG_GET_AUTOSTART_SUPPORTED)
+      ipcRenderer.invoke(IpcChannels.CONFIG_GET_AUTOSTART_SUPPORTED),
+    setAudioScreen: (screen: string | null): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_AUDIO_SCREEN, screen),
+    setAmbientVolume: (volume: number | null): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_AMBIENT_VOLUME, volume)
   },
 
   playlist: {
@@ -242,10 +248,14 @@ const api = {
       cornerColor?: string
       speed?: number
       propertyOverrides?: Record<string, string>
+      audioScreen?: string
+      ambientVolume?: number
     }): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.LWE_HOTSWAP_SETTINGS, options),
     listProperties: (wallpaperPath: string): Promise<LweProperty[]> =>
-      ipcRenderer.invoke(IpcChannels.LWE_LIST_PROPERTIES, wallpaperPath)
+      ipcRenderer.invoke(IpcChannels.LWE_LIST_PROPERTIES, wallpaperPath),
+    listScreens: (): Promise<string[]> =>
+      ipcRenderer.invoke(IpcChannels.LWE_LIST_SCREENS)
   },
 
   backup: {

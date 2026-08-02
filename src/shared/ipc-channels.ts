@@ -57,6 +57,8 @@ export const IpcChannels = {
   CONFIG_SET_LWE_CMAKE_ARGS: 'config:set-lwe-cmake-args',
   CONFIG_SET_BACKUP_PATH: 'config:set-backup-path',
   CONFIG_SET_AUTO_UNSUBSCRIBE: 'config:set-auto-unsubscribe',
+  CONFIG_SET_AUDIO_SCREEN: 'config:set-audio-screen',
+  CONFIG_SET_AMBIENT_VOLUME: 'config:set-ambient-volume',
   CONFIG_PICK_FOLDER: 'config:pick-folder',
   CONFIG_PICK_FILE: 'config:pick-file',
   CONFIG_IMPORT_WE: 'config:import-we',
@@ -111,6 +113,7 @@ export const IpcChannels = {
   LWE_LIST_OBJECTS: 'lwe:list-objects',
   LWE_HOTSWAP_SETTINGS: 'lwe:hotswap-settings',
   LWE_LIST_PROPERTIES: 'lwe:list-properties',
+  LWE_LIST_SCREENS: 'lwe:list-screens',
 
   // Desktop icons overlay
   DESKTOP_ICONS_SET_ENABLED: 'desktop-icons:set-enabled',

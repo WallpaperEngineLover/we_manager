@@ -30,7 +30,11 @@ import {
   getAutostartPlaylistId,
   setAutostartPlaylistId,
   getKillLweOnQuit,
-  setKillLweOnQuit
+  setKillLweOnQuit,
+  getAudioScreen,
+  setAudioScreen,
+  getAmbientVolume,
+  setAmbientVolume
 } from '../services/config.service'
 import { getDefaultWorkshopPath } from '../utils/paths'
 import { DEFAULT_LWE_REPO } from '@shared/constants'
@@ -59,7 +63,9 @@ export function registerConfigHandlers(): void {
     autostartEnabled: getAutostartEnabled(),
     autostartMinimized: getAutostartMinimized(),
     autostartPlaylistId: getAutostartPlaylistId(),
-    killLweOnQuit: getKillLweOnQuit()
+    killLweOnQuit: getKillLweOnQuit(),
+    audioScreen: getAudioScreen(),
+    ambientVolume: getAmbientVolume()
   }))
 
   ipcMain.handle(IpcChannels.CONFIG_GET_AUTOSTART_SUPPORTED, () => isAutostartSupported())
@@ -112,6 +118,16 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle(IpcChannels.CONFIG_SET_RECOMMENDED_WEB_FPS, (_e, enabled: boolean) => {
     setRecommendedWebFpsEnabled(enabled)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_AUDIO_SCREEN, (_e, screen: string | null) => {
+    setAudioScreen(screen)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_AMBIENT_VOLUME, (_e, volume: number | null) => {
+    setAmbientVolume(volume)
     return { ok: true }
   })
 

@@ -19,6 +19,8 @@ interface AppConfig {
   killLweOnQuit: boolean
   recommendedFpsEnabled: boolean
   recommendedWebFpsEnabled: boolean
+  audioScreen: string | null
+  ambientVolume: number | null
 }
 
 const store = new Store<AppConfig>({
@@ -37,7 +39,9 @@ const store = new Store<AppConfig>({
     autostartEnabled: false,
     autostartMinimized: false,
     autostartPlaylistId: null,
-    killLweOnQuit: false
+    killLweOnQuit: false,
+    audioScreen: null,
+    ambientVolume: null
   }
 })
 
@@ -136,6 +140,24 @@ export function getRecommendedWebFpsEnabled(): boolean {
 
 export function setRecommendedWebFpsEnabled(enabled: boolean): void {
   store.set('recommendedWebFpsEnabled', enabled)
+}
+
+/** Screen name (matches --screen-root/--audio-screen) that alone produces audio; null = every screen can. */
+export function getAudioScreen(): string | null {
+  return store.get('audioScreen')
+}
+
+export function setAudioScreen(screen: string | null): void {
+  store.set('audioScreen', screen)
+}
+
+/** 0-128, applied to non-video (scene sound + web) backgrounds instead of the per-wallpaper volume; null = same volume. */
+export function getAmbientVolume(): number | null {
+  return store.get('ambientVolume')
+}
+
+export function setAmbientVolume(volume: number | null): void {
+  store.set('ambientVolume', volume)
 }
 
 /** Custom linux-wallpaperengine repo (git URL or local path); null = official repo. */

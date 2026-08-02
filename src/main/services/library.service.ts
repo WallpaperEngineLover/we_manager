@@ -269,7 +269,8 @@ function buildMeta(
   pj: ProjectJson | null,
   existing?: WallpaperMeta,
   workshopTimeUpdated?: number,
-  authorSteamId?: string
+  authorSteamId?: string,
+  liveWorkshopTags?: string[]
 ): WallpaperMeta {
   const now = Date.now()
   const { downloading: _d, downloadFailed: _df, ...existingRest } = existing ?? { appliedCount: 0, categories: [] }
@@ -280,12 +281,17 @@ function buildMeta(
   // it unset here falls back to the "No preview" placeholder, and the next
   // library scan picks up the real file once it exists.
   const previewPath = pj?.preview ? path.join(localPath, pj.preview) : undefined
+  // Steam can flag an item Mature after the fact (moderation, community reports) without the
+  // author ever republishing - project.json keeps saying whatever it said at publish time, so
+  // the live Workshop tags are the only place that catches it.
+  const fromProject = stricterRating(normalizeRating(pj?.contentrating), deriveRatingFromTags(pj?.tags ?? []))
+  const contentRating = stricterRating(fromProject, deriveRatingFromTags(liveWorkshopTags ?? []))
   return {
     ...existingRest,
     id: workshopId,
     title: pj?.title ?? `Wallpaper ${workshopId}`,
     type: normalizeType(pj?.type),
-    contentRating: stricterRating(normalizeRating(pj?.contentrating), deriveRatingFromTags(pj?.tags ?? [])),
+    contentRating,
     description: pj?.description,
     previewLocal: previewPath && fs.existsSync(previewPath) ? previewPath : undefined,
     previewUrl: undefined,
@@ -459,6 +465,10 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     ...toRebuild.map(({ entry }) => entry.name),
     ...cacheHits
   ])
+  const liveTags = await safeGetWorkshopTags([
+    ...toRebuild.map(({ entry }) => entry.name),
+    ...cacheHits
+  ])
 
   for (const { entry, localPath, pj } of toRebuild) {
     wallpapers[entry.name] = buildMeta(
@@ -467,7 +477,8 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
       pj,
       wallpapers[entry.name] ?? undefined,
       timesUpdated.get(entry.name),
-      authors.get(entry.name)
+      authors.get(entry.name),
+      liveTags.get(entry.name)
     )
     imported++
   }
@@ -476,6 +487,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   for (const id of cacheHits) {
     const seconds = timesUpdated.get(id)
     const authorId = authors.get(id)
+    const live = liveTags.get(id)
 
     // A time_updated bump means the author changed something on the Workshop side
     // (tags, content rating, a republish) - re-read project.json instead of just
@@ -491,7 +503,8 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
           pj,
           wallpapers[id],
           seconds,
-          authorId ?? wallpapers[id].authorSteamId
+          authorId ?? wallpapers[id].authorSteamId,
+          live
         )
         resynced = true
         continue
@@ -504,6 +517,14 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     }
     if (authorId && wallpapers[id].authorSteamId !== authorId) {
       patch.authorSteamId = authorId
+    }
+    // Only tighten, never loosen - a failed/empty tag fetch must not walk a rating back down.
+    const liveRating = live ? deriveRatingFromTags(live) : undefined
+    if (liveRating) {
+      const stricter = stricterRating(wallpapers[id].contentRating ?? 'uncategorized', liveRating)
+      if (stricter !== wallpapers[id].contentRating) {
+        patch.contentRating = stricter
+      }
     }
     if (Object.keys(patch).length > 0) {
       wallpapers[id] = { ...wallpapers[id], ...patch }

@@ -59,6 +59,11 @@ export default function SettingsView() {
   const [autostartPlaylistId, setAutostartPlaylistId] = useState<string | null>(null)
   const [playlists, setPlaylists] = useState<{ id: string; title: string }[]>([])
 
+  const [screens, setScreens] = useState<string[]>([])
+  const [audioScreen, setAudioScreen] = useState<string | null>(null)
+  const [ambientVolume, setAmbientVolume] = useState<string>('')
+  const [ambientVolumeSaved, setAmbientVolumeSaved] = useState(false)
+
   useEffect(() => {
     window.electronAPI.config.get().then((cfg) => {
       setWorkshopPath(cfg.workshopPath ?? cfg.defaultWorkshopPath)
@@ -77,11 +82,14 @@ export default function SettingsView() {
       setAutostartEnabledState(cfg.autostartEnabled)
       setAutostartMinimized(cfg.autostartMinimized)
       setAutostartPlaylistId(cfg.autostartPlaylistId)
+      setAudioScreen(cfg.audioScreen)
+      setAmbientVolume(cfg.ambientVolume != null ? String(cfg.ambientVolume) : '')
     })
     window.electronAPI.lwe.status().then(setLweStatus)
     window.electronAPI.lwe.detectDistro().then(setDistro)
     window.electronAPI.desktopIcons.getEnabled().then(setDesktopIconsEnabled)
     window.electronAPI.playlist.getAll().then((all) => setPlaylists(all.map((p) => ({ id: p.id, title: p.title }))))
+    window.electronAPI.lwe.listScreens().then(setScreens)
   }, [])
 
   // The event subscription itself lives in App.tsx (see lwe-install-progress query above) so it
@@ -254,6 +262,24 @@ export default function SettingsView() {
     const newVal = !killLweOnQuit
     setKillLweOnQuit(newVal)
     await window.electronAPI.config.setKillLweOnQuit(newVal)
+  }
+
+  async function handleAudioScreenChange(screen: string | null) {
+    setAudioScreen(screen)
+    await window.electronAPI.config.setAudioScreen(screen)
+    // Push live so a currently running instance updates without a relaunch
+    await window.electronAPI.lwe.hotswapSettings({ audioScreen: screen ?? '' })
+  }
+
+  async function handleSaveAmbientVolume() {
+    const parsed = ambientVolume.trim() === '' ? null : parseInt(ambientVolume, 10)
+    if (parsed !== null && (isNaN(parsed) || parsed < 0 || parsed > 128)) return
+    await window.electronAPI.config.setAmbientVolume(parsed)
+    if (parsed !== null) {
+      await window.electronAPI.lwe.hotswapSettings({ ambientVolume: parsed })
+    }
+    setAmbientVolumeSaved(true)
+    setTimeout(() => setAmbientVolumeSaved(false), 2000)
   }
 
   async function saveAutostart(patch: {
@@ -487,6 +513,64 @@ export default function SettingsView() {
               {resetFpsMsg && (
                 <p className="mt-2 text-xs text-gray-400">{resetFpsMsg}</p>
               )}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+            Audio
+          </label>
+          <p className="mt-1 text-xs text-gray-600">
+            Global audio behavior for all wallpapers, across every monitor.
+          </p>
+          <div className="mt-3 space-y-4">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Play sound only on</label>
+              <p className="text-xs text-gray-600 mb-2">
+                Restricts sound to a single monitor so wallpapers on other screens stay silent,
+                even if they have their own sound.
+              </p>
+              <select
+                value={audioScreen ?? ''}
+                onChange={(e) => handleAudioScreenChange(e.target.value || null)}
+                className="w-56 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 [&>option]:bg-[#1a1a1a] [&>option]:text-gray-200"
+              >
+                <option value="">All screens (default)</option>
+                {screens.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Ambient wallpaper volume</label>
+              <p className="text-xs text-gray-600 mb-2">
+                Separate volume (0-128) for non-video wallpapers (scene sound effects/music and
+                web wallpapers), instead of each wallpaper's own volume. Video wallpapers are
+                unaffected. Leave empty to use each wallpaper's normal volume. Web wallpapers only
+                support 0 (muted) vs. any other value (normal volume).
+              </p>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="number"
+                  min={0}
+                  max={128}
+                  placeholder="same as wallpaper volume"
+                  value={ambientVolume}
+                  onChange={(e) => { setAmbientVolume(e.target.value); setAmbientVolumeSaved(false) }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveAmbientVolume()}
+                  className="w-44 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <button
+                  onClick={handleSaveAmbientVolume}
+                  className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+                >
+                  <Save size={14} />
+                  {ambientVolumeSaved ? 'Saved!' : 'Save'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
