@@ -836,7 +836,7 @@ export default function DetailSidebar({
           </div>
         )}
 
-        {localPath && lweInstalled && libraryMeta?.type === 'video' && (
+        {localPath && lweInstalled && (libraryMeta?.type === 'video' || libraryMeta?.type === 'scene') && (
           <div className="border-t border-white/5 pt-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               {volume === 0 ? <VolumeX size={12} /> : <Volume2 size={12} />}
@@ -848,6 +848,12 @@ export default function DetailSidebar({
               )}
               <span className="normal-case text-gray-400">{Math.round((volume / 128) * 100)}%</span>
             </div>
+            {libraryMeta?.type === 'scene' && (
+              <p className="mb-1.5 text-[11px] text-gray-600">
+                Controls this scene's sound objects. Overridden while Settings &rarr; Ambient
+                wallpaper volume is set.
+              </p>
+            )}
             <input
               type="range"
               min={0}
