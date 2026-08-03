@@ -351,6 +351,20 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       encoding: 'utf8'
     })
 
+    // Forces every source file to recompile regardless of mtimes, so a reused build dir (see
+    // canReuseBuildCache above) can never silently skip a changed file - `make`'s mtime-based
+    // staleness check is what caused us to ship a stale binary before. This only discards compiled
+    // objects, not the downloaded CEF SDK, so it's cheap.
+    if (canReuseBuildCache) {
+      await execFileAsync('make', ['clean'], {
+        cwd: cmakeBuild,
+        env: buildEnv,
+        timeout: 60_000,
+        maxBuffer: 10 * 1024 * 1024,
+        encoding: 'utf8'
+      }).catch(() => { /* nothing to clean on a fresh build dir - ignore */ })
+    }
+
     send({ stage: 'building', message: 'Compiling (this may take a few minutes)...', percentage: 40 })
     const cores = Math.max(1, os.cpus().length - 1)
     await execFileAsync('make', ['-j', String(cores)], {
@@ -378,25 +392,16 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     const reclaim = isLocalDir
       ? `chown -R ${process.getuid!()}:${process.getgid!()} ${JSON.stringify(BUILD_DIR)}`
       : `rm -rf ${JSON.stringify(BUILD_DIR)}`
-    const installScript = `cd ${JSON.stringify(cmakeBuild)} && export PATH=${JSON.stringify(pathEnv)} && make install && patchelf --set-rpath /usr/local/lib64:/usr/local/lib /usr/local/linux-wallpaperengine 2>/dev/null; ldconfig; echo ${manifestMarker}; cat install_manifest.txt 2>/dev/null; ${reclaim}`
+    const binaryPath = '/usr/local/linux-wallpaperengine'
+    const linkPath = '/usr/local/bin/linux-wallpaperengine'
+    // Symlinking is folded into this same elevated script (instead of a second pkexec/sudo call)
+    // so the whole install only prompts for a password once.
+    const installScript = `cd ${JSON.stringify(cmakeBuild)} && export PATH=${JSON.stringify(pathEnv)} && make install && patchelf --set-rpath /usr/local/lib64:/usr/local/lib /usr/local/linux-wallpaperengine 2>/dev/null; ldconfig; ln -sf ${JSON.stringify(binaryPath)} ${JSON.stringify(linkPath)} || true; echo ${manifestMarker}; cat install_manifest.txt 2>/dev/null; ${reclaim}`
     const { stdout: installOutput } = await execFileAsync(installTool, ['bash', '-c', installScript], {
       timeout: 120_000,
       maxBuffer: 5 * 1024 * 1024,
       encoding: 'utf8'
     })
-
-    // Symlink binary into PATH so `linux-wallpaperengine` is found
-    const binaryPath = '/usr/local/linux-wallpaperengine'
-    const linkPath = '/usr/local/bin/linux-wallpaperengine'
-    try {
-      await execFileAsync(installTool, ['ln', '-sf', binaryPath, linkPath], {
-        timeout: 10_000,
-        encoding: 'utf8',
-        maxBuffer: 65536
-      })
-    } catch {
-      // Non-fatal: user may already have it in PATH or can add /usr/local to PATH
-    }
 
     const manifestIdx = installOutput.indexOf(manifestMarker)
     if (manifestIdx !== -1) {
@@ -473,7 +478,7 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
     return { ok: false, message: 'linux-wallpaperengine is not installed.' }
   }
 
-  stopLwe()
+  await stopLwe()
 
   const elevate = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
 
@@ -876,7 +881,7 @@ export function hotswapLweSettings(options: {
 }
 
 /** Launch LWE and resolve after 2s if still running; reject if it exits with error (so UI can show message). */
-export function launchLweAsync(
+export async function launchLweAsync(
   wallpaperPath: string,
   options: {
     screenRoot?: string
@@ -917,10 +922,10 @@ export function launchLweAsync(
       }
     })
   ) {
-    return Promise.resolve()
+    return
   }
 
-  stopLwe()
+  await stopLwe()
 
   const binaryPath = getLweBinaryPath()
   const lweArgs = buildLweArgs(wallpaperPath, options)
@@ -1176,12 +1181,43 @@ export async function listLweProperties(wallpaperPath: string): Promise<LwePrope
   }
 }
 
-export function stopLwe(): void {
+/** Polls until `pid` is gone, since Node has no waitpid() for a process it didn't spawn itself. */
+async function pollUntilGone(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return true
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  return false
+}
+
+/**
+ * Waits for `pid` to actually exit (escalating to SIGKILL if it ignores the grace period) instead
+ * of just firing SIGTERM and returning. Matters because launchLweAsync spawns a replacement right
+ * after calling stopLwe() - without waiting, the new process can race the old one's teardown for
+ * the same resources (e.g. the audio device), which is silent and easy to miss since it only
+ * shows up as "audio doesn't work on this particular launch."
+ */
+async function waitForPidExit(pid: number, timeoutMs = 2000): Promise<void> {
+  if (await pollUntilGone(pid, timeoutMs)) return
+
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch { /* already dead */ }
+  await pollUntilGone(pid, 500)
+}
+
+export async function stopLwe(): Promise<void> {
   const pid = resolveActivePid()
   if (pid !== null) {
     try {
       process.kill(pid, 'SIGTERM')
     } catch { /* already dead */ }
+    await waitForPidExit(pid)
   }
   activeProcess = null
   clearPidFile()

@@ -35,8 +35,8 @@ export function registerLweHandlers(win: BrowserWindow): void {
     return { ok: true, running: isLweRunning() }
   })
 
-  ipcMain.handle(IpcChannels.LWE_STOP, () => {
-    stopLwe()
+  ipcMain.handle(IpcChannels.LWE_STOP, async () => {
+    await stopLwe()
     return { ok: true }
   })
 
