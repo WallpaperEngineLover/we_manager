@@ -17,6 +17,7 @@ import type {
   LinuxDistro,
   LweSceneObject,
   LweProperty,
+  LweAudioObject,
   BackupProgressEvent,
   Playlist,
   PlaylistSettings,
@@ -109,6 +110,7 @@ const api = {
       killLweOnQuit: boolean
       audioScreen: string | null
       ambientVolume: number | null
+      defaultAudioSensitivity: number
     }> => ipcRenderer.invoke(IpcChannels.CONFIG_GET),
     setWorkshopPath: (p: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_WORKSHOP_PATH, p),
@@ -149,7 +151,9 @@ const api = {
     setAudioScreen: (screen: string | null): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_AUDIO_SCREEN, screen),
     setAmbientVolume: (volume: number | null): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke(IpcChannels.CONFIG_SET_AMBIENT_VOLUME, volume)
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_AMBIENT_VOLUME, volume),
+    setDefaultAudioSensitivity: (multiplier: number): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_DEFAULT_AUDIO_SENSITIVITY, multiplier)
   },
 
   playlist: {
@@ -250,12 +254,15 @@ const api = {
       propertyOverrides?: Record<string, string>
       audioScreen?: string
       ambientVolume?: number
+      audioSensitivity?: Record<string, number>
     }): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.LWE_HOTSWAP_SETTINGS, options),
     listProperties: (wallpaperPath: string): Promise<LweProperty[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_PROPERTIES, wallpaperPath),
     listScreens: (): Promise<string[]> =>
-      ipcRenderer.invoke(IpcChannels.LWE_LIST_SCREENS)
+      ipcRenderer.invoke(IpcChannels.LWE_LIST_SCREENS),
+    listAudioObjects: (wallpaperPath: string): Promise<LweAudioObject[]> =>
+      ipcRenderer.invoke(IpcChannels.LWE_LIST_AUDIO_OBJECTS, wallpaperPath)
   },
 
   backup: {

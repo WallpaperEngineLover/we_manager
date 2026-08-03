@@ -234,7 +234,8 @@ export async function applyWallpaperMeta(
       // Explicit even when off, same reasoning as xrayFullReveal above.
       disableParallax: wallpaper.disableParallax ?? false,
       cornerColor: wallpaper.cornerColor,
-      speed: wallpaper.playbackSpeed
+      speed: wallpaper.playbackSpeed,
+      audioSensitivity: wallpaper.audioSensitivity
     })
     return wallpaper.localPath
   }

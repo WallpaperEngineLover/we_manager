@@ -1,6 +1,6 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
-import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, stopLwe, isLweRunning, killAllLweProcesses, listLweObjects, hotswapLweSettings, listLweProperties } from '../services/lwe.service'
+import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, stopLwe, isLweRunning, killAllLweProcesses, listLweObjects, hotswapLweSettings, listLweProperties, listLweAudioObjects } from '../services/lwe.service'
 import { invalidateEnvCache } from '../services/wallpaper.service'
 import { getConnectedScreens } from '../utils/platform'
 
@@ -71,6 +71,7 @@ export function registerLweHandlers(win: BrowserWindow): void {
         propertyOverrides?: Record<string, string>
         audioScreen?: string
         ambientVolume?: number
+        audioSensitivity?: Record<string, number>
       }
     ) => {
       return { ok: hotswapLweSettings(options) }
@@ -88,6 +89,17 @@ export function registerLweHandlers(win: BrowserWindow): void {
       return await listLweProperties(wallpaperPath)
     } catch (err) {
       console.warn('[LWE] list-properties failed for', wallpaperPath, ':', (err as Error).message)
+      return []
+    }
+  })
+
+  ipcMain.handle(IpcChannels.LWE_LIST_AUDIO_OBJECTS, async (_e, wallpaperPath: string) => {
+    // Same reasoning as list-objects/list-properties: treat a parse failure as "nothing detected"
+    // rather than a hard error.
+    try {
+      return await listLweAudioObjects(wallpaperPath)
+    } catch (err) {
+      console.warn('[LWE] list-audio-objects failed for', wallpaperPath, ':', (err as Error).message)
       return []
     }
   })

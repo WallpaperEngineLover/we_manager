@@ -34,7 +34,9 @@ import {
   getAudioScreen,
   setAudioScreen,
   getAmbientVolume,
-  setAmbientVolume
+  setAmbientVolume,
+  getDefaultAudioSensitivity,
+  setDefaultAudioSensitivity
 } from '../services/config.service'
 import { getDefaultWorkshopPath } from '../utils/paths'
 import { DEFAULT_LWE_REPO } from '@shared/constants'
@@ -65,7 +67,8 @@ export function registerConfigHandlers(): void {
     autostartPlaylistId: getAutostartPlaylistId(),
     killLweOnQuit: getKillLweOnQuit(),
     audioScreen: getAudioScreen(),
-    ambientVolume: getAmbientVolume()
+    ambientVolume: getAmbientVolume(),
+    defaultAudioSensitivity: getDefaultAudioSensitivity()
   }))
 
   ipcMain.handle(IpcChannels.CONFIG_GET_AUTOSTART_SUPPORTED, () => isAutostartSupported())
@@ -128,6 +131,11 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle(IpcChannels.CONFIG_SET_AMBIENT_VOLUME, (_e, volume: number | null) => {
     setAmbientVolume(volume)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_DEFAULT_AUDIO_SENSITIVITY, (_e, multiplier: number) => {
+    setDefaultAudioSensitivity(multiplier)
     return { ok: true }
   })
 

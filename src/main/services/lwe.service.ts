@@ -5,7 +5,14 @@ import * as path from 'path'
 import * as os from 'os'
 import type { BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
-import type { LweStatus, LweInstallProgress, LinuxDistro, LweSceneObject, LweProperty } from '@shared/types'
+import type {
+  LweStatus,
+  LweInstallProgress,
+  LinuxDistro,
+  LweSceneObject,
+  LweProperty,
+  LweAudioObject
+} from '@shared/types'
 import {
   isCommandAvailable,
   invalidateCommandCache,
@@ -15,7 +22,14 @@ import {
   getXdgRuntimeDir
 } from '../utils/platform'
 import { getWorkshopPath, getLweManifestPath } from '../utils/paths'
-import { getLweRepoUrl, getLweRepoBranch, getLweCmakeArgs, getAudioScreen, getAmbientVolume } from './config.service'
+import {
+  getLweRepoUrl,
+  getLweRepoBranch,
+  getLweCmakeArgs,
+  getAudioScreen,
+  getAmbientVolume,
+  getDefaultAudioSensitivity
+} from './config.service'
 import { DEFAULT_LWE_REPO } from '@shared/constants'
 
 const execFileAsync = promisify(execFile)
@@ -396,6 +410,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     // Invalidate cache so next status check re-detects
     invalidateCommandCache(LWE_BINARY)
     invalidateObjectFlagsSupport()
+    invalidateAudioSensitivitySupport()
 
     const status = getLweStatus()
     if (status.installed) {
@@ -509,6 +524,7 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
 
     invalidateCommandCache(LWE_BINARY)
     invalidateObjectFlagsSupport()
+    invalidateAudioSensitivitySupport()
 
     return { ok: true, message: 'linux-wallpaperengine has been uninstalled.' }
   } catch (err) {
@@ -632,6 +648,31 @@ function supportsObjectFlags(): boolean {
   return objectFlagsSupported
 }
 
+// --list-audio-objects/--audio-sensitivity are even more recent than --list-objects, so they get
+// their own cached probe rather than assuming a build new enough for one is new enough for both.
+let audioSensitivitySupported: boolean | null = null
+
+function invalidateAudioSensitivitySupport(): void {
+  audioSensitivitySupported = null
+}
+
+function supportsAudioSensitivity(): boolean {
+  if (audioSensitivitySupported !== null) return audioSensitivitySupported
+  try {
+    const binaryPath = getLweBinaryPath()
+    const envVars = buildLweEnvVars()
+    const stdout = execFileSync('env', [...envVars, binaryPath, '--help'], {
+      timeout: 5_000,
+      encoding: 'utf8',
+      maxBuffer: 2 * 1024 * 1024
+    })
+    audioSensitivitySupported = stdout.includes('--list-audio-objects')
+  } catch {
+    audioSensitivitySupported = false
+  }
+  return audioSensitivitySupported
+}
+
 /** Build the common LWE args (assets dir, screen roots, fps, volume, object overrides). */
 function buildLweArgs(
   wallpaperPath: string,
@@ -647,6 +688,7 @@ function buildLweArgs(
     disableParallax?: boolean
     cornerColor?: string
     speed?: number
+    audioSensitivity?: Record<string, number>
   }
 ): string[] {
   const args: string[] = []
@@ -679,6 +721,16 @@ function buildLweArgs(
   }
   for (const [name, value] of Object.entries(options.propertyOverrides ?? {})) {
     args.push('--set-property', `${name}=${value}`)
+  }
+  if (supportsAudioSensitivity()) {
+    // Global default (config.service) applies to every audio-reactive object via the "*"
+    // wildcard; per-wallpaper overrides in options.audioSensitivity are matched first by the
+    // engine (specific id/name always wins over "*"), so both can be sent unconditionally.
+    const defaultSensitivity = getDefaultAudioSensitivity()
+    if (defaultSensitivity !== 1) args.push('--audio-sensitivity', `*=${defaultSensitivity}`)
+    for (const [id, multiplier] of Object.entries(options.audioSensitivity ?? {})) {
+      args.push('--audio-sensitivity', `${id}=${multiplier}`)
+    }
   }
   args.push(wallpaperPath)
   return args
@@ -782,6 +834,8 @@ export function hotswapLweSettings(options: {
   /** Empty string clears the restriction back to "every screen can produce audio" */
   audioScreen?: string
   ambientVolume?: number
+  /** Object id (or "*" for every audio-reactive object with no more specific entry) -> multiplier */
+  audioSensitivity?: Record<string, number>
 }): boolean {
   const pid = resolveActivePid()
   if (pid === null) return false
@@ -804,6 +858,9 @@ export function hotswapLweSettings(options: {
   if (options.ambientVolume !== undefined) lines.push(`ambient-volume=${options.ambientVolume}`)
   for (const [name, value] of Object.entries(options.propertyOverrides ?? {})) {
     lines.push(`property=${name}=${value}`)
+  }
+  for (const [id, multiplier] of Object.entries(options.audioSensitivity ?? {})) {
+    lines.push(`audio-sensitivity=${id}=${multiplier}`)
   }
   if (lines.length === 0) return false
 
@@ -834,6 +891,7 @@ export function launchLweAsync(
     disableParallax?: boolean
     cornerColor?: string
     speed?: number
+    audioSensitivity?: Record<string, number>
   } = {}
 ): Promise<void> {
   // Hot-reload if already running. xray has no launch flag and the running instance keeps its own
@@ -841,6 +899,7 @@ export function launchLweAsync(
   // parallax/cornerColor/speed/propertyOverrides do have launch flags, but hot-reload doesn't
   // restart the process - the running instance keeps whatever the previous wallpaper set, so they
   // need the same explicit push, defaulting to "no override" when the new wallpaper doesn't set them.
+  const defaultSensitivity = getDefaultAudioSensitivity()
   if (
     isLweRunning() &&
     hotswapLweSettings({
@@ -851,7 +910,11 @@ export function launchLweAsync(
       disableParallax: options.disableParallax ?? false,
       cornerColor: options.cornerColor ?? '000000',
       speed: options.speed ?? 1,
-      propertyOverrides: options.propertyOverrides ?? {}
+      propertyOverrides: options.propertyOverrides ?? {},
+      audioSensitivity: {
+        ...(defaultSensitivity !== 1 ? { '*': defaultSensitivity } : {}),
+        ...options.audioSensitivity
+      }
     })
   ) {
     return Promise.resolve()
@@ -977,6 +1040,59 @@ export async function listLweObjects(wallpaperPath: string): Promise<LweSceneObj
     const e = err as Error & { stdout?: string; stderr?: string }
     const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
     throw new Error(`Failed to list wallpaper objects: ${msg}`)
+  }
+}
+
+// Matches lines like "  24 - transbig (scale): minvalue=0.9 maxvalue=1.1 frequency=0 smoothing=10"
+// printed by --list-audio-objects
+const AUDIO_OBJECT_LINE_RE =
+  /^\s*(\S+)\s-\s(.*)\s\((.+)\):\sminvalue=(\S+)\smaxvalue=(\S+)\sfrequency=(\S+)\ssmoothing=(\S+)\s*$/
+
+function parseLweAudioObjectList(output: string): LweAudioObject[] {
+  const objects: LweAudioObject[] = []
+  for (const line of output.split('\n')) {
+    const m = line.match(AUDIO_OBJECT_LINE_RE)
+    if (m) {
+      objects.push({
+        objectId: m[1],
+        objectName: m[2],
+        property: m[3],
+        minvalue: parseFloat(m[4]),
+        maxvalue: parseFloat(m[5]),
+        frequency: parseFloat(m[6]),
+        smoothing: parseFloat(m[7])
+      })
+    }
+  }
+  return objects
+}
+
+// Returns [] for wallpapers with no audio-reactive scripted properties (most wallpapers)
+export async function listLweAudioObjects(wallpaperPath: string): Promise<LweAudioObject[]> {
+  const status = getLweStatus()
+  if (!status.installed) throw new Error('linux-wallpaperengine is not installed.')
+  // Same reasoning as supportsObjectFlags(): older builds silently ignore unknown flags and fall
+  // through to actually rendering the wallpaper instead of exiting.
+  if (!supportsAudioSensitivity()) return []
+
+  const binaryPath = getLweBinaryPath()
+  const args = ['--list-audio-objects']
+  const assetsDir = findWeAssetsDir()
+  if (assetsDir) args.push('--assets-dir', assetsDir)
+  args.push(wallpaperPath)
+
+  const envVars = buildLweEnvVars()
+  try {
+    const { stdout } = await execFileAsync('env', [...envVars, binaryPath, ...args], {
+      timeout: 15_000,
+      maxBuffer: 5 * 1024 * 1024,
+      encoding: 'utf8'
+    })
+    return parseLweAudioObjectList(stdout)
+  } catch (err) {
+    const e = err as Error & { stdout?: string; stderr?: string }
+    const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
+    throw new Error(`Failed to list audio-reactive objects: ${msg}`)
   }
 }
 

@@ -21,6 +21,8 @@ interface AppConfig {
   recommendedWebFpsEnabled: boolean
   audioScreen: string | null
   ambientVolume: number | null
+  /** Default --audio-sensitivity multiplier for audio-reactive objects with no per-wallpaper override */
+  defaultAudioSensitivity: number
 }
 
 const store = new Store<AppConfig>({
@@ -41,7 +43,8 @@ const store = new Store<AppConfig>({
     autostartPlaylistId: null,
     killLweOnQuit: false,
     audioScreen: null,
-    ambientVolume: null
+    ambientVolume: null,
+    defaultAudioSensitivity: 1
   }
 })
 
@@ -158,6 +161,15 @@ export function getAmbientVolume(): number | null {
 
 export function setAmbientVolume(volume: number | null): void {
   store.set('ambientVolume', volume)
+}
+
+/** Default --audio-sensitivity multiplier for audio-reactive objects with no per-wallpaper override. */
+export function getDefaultAudioSensitivity(): number {
+  return store.get('defaultAudioSensitivity')
+}
+
+export function setDefaultAudioSensitivity(multiplier: number): void {
+  store.set('defaultAudioSensitivity', multiplier)
 }
 
 /** Custom linux-wallpaperengine repo (git URL or local path); null = official repo. */

@@ -76,12 +76,31 @@ export interface WallpaperMeta {
   enabledObjects?: string[]
   /** Property name -> override value, applied via linux-wallpaperengine --set-property name=value */
   propertyOverrides?: Record<string, string>
+  /**
+   * Object id -> audio-reactive pulse sensitivity multiplier, applied via linux-wallpaperengine
+   * --audio-sensitivity id=multiplier. 0 locks the object (no pulse), 1 is the wallpaper's
+   * original authored behavior, >1 exaggerates it. Objects with no entry here use
+   * defaultAudioSensitivity from the global config instead.
+   */
+  audioSensitivity?: Record<string, number>
 }
 
 export interface LweSceneObject {
   id: string
   name: string
   type: 'image' | 'particle' | 'text' | 'sound' | 'unknown'
+}
+
+/** One audio-reactive script property on a scene object, as reported by --list-audio-objects */
+export interface LweAudioObject {
+  objectId: string
+  objectName: string
+  /** The scripted property driving the pulse, e.g. "scale" or "alpha" */
+  property: string
+  minvalue: number
+  maxvalue: number
+  frequency: number
+  smoothing: number
 }
 
 export interface LweProperty {

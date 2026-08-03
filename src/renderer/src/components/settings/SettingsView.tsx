@@ -63,6 +63,8 @@ export default function SettingsView() {
   const [audioScreen, setAudioScreen] = useState<string | null>(null)
   const [ambientVolume, setAmbientVolume] = useState<string>('')
   const [ambientVolumeSaved, setAmbientVolumeSaved] = useState(false)
+  const [defaultAudioSensitivity, setDefaultAudioSensitivity] = useState<string>('100')
+  const [defaultAudioSensitivitySaved, setDefaultAudioSensitivitySaved] = useState(false)
 
   useEffect(() => {
     window.electronAPI.config.get().then((cfg) => {
@@ -84,6 +86,7 @@ export default function SettingsView() {
       setAutostartPlaylistId(cfg.autostartPlaylistId)
       setAudioScreen(cfg.audioScreen)
       setAmbientVolume(cfg.ambientVolume != null ? String(cfg.ambientVolume) : '')
+      setDefaultAudioSensitivity(String(Math.round(cfg.defaultAudioSensitivity * 100)))
     })
     window.electronAPI.lwe.status().then(setLweStatus)
     window.electronAPI.lwe.detectDistro().then(setDistro)
@@ -280,6 +283,18 @@ export default function SettingsView() {
     }
     setAmbientVolumeSaved(true)
     setTimeout(() => setAmbientVolumeSaved(false), 2000)
+  }
+
+  async function handleSaveDefaultAudioSensitivity() {
+    const percent = parseInt(defaultAudioSensitivity, 10)
+    if (isNaN(percent) || percent < 0 || percent > 200) return
+    const multiplier = percent / 100
+    await window.electronAPI.config.setDefaultAudioSensitivity(multiplier)
+    // Push live so a currently running instance updates without a relaunch - "*" is the engine's
+    // wildcard default, per-wallpaper overrides still win over it.
+    await window.electronAPI.lwe.hotswapSettings({ audioSensitivity: { '*': multiplier } })
+    setDefaultAudioSensitivitySaved(true)
+    setTimeout(() => setDefaultAudioSensitivitySaved(false), 2000)
   }
 
   async function saveAutostart(patch: {
@@ -569,6 +584,34 @@ export default function SettingsView() {
                 >
                   <Save size={14} />
                   {ambientVolumeSaved ? 'Saved!' : 'Save'}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Default audio reactivity sensitivity</label>
+              <p className="text-xs text-gray-600 mb-2">
+                Default strength (0-200%) for wallpaper elements that pulse to music, applied to
+                every audio-reactive object that doesn't have its own override set in a
+                wallpaper's detail panel. 0% locks all of them (no pulse), 100% is each
+                wallpaper's original authored behavior.
+              </p>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="number"
+                  min={0}
+                  max={200}
+                  value={defaultAudioSensitivity}
+                  onChange={(e) => { setDefaultAudioSensitivity(e.target.value); setDefaultAudioSensitivitySaved(false) }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveDefaultAudioSensitivity()}
+                  className="w-44 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <span className="text-sm text-gray-500">%</span>
+                <button
+                  onClick={handleSaveDefaultAudioSensitivity}
+                  className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+                >
+                  <Save size={14} />
+                  {defaultAudioSensitivitySaved ? 'Saved!' : 'Save'}
                 </button>
               </div>
             </div>

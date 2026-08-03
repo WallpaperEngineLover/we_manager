@@ -30,12 +30,13 @@ import {
   Move3d,
   Palette,
   Gauge,
-  Zap
+  Zap,
+  Music2
 } from 'lucide-react'
 import clsx from 'clsx'
 import { openWorkshopPage, openProfilePage, isWorkshopId } from '../../utils/steam'
 import { WE_TYPES, WE_AGE_RATINGS, WE_RESOLUTION_GROUPS } from '../../constants/weFilters'
-import type { LweSceneObject, LweProperty, WallpaperMeta, ScalingMode } from '@shared/types'
+import type { LweSceneObject, LweProperty, LweAudioObject, WallpaperMeta, ScalingMode } from '@shared/types'
 
 const SCALING_MODE_OPTIONS: { value: ScalingMode; label: string }[] = [
   { value: 'default', label: 'Default' },
@@ -224,6 +225,51 @@ function PropertyRow({
   return null
 }
 
+// One row per unique object id detected as audio-reactive (an object can drive more than one
+// property, e.g. both scale and alpha, from the same sensitivity control - properties is just
+// shown as a hint). 0% locks the object (no pulse), 100% is the wallpaper's authored behavior,
+// up to 200% exaggerates it.
+function AudioObjectRow({
+  objectName,
+  properties,
+  multiplier,
+  busy,
+  onCommit
+}: {
+  objectName: string
+  properties: string[]
+  multiplier: number
+  busy: boolean
+  onCommit: (multiplier: number) => void
+}) {
+  const [draft, setDraft] = useState<number | null>(null)
+  const percent = draft ?? Math.round(multiplier * 100)
+
+  return (
+    <div className="px-1.5 py-1">
+      <div className="mb-0.5 flex items-center justify-between text-xs text-gray-400">
+        <span className="truncate" title={properties.join(', ')}>
+          {objectName}
+        </span>
+        <span className="text-gray-500">{percent === 0 ? 'locked' : `${percent}%`}</span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={200}
+        step={5}
+        value={percent}
+        disabled={busy}
+        onChange={(e) => setDraft(Number(e.target.value))}
+        onMouseUp={(e) => { onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
+        onTouchEnd={(e) => { onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
+        onKeyUp={(e) => { onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
+        className="w-full accent-indigo-500 disabled:opacity-50"
+      />
+    </div>
+  )
+}
+
 interface DetailSidebarProps {
   id: string
   fallbackTitle: string
@@ -272,6 +318,8 @@ export default function DetailSidebar({
   const [togglingObjectId, setTogglingObjectId] = useState<string | null>(null)
   const [propertiesOpen, setPropertiesOpen] = useState(false)
   const [committingProperty, setCommittingProperty] = useState<string | null>(null)
+  const [audioOpen, setAudioOpen] = useState(false)
+  const [committingAudioObjectId, setCommittingAudioObjectId] = useState<string | null>(null)
 
   const { data: item } = useQuery({
     queryKey: ['workshop-detail', id],
@@ -329,6 +377,23 @@ export default function DetailSidebar({
   )
   const propertyOverrides = libraryMeta?.propertyOverrides ?? {}
 
+  const { data: audioObjectProperties = [], isLoading: audioObjectsLoading } = useQuery({
+    queryKey: ['lwe-audio-objects', localPath],
+    queryFn: () => window.electronAPI.lwe.listAudioObjects(localPath!),
+    enabled: !!localPath && lweInstalled,
+    staleTime: Infinity,
+    retry: false
+  })
+  // An object can drive more than one audio-reactive property (e.g. scale and alpha) - the
+  // sensitivity control is per-object, so group by objectId and show one row per object.
+  const audioObjects: { objectId: string; objectName: string; properties: string[] }[] = []
+  for (const p of audioObjectProperties as LweAudioObject[]) {
+    const existing = audioObjects.find((o) => o.objectId === p.objectId)
+    if (existing) existing.properties.push(p.property)
+    else audioObjects.push({ objectId: p.objectId, objectName: p.objectName, properties: [p.property] })
+  }
+  const audioSensitivity = libraryMeta?.audioSensitivity ?? {}
+
   // Persists a settings patch and, if this wallpaper is currently playing, pushes it live via
   // the control-file hotswap (no process restart). Falls back to a full stop+relaunch if the
   // push fails, e.g. an older linux-wallpaperengine build without the extended protocol.
@@ -347,7 +412,8 @@ export default function DetailSidebar({
         disableParallax: patch.disableParallax,
         cornerColor: patch.cornerColor,
         speed: patch.playbackSpeed,
-        propertyOverrides: patch.propertyOverrides
+        propertyOverrides: patch.propertyOverrides,
+        audioSensitivity: patch.audioSensitivity
       })
       if (!ok) {
         await window.electronAPI.lwe.stop()
@@ -397,6 +463,16 @@ export default function DetailSidebar({
       await persistAndMaybeRelaunch({ propertyOverrides: { ...propertyOverrides, [name]: value } })
     } finally {
       setCommittingProperty(null)
+    }
+  }
+
+  async function commitAudioSensitivity(objectId: string, multiplier: number) {
+    if (committingAudioObjectId) return
+    setCommittingAudioObjectId(objectId)
+    try {
+      await persistAndMaybeRelaunch({ audioSensitivity: { ...audioSensitivity, [objectId]: multiplier } })
+    } finally {
+      setCommittingAudioObjectId(null)
     }
   }
 
@@ -945,6 +1021,39 @@ export default function DetailSidebar({
                     value={propertyOverrides[prop.name] ?? prop.value}
                     busy={committingProperty === prop.name}
                     onCommit={(value) => commitProperty(prop.name, value)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {localPath && lweInstalled && (audioObjectsLoading || audioObjects.length > 0) && (
+          <div className="border-t border-white/5 pt-3">
+            <button
+              onClick={() => setAudioOpen((v) => !v)}
+              className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
+            >
+              {audioOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              <Music2 size={12} />
+              <span className="flex-1 text-left">Audio Reactivity</span>
+              {isActive && (
+                <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
+                  live
+                </span>
+              )}
+              {audioObjectsLoading && <Loader2 size={11} className="animate-spin" />}
+            </button>
+            {audioOpen && (
+              <div className="mt-1.5 space-y-0.5">
+                {audioObjects.map((obj) => (
+                  <AudioObjectRow
+                    key={obj.objectId}
+                    objectName={obj.objectName}
+                    properties={obj.properties}
+                    multiplier={audioSensitivity[obj.objectId] ?? 1}
+                    busy={committingAudioObjectId === obj.objectId}
+                    onCommit={(multiplier) => commitAudioSensitivity(obj.objectId, multiplier)}
                   />
                 ))}
               </div>

@@ -59,6 +59,7 @@ export const IpcChannels = {
   CONFIG_SET_AUTO_UNSUBSCRIBE: 'config:set-auto-unsubscribe',
   CONFIG_SET_AUDIO_SCREEN: 'config:set-audio-screen',
   CONFIG_SET_AMBIENT_VOLUME: 'config:set-ambient-volume',
+  CONFIG_SET_DEFAULT_AUDIO_SENSITIVITY: 'config:set-default-audio-sensitivity',
   CONFIG_PICK_FOLDER: 'config:pick-folder',
   CONFIG_PICK_FILE: 'config:pick-file',
   CONFIG_IMPORT_WE: 'config:import-we',
@@ -114,6 +115,7 @@ export const IpcChannels = {
   LWE_HOTSWAP_SETTINGS: 'lwe:hotswap-settings',
   LWE_LIST_PROPERTIES: 'lwe:list-properties',
   LWE_LIST_SCREENS: 'lwe:list-screens',
+  LWE_LIST_AUDIO_OBJECTS: 'lwe:list-audio-objects',
 
   // Desktop icons overlay
   DESKTOP_ICONS_SET_ENABLED: 'desktop-icons:set-enabled',
