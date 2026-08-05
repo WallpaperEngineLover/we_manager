@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull, Film, Globe } from 'lucide-react'
-import type { LweStatus, LweInstallProgress, LinuxDistro } from '../../../../shared/types'
+import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull, Film, Globe, Shield, Bug } from 'lucide-react'
+import type { LweStatus, LweInstallProgress, LinuxDistro, SteamIdentity } from '../../../../shared/types'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
   fedora: 'Fedora / Nobara / RHEL',
@@ -53,6 +53,8 @@ export default function SettingsView() {
 
   const [trayEnabled, setTrayEnabled] = useState(false)
   const [killLweOnQuit, setKillLweOnQuit] = useState(false)
+  const [steamIdentity, setSteamIdentityState] = useState<SteamIdentity>('wallpaper-engine')
+  const [steamIdentitySaved, setSteamIdentitySaved] = useState(false)
   const [autostartSupported, setAutostartSupported] = useState(false)
   const [autostartEnabled, setAutostartEnabledState] = useState(false)
   const [autostartMinimized, setAutostartMinimized] = useState(false)
@@ -60,11 +62,13 @@ export default function SettingsView() {
   const [playlists, setPlaylists] = useState<{ id: string; title: string }[]>([])
 
   const [screens, setScreens] = useState<string[]>([])
+  const [screensRefreshing, setScreensRefreshing] = useState(false)
   const [audioScreen, setAudioScreen] = useState<string | null>(null)
   const [ambientVolume, setAmbientVolume] = useState<string>('')
   const [ambientVolumeSaved, setAmbientVolumeSaved] = useState(false)
   const [defaultAudioSensitivity, setDefaultAudioSensitivity] = useState<string>('100')
   const [defaultAudioSensitivitySaved, setDefaultAudioSensitivitySaved] = useState(false)
+  const [disablePuppetAnimation, setDisablePuppetAnimation] = useState(false)
 
   useEffect(() => {
     window.electronAPI.config.get().then((cfg) => {
@@ -80,6 +84,7 @@ export default function SettingsView() {
       setAutoUnsubscribeAfterBackup(cfg.autoUnsubscribeAfterBackup)
       setTrayEnabled(cfg.trayEnabled)
       setKillLweOnQuit(cfg.killLweOnQuit)
+      setSteamIdentityState(cfg.steamIdentity)
       setAutostartSupported(cfg.autostartSupported)
       setAutostartEnabledState(cfg.autostartEnabled)
       setAutostartMinimized(cfg.autostartMinimized)
@@ -87,6 +92,7 @@ export default function SettingsView() {
       setAudioScreen(cfg.audioScreen)
       setAmbientVolume(cfg.ambientVolume != null ? String(cfg.ambientVolume) : '')
       setDefaultAudioSensitivity(String(Math.round(cfg.defaultAudioSensitivity * 100)))
+      setDisablePuppetAnimation(cfg.disablePuppetAnimation)
     })
     window.electronAPI.lwe.status().then(setLweStatus)
     window.electronAPI.lwe.detectDistro().then(setDistro)
@@ -267,11 +273,33 @@ export default function SettingsView() {
     await window.electronAPI.config.setKillLweOnQuit(newVal)
   }
 
+  async function handleDisablePuppetAnimationToggle() {
+    const newVal = !disablePuppetAnimation
+    setDisablePuppetAnimation(newVal)
+    await window.electronAPI.config.setDisablePuppetAnimation(newVal)
+  }
+
+  async function handleSteamIdentityChange(identity: SteamIdentity) {
+    setSteamIdentityState(identity)
+    await window.electronAPI.config.setSteamIdentity(identity)
+    setSteamIdentitySaved(true)
+    setTimeout(() => setSteamIdentitySaved(false), 3000)
+  }
+
   async function handleAudioScreenChange(screen: string | null) {
     setAudioScreen(screen)
     await window.electronAPI.config.setAudioScreen(screen)
     // Push live so a currently running instance updates without a relaunch
     await window.electronAPI.lwe.hotswapSettings({ audioScreen: screen ?? '' })
+  }
+
+  async function handleRefreshScreens() {
+    setScreensRefreshing(true)
+    try {
+      setScreens(await window.electronAPI.lwe.listScreens())
+    } finally {
+      setScreensRefreshing(false)
+    }
   }
 
   async function handleSaveAmbientVolume() {
@@ -546,18 +574,29 @@ export default function SettingsView() {
                 Restricts sound to a single monitor so wallpapers on other screens stay silent,
                 even if they have their own sound.
               </p>
-              <select
-                value={audioScreen ?? ''}
-                onChange={(e) => handleAudioScreenChange(e.target.value || null)}
-                className="w-56 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 [&>option]:bg-[#1a1a1a] [&>option]:text-gray-200"
-              >
-                <option value="">All screens (default)</option>
-                {screens.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2">
+                <select
+                  value={audioScreen ?? ''}
+                  onChange={(e) => handleAudioScreenChange(e.target.value || null)}
+                  className="w-56 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 [&>option]:bg-[#1a1a1a] [&>option]:text-gray-200"
+                >
+                  <option value="">All screens (default)</option>
+                  {screens.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleRefreshScreens}
+                  disabled={screensRefreshing}
+                  className="rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 outline-none hover:bg-white/10 disabled:opacity-50"
+                  title="Redetect connected screens"
+                >
+                  {screensRefreshing ? '...' : 'Redetect'}
+                </button>
+              </div>
             </div>
             <div>
               <label className="block text-xs text-gray-400 mb-1">Ambient wallpaper volume</label>
@@ -857,6 +896,35 @@ export default function SettingsView() {
 
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+            Troubleshooting
+          </label>
+          <p className="mt-1 text-xs text-gray-600">
+            Freezes puppet (.mdl) meshes - rigged 2D character parts like eyes, hair, or limbs - at their bind
+            pose instead of animating them. Only applies to wallpapers played after enabling this; a wallpaper
+            already running needs to be replayed to pick it up.
+          </p>
+          <label className="mt-3 flex items-center gap-3 cursor-pointer">
+            <button
+              onClick={handleDisablePuppetAnimationToggle}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                disablePuppetAnimation ? 'bg-indigo-600' : 'bg-white/10'
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  disablePuppetAnimation ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+            <span className="flex items-center gap-2 text-sm text-gray-300">
+              <Bug size={16} />
+              Disable puppet mesh animation
+            </span>
+          </label>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
             Desktop Icons
           </label>
           <p className="mt-1 text-xs text-gray-600">
@@ -974,6 +1042,61 @@ export default function SettingsView() {
               </select>
             </div>
           </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+            Steam Integration
+          </label>
+          <p className="mt-1 text-xs text-gray-600">
+            How WE Manager identifies itself to Steam. Takes effect after restarting WE Manager.
+          </p>
+
+          <div className="mt-3 flex rounded-lg overflow-hidden text-sm w-fit">
+            <button
+              onClick={() => handleSteamIdentityChange('wallpaper-engine')}
+              className={`flex items-center gap-2 px-3 py-2 transition-colors ${
+                steamIdentity === 'wallpaper-engine'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-white/5 text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <Shield size={14} />
+              Steam app (Wallpaper Engine)
+            </button>
+            <button
+              onClick={() => handleSteamIdentityChange('standalone')}
+              className={`flex items-center gap-2 px-3 py-2 transition-colors ${
+                steamIdentity === 'standalone'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-white/5 text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <Shield size={14} />
+              Own app (standalone)
+            </button>
+          </div>
+          {steamIdentitySaved && (
+            <p className="mt-2 text-xs text-green-400">Saved - restart WE Manager for this to take effect.</p>
+          )}
+          <p className="mt-2 text-xs text-gray-600">
+            {steamIdentity === 'wallpaper-engine' ? (
+              <>
+                Registers this process with Steam under Wallpaper Engine's own app id. Steam
+                considers WE Manager to be Wallpaper Engine itself, so it will offer to close it
+                when you log out or shut down Steam - the same as the official Windows app would
+                if you ran it standalone.
+              </>
+            ) : (
+              <>
+                Registers this process under a neutral, unrelated Steam app id instead, so Steam
+                doesn't associate WE Manager with Wallpaper Engine and won't try to close it on
+                logout. Workshop browsing, subscribing and voting still target Wallpaper Engine's
+                own workshop either way. This mode is less tested than the default - if
+                subscribing or voting misbehaves, switch back.
+              </>
+            )}
+          </p>
         </div>
       </div>
     </div>

@@ -97,7 +97,7 @@ export default function WallpaperCard({
 
   async function handleLike(e: React.MouseEvent) {
     e.stopPropagation()
-    if (isLiked || isLiking) return
+    if (isLiked || isLiking || wallpaper.unavailable) return
     setIsLiking(true)
     try {
       await window.electronAPI.steam.vote(wallpaper.id, true)
@@ -283,14 +283,22 @@ export default function WallpaperCard({
         <div className={clsx('mt-2 flex items-center', compact ? 'gap-1' : 'gap-2')}>
           <button
             onClick={handleLike}
-            disabled={isLiked || isLiking}
-            title={isLiked ? 'Already liked on Steam' : 'Like on Steam'}
+            disabled={isLiked || isLiking || wallpaper.unavailable}
+            title={
+              wallpaper.unavailable
+                ? 'Removed from the Steam Workshop - voting is no longer possible'
+                : isLiked
+                  ? 'Already liked on Steam'
+                  : 'Like on Steam'
+            }
             className={clsx(
-              'flex items-center gap-1 rounded text-xs transition-colors disabled:cursor-default',
+              'flex items-center gap-1 rounded text-xs transition-colors disabled:cursor-not-allowed',
               compact ? 'p-1.5' : 'px-2 py-1',
-              isLiked
-                ? 'bg-green-600/30 text-green-300'
-                : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+              wallpaper.unavailable
+                ? 'bg-white/5 text-gray-600 opacity-50'
+                : isLiked
+                  ? 'bg-green-600/30 text-green-300'
+                  : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200'
             )}
           >
             {isLiking ? <Loader2 size={11} className="animate-spin" /> : <ThumbsUp size={11} />}

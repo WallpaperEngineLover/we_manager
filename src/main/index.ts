@@ -1,8 +1,9 @@
 import { app, BrowserWindow, net, protocol, shell } from 'electron'
 import path from 'path'
 import { pathToFileURL } from 'url'
-import { initSteam } from './services/steam.service'
-import { initLibrary } from './services/library.service'
+import { IpcChannels } from '@shared/ipc-channels'
+import { initSteam, isSteamRunning, startVotedItemsSync } from './services/steam.service'
+import { initLibrary, checkUnavailableWallpapers } from './services/library.service'
 import { startWatcher } from './services/watcher.service'
 import { registerAllHandlers } from './ipc'
 import { initDesktopIcons, cleanupDesktopIcons } from './services/desktop-icons.service'
@@ -14,6 +15,31 @@ import { killAllLweProcesses, getLweStatus } from './services/lwe.service'
 const startMinimized = process.argv.includes('--minimized')
 let isQuitting = false
 let hasKilledLweOnQuit = false
+
+const BACKGROUND_SYNC_INTERVAL_MS = 3 * 60 * 1000
+
+// Keeps "liked" state and library availability fresh without the user having to restart the
+// app or click "Check unavailable" - votes cast on Steam directly (client, community website)
+// and items taken down from the Workshop both eventually show up on their own.
+function startBackgroundSync(win: BrowserWindow): void {
+  startVotedItemsSync((ids) => {
+    if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_VOTED_IDS_CHANGED, ids)
+  })
+
+  setInterval(async () => {
+    if (win.isDestroyed()) return
+    const running = isSteamRunning()
+    win.webContents.send(IpcChannels.EVENT_STEAM_STATUS, running)
+    if (!running) return
+
+    try {
+      const { changed } = await checkUnavailableWallpapers()
+      if (changed && !win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_LIBRARY_CHANGED)
+    } catch {
+      // transient Steam hiccup - try again next tick
+    }
+  }, BACKGROUND_SYNC_INTERVAL_MS)
+}
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -77,6 +103,7 @@ app.whenReady().then(() => {
   const win = createWindow()
   registerAllHandlers(win)
   startWatcher(win)
+  startBackgroundSync(win)
   initDesktopIcons()
   const resumed = initPlaylistPlayer(win)
 

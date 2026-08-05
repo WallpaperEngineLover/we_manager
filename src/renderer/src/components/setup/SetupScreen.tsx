@@ -71,7 +71,6 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
       <div className="w-full max-w-lg rounded-xl border border-white/10 bg-[#1a1a1a] p-8">
         <h1 className="text-xl font-semibold text-gray-100">Welcome to WE Manager</h1>
 
-        {/* Step indicator */}
         <div className="mt-4 flex items-center gap-2 text-xs text-gray-600">
           <span className={step === 1 ? 'text-indigo-400' : 'text-gray-500'}>
             1. Workshop folder

@@ -72,6 +72,7 @@ export function registerLweHandlers(win: BrowserWindow): void {
         audioScreen?: string
         ambientVolume?: number
         audioSensitivity?: Record<string, number>
+        soundVolume?: Record<string, number>
       }
     ) => {
       return { ok: hotswapLweSettings(options) }

@@ -28,7 +28,8 @@ import {
   getLweCmakeArgs,
   getAudioScreen,
   getAmbientVolume,
-  getDefaultAudioSensitivity
+  getDefaultAudioSensitivity,
+  getDisablePuppetAnimation
 } from './config.service'
 import { DEFAULT_LWE_REPO } from '@shared/constants'
 
@@ -416,6 +417,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     invalidateCommandCache(LWE_BINARY)
     invalidateObjectFlagsSupport()
     invalidateAudioSensitivitySupport()
+    invalidateSoundVolumeSupport()
 
     const status = getLweStatus()
     if (status.installed) {
@@ -530,6 +532,7 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
     invalidateCommandCache(LWE_BINARY)
     invalidateObjectFlagsSupport()
     invalidateAudioSensitivitySupport()
+    invalidateSoundVolumeSupport()
 
     return { ok: true, message: 'linux-wallpaperengine has been uninstalled.' }
   } catch (err) {
@@ -678,6 +681,31 @@ function supportsAudioSensitivity(): boolean {
   return audioSensitivitySupported
 }
 
+// --sound-volume is newer still - its own probe rather than assuming a build with
+// --list-audio-objects also has it.
+let soundVolumeSupported: boolean | null = null
+
+function invalidateSoundVolumeSupport(): void {
+  soundVolumeSupported = null
+}
+
+function supportsSoundVolume(): boolean {
+  if (soundVolumeSupported !== null) return soundVolumeSupported
+  try {
+    const binaryPath = getLweBinaryPath()
+    const envVars = buildLweEnvVars()
+    const stdout = execFileSync('env', [...envVars, binaryPath, '--help'], {
+      timeout: 5_000,
+      encoding: 'utf8',
+      maxBuffer: 2 * 1024 * 1024
+    })
+    soundVolumeSupported = stdout.includes('--sound-volume')
+  } catch {
+    soundVolumeSupported = false
+  }
+  return soundVolumeSupported
+}
+
 /** Build the common LWE args (assets dir, screen roots, fps, volume, object overrides). */
 function buildLweArgs(
   wallpaperPath: string,
@@ -694,6 +722,7 @@ function buildLweArgs(
     cornerColor?: string
     speed?: number
     audioSensitivity?: Record<string, number>
+    soundVolume?: Record<string, number>
   }
 ): string[] {
   const args: string[] = []
@@ -715,6 +744,7 @@ function buildLweArgs(
   if (audioScreen) args.push('--audio-screen', audioScreen)
   const ambientVolume = getAmbientVolume()
   if (ambientVolume !== null) args.push('--ambient-volume', String(ambientVolume))
+  if (getDisablePuppetAnimation()) args.push('--render-debug', 'no-puppet-animation')
   if (options.scalingMode) args.push('--scaling', options.scalingMode)
   if (options.zoom !== undefined) args.push('--zoom', String(options.zoom))
   if (options.disableParallax) args.push('--disable-parallax')
@@ -735,6 +765,11 @@ function buildLweArgs(
     if (defaultSensitivity !== 1) args.push('--audio-sensitivity', `*=${defaultSensitivity}`)
     for (const [id, multiplier] of Object.entries(options.audioSensitivity ?? {})) {
       args.push('--audio-sensitivity', `${id}=${multiplier}`)
+    }
+  }
+  if (supportsSoundVolume()) {
+    for (const [id, volume] of Object.entries(options.soundVolume ?? {})) {
+      args.push('--sound-volume', `${id}=${volume}`)
     }
   }
   args.push(wallpaperPath)
@@ -841,6 +876,8 @@ export function hotswapLweSettings(options: {
   ambientVolume?: number
   /** Object id (or "*" for every audio-reactive object with no more specific entry) -> multiplier */
   audioSensitivity?: Record<string, number>
+  /** Sound object id -> volume (0-1), applied live without a reload */
+  soundVolume?: Record<string, number>
 }): boolean {
   const pid = resolveActivePid()
   if (pid === null) return false
@@ -866,6 +903,9 @@ export function hotswapLweSettings(options: {
   }
   for (const [id, multiplier] of Object.entries(options.audioSensitivity ?? {})) {
     lines.push(`audio-sensitivity=${id}=${multiplier}`)
+  }
+  for (const [id, volume] of Object.entries(options.soundVolume ?? {})) {
+    lines.push(`sound-volume=${id}=${volume}`)
   }
   if (lines.length === 0) return false
 
@@ -897,6 +937,7 @@ export async function launchLweAsync(
     cornerColor?: string
     speed?: number
     audioSensitivity?: Record<string, number>
+    soundVolume?: Record<string, number>
   } = {}
 ): Promise<void> {
   // Hot-reload if already running. xray has no launch flag and the running instance keeps its own
@@ -919,7 +960,8 @@ export async function launchLweAsync(
       audioSensitivity: {
         ...(defaultSensitivity !== 1 ? { '*': defaultSensitivity } : {}),
         ...options.audioSensitivity
-      }
+      },
+      soundVolume: options.soundVolume ?? {}
     })
   ) {
     return

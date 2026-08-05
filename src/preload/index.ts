@@ -21,7 +21,8 @@ import type {
   BackupProgressEvent,
   Playlist,
   PlaylistSettings,
-  PlaylistPlaybackState
+  PlaylistPlaybackState,
+  SteamIdentity
 } from '../shared/types'
 
 const api = {
@@ -83,7 +84,7 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LIBRARY_DISTINCT_TAGS),
     resetFpsOverrides: (): Promise<{ count: number }> =>
       ipcRenderer.invoke(IpcChannels.LIBRARY_RESET_FPS_OVERRIDES),
-    checkUnavailable: (): Promise<{ checked: number; unavailable: number }> =>
+    checkUnavailable: (): Promise<{ checked: number; unavailable: number; changed: boolean }> =>
       ipcRenderer.invoke(IpcChannels.LIBRARY_CHECK_UNAVAILABLE)
   },
 
@@ -111,6 +112,9 @@ const api = {
       audioScreen: string | null
       ambientVolume: number | null
       defaultAudioSensitivity: number
+      disablePuppetAnimation: boolean
+      steamIdentity: SteamIdentity
+      ignoredCreators: string[]
     }> => ipcRenderer.invoke(IpcChannels.CONFIG_GET),
     setWorkshopPath: (p: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_WORKSHOP_PATH, p),
@@ -153,7 +157,15 @@ const api = {
     setAmbientVolume: (volume: number | null): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_AMBIENT_VOLUME, volume),
     setDefaultAudioSensitivity: (multiplier: number): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke(IpcChannels.CONFIG_SET_DEFAULT_AUDIO_SENSITIVITY, multiplier)
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_DEFAULT_AUDIO_SENSITIVITY, multiplier),
+    setDisablePuppetAnimation: (disabled: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_DISABLE_PUPPET_ANIMATION, disabled),
+    setSteamIdentity: (identity: SteamIdentity): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_STEAM_IDENTITY, identity),
+    ignoreCreator: (steamId: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_IGNORE_CREATOR, steamId),
+    unignoreCreator: (steamId: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_UNIGNORE_CREATOR, steamId)
   },
 
   playlist: {
@@ -255,6 +267,7 @@ const api = {
       audioScreen?: string
       ambientVolume?: number
       audioSensitivity?: Record<string, number>
+      soundVolume?: Record<string, number>
     }): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.LWE_HOTSWAP_SETTINGS, options),
     listProperties: (wallpaperPath: string): Promise<LweProperty[]> =>
@@ -322,6 +335,16 @@ const api = {
       const listener = (_: Electron.IpcRendererEvent, state: PlaylistPlaybackState) => cb(state)
       ipcRenderer.on(IpcChannels.EVENT_PLAYLIST_STATE_CHANGED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_PLAYLIST_STATE_CHANGED, listener)
+    },
+    votedIdsChanged: (cb: (ids: string[]) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, ids: string[]) => cb(ids)
+      ipcRenderer.on(IpcChannels.EVENT_VOTED_IDS_CHANGED, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_VOTED_IDS_CHANGED, listener)
+    },
+    libraryChanged: (cb: () => void): (() => void) => {
+      const listener = () => cb()
+      ipcRenderer.on(IpcChannels.EVENT_LIBRARY_CHANGED, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_LIBRARY_CHANGED, listener)
     }
   }
 }

@@ -1,5 +1,6 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
+import type { SteamIdentity } from '@shared/types'
 import {
   getConfiguredWorkshopPath,
   setConfiguredWorkshopPath,
@@ -36,7 +37,14 @@ import {
   getAmbientVolume,
   setAmbientVolume,
   getDefaultAudioSensitivity,
-  setDefaultAudioSensitivity
+  setDefaultAudioSensitivity,
+  getDisablePuppetAnimation,
+  setDisablePuppetAnimation,
+  getSteamIdentity,
+  setSteamIdentity,
+  getIgnoredCreators,
+  ignoreCreator,
+  unignoreCreator
 } from '../services/config.service'
 import { getDefaultWorkshopPath } from '../utils/paths'
 import { DEFAULT_LWE_REPO } from '@shared/constants'
@@ -68,7 +76,10 @@ export function registerConfigHandlers(): void {
     killLweOnQuit: getKillLweOnQuit(),
     audioScreen: getAudioScreen(),
     ambientVolume: getAmbientVolume(),
-    defaultAudioSensitivity: getDefaultAudioSensitivity()
+    defaultAudioSensitivity: getDefaultAudioSensitivity(),
+    disablePuppetAnimation: getDisablePuppetAnimation(),
+    steamIdentity: getSteamIdentity(),
+    ignoredCreators: getIgnoredCreators()
   }))
 
   ipcMain.handle(IpcChannels.CONFIG_GET_AUTOSTART_SUPPORTED, () => isAutostartSupported())
@@ -96,6 +107,21 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle(IpcChannels.CONFIG_SET_KILL_LWE_ON_QUIT, (_e, enabled: boolean) => {
     setKillLweOnQuit(enabled)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_STEAM_IDENTITY, (_e, identity: SteamIdentity) => {
+    setSteamIdentity(identity)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_IGNORE_CREATOR, (_e, steamId: string) => {
+    ignoreCreator(steamId)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_UNIGNORE_CREATOR, (_e, steamId: string) => {
+    unignoreCreator(steamId)
     return { ok: true }
   })
 
@@ -136,6 +162,11 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle(IpcChannels.CONFIG_SET_DEFAULT_AUDIO_SENSITIVITY, (_e, multiplier: number) => {
     setDefaultAudioSensitivity(multiplier)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_DISABLE_PUPPET_ANIMATION, (_e, disabled: boolean) => {
+    setDisablePuppetAnimation(disabled)
     return { ok: true }
   })
 

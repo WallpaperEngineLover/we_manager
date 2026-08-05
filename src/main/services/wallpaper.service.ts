@@ -235,7 +235,8 @@ export async function applyWallpaperMeta(
       disableParallax: wallpaper.disableParallax ?? false,
       cornerColor: wallpaper.cornerColor,
       speed: wallpaper.playbackSpeed,
-      audioSensitivity: wallpaper.audioSensitivity
+      audioSensitivity: wallpaper.audioSensitivity,
+      soundVolume: wallpaper.soundVolume
     })
     return wallpaper.localPath
   }

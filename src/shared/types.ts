@@ -24,6 +24,9 @@ export type WorkshopQueryType =
 
 export type ContentRating = 'everyone' | 'questionable' | 'mature' | 'uncategorized'
 
+/** How this process identifies itself to Steam - see config.service.ts getSteamIdentity(). */
+export type SteamIdentity = 'wallpaper-engine' | 'standalone'
+
 export interface WallpaperMeta {
   id: string
   title: string
@@ -83,6 +86,12 @@ export interface WallpaperMeta {
    * defaultAudioSensitivity from the global config instead.
    */
   audioSensitivity?: Record<string, number>
+  /**
+   * Sound object id -> volume (0-1), applied live via linux-wallpaperengine's sound-volume
+   * hotswap. Independent of the global volume - lets a wallpaper with several alternate music
+   * tracks (each its own Sound object) play only one.
+   */
+  soundVolume?: Record<string, number>
 }
 
 export interface LweSceneObject {
@@ -133,6 +142,8 @@ export interface WorkshopItem {
   upvotes: number
   downvotes: number
   isSubscribed: boolean
+  /** Size in bytes as reported by the Steam Workshop (same figure shown on the item's Steam page); undefined if unavailable. */
+  fileSize?: number
 }
 
 export interface WorkshopQueryParams {

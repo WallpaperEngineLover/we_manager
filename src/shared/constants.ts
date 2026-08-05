@@ -1,5 +1,10 @@
 export const WE_APP_ID = 431960
 
+// Valve's public test app ("Spacewar") - every Steam account owns it and it's never actually
+// "installed", so the Steam client doesn't treat a process init'd under it as a running game
+// that needs to be closed on logout, unlike WE_APP_ID above.
+export const STANDALONE_APP_ID = 480
+
 export const DEFAULT_LWE_REPO = 'https://github.com/Almamu/linux-wallpaperengine.git'
 
 // CEF's own windowless_frame_rate is set to max(60, maximumFPS) regardless of --fps (see

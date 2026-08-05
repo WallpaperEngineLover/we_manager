@@ -10,7 +10,9 @@ import {
   User,
   ExternalLink,
   Play,
-  Download
+  Download,
+  EyeOff,
+  Eye
 } from 'lucide-react'
 import WorkshopCard from './WorkshopCard'
 import PreviewSizeToggle from '../common/PreviewSizeToggle'
@@ -186,6 +188,7 @@ export default function WorkshopBrowser({
   const [pageSize, setPageSize] = useState(50)
   const [previewSize, setPreviewSize] = usePreviewSize()
   const [detailId, setDetailId] = useState<string | null>(null)
+  const [showIgnored, setShowIgnored] = useState(false)
 
   useClickOutside(ctxRef, () => setCtxMenu(null), !!ctxMenu)
   const ctxPos = useClampedPosition(ctxRef, ctxMenu)
@@ -282,8 +285,13 @@ export default function WorkshopBrowser({
 
   async function ctxVote(up: boolean) {
     if (!ctxMenu) return
-    await forEachIgnoringErrors(ctxMenu.ids, (id) => window.electronAPI.steam.vote(id, up))
-    if (up) queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })
+    const ids = ctxMenu.ids
+    await forEachIgnoringErrors(ids, (id) => window.electronAPI.steam.vote(id, up))
+    if (up) {
+      queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) => [
+        ...new Set([...(old ?? []), ...ids])
+      ])
+    }
     closeCtxMenu()
   }
 
@@ -354,6 +362,12 @@ export default function WorkshopBrowser({
     queryFn: () => window.electronAPI.lwe.status()
   })
 
+  const { data: ignoredCreators = [] } = useQuery({
+    queryKey: ['ignored-creators'],
+    queryFn: () => window.electronAPI.config.get().then((cfg) => cfg.ignoredCreators)
+  })
+  const ignoredCreatorSet = useMemo(() => new Set(ignoredCreators), [ignoredCreators])
+
   async function handlePlay(id: string) {
     try {
       await window.electronAPI.wallpaper.apply({ wallpaperId: id })
@@ -370,8 +384,21 @@ export default function WorkshopBrowser({
     closeCtxMenu()
   }
 
+  async function ctxToggleIgnoreCreator() {
+    if (!ctxMenu || ctxMenu.ids.length !== 1) return
+    const item = allItems.find((i) => i.publishedFileId === ctxMenu.ids[0])
+    closeCtxMenu()
+    if (!item) return
+    if (ignoredCreatorSet.has(item.creatorSteamId)) {
+      await window.electronAPI.config.unignoreCreator(item.creatorSteamId)
+    } else {
+      await window.electronAPI.config.ignoreCreator(item.creatorSteamId)
+    }
+    queryClient.invalidateQueries({ queryKey: ['ignored-creators'] })
+  }
+
   // In OR mode: client-side OR filtering for multi-selected categories
-  const items = useMemo(() => {
+  const tagFiltered = useMemo(() => {
     if (filters.filterMode !== 'or') return allItems
     return allItems.filter((item) => {
       if (effectiveTypes.length > 1 && !effectiveTypes.some((t) => item.tags.includes(t)))
@@ -386,17 +413,33 @@ export default function WorkshopBrowser({
     })
   }, [allItems, filters.filterMode, effectiveTypes, effectiveAgeRatings, effectiveResolutions, effectiveGenres])
 
-  const totalFiltered = items.length
+  // Page boundaries are fixed against the full tag-filtered list (ignored creators' items
+  // included) so a page's contents don't shift around as the ignore list changes. Within a
+  // page, ignored items are pulled out of the normal grid and - only once "Show ignored" is
+  // on - appended after that same page's own shown items, never mixed into another page.
+  const totalFiltered = tagFiltered.length
   const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize))
   const safePage = Math.min(page, totalPages)
+  const rawPageItems = useMemo(
+    () => tagFiltered.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [tagFiltered, safePage, pageSize]
+  )
+  const pageShownItems = useMemo(
+    () => rawPageItems.filter((item) => !ignoredCreatorSet.has(item.creatorSteamId)),
+    [rawPageItems, ignoredCreatorSet]
+  )
+  const pageIgnoredItems = useMemo(
+    () => rawPageItems.filter((item) => ignoredCreatorSet.has(item.creatorSteamId)),
+    [rawPageItems, ignoredCreatorSet]
+  )
   const paginatedItems = useMemo(
-    () => items.slice((safePage - 1) * pageSize, safePage * pageSize),
-    [items, safePage, pageSize]
+    () => (showIgnored ? [...pageShownItems, ...pageIgnoredItems] : pageShownItems),
+    [showIgnored, pageShownItems, pageIgnoredItems]
   )
 
   // Auto-fetch more Steam API pages if needed to fill the current view
   const totalResults = data?.pages[0]?.totalResults ?? 0
-  const needMore = safePage * pageSize > allItems.length && allItems.length < totalResults
+  const needMore = page * pageSize > allItems.length && allItems.length < totalResults
   useEffect(() => {
     if (needMore && hasNextPage && !isFetchingNextPage) {
       fetchNextPage()
@@ -819,7 +862,7 @@ export default function WorkshopBrowser({
               )}
             </div>
           )}
-          {!isLoading && items.length === 0 && !error && (
+          {!isLoading && tagFiltered.length === 0 && !error && (
             <div className="flex h-40 items-center justify-center text-gray-500">
               No results found
             </div>
@@ -830,6 +873,7 @@ export default function WorkshopBrowser({
                 key={item.publishedFileId}
                 item={item}
                 selected={selection.has(item.publishedFileId)}
+                ignored={ignoredCreatorSet.has(item.creatorSteamId)}
                 isLiked={votedSet.has(item.publishedFileId)}
                 canPlay={playableSet.has(item.publishedFileId)}
                 lweInstalled={lweStatus?.installed ?? false}
@@ -837,7 +881,12 @@ export default function WorkshopBrowser({
                 downloadPercentage={subscribeEntries.get(item.publishedFileId)?.percentage}
                 onSelect={(e) => handleCardSelect(item.publishedFileId, e)}
                 onContextMenu={(e) => openCtxMenu(e, item.publishedFileId)}
-                onLiked={() => queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })}
+                onLiked={() => {
+                  const votedId = item.publishedFileId
+                  queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
+                    old ? [...old, votedId] : [votedId]
+                  )
+                }}
                 onPlay={() => handlePlay(item.publishedFileId)}
                 onSubscribe={() => enqueueSubscribe([item.publishedFileId])}
                 onOpenDetail={() => setDetailId(item.publishedFileId)}
@@ -858,6 +907,20 @@ export default function WorkshopBrowser({
           {isFetchingNextPage && (
             <div className="mt-4 flex justify-center text-gray-500">
               <Loader2 size={20} className="animate-spin" />
+            </div>
+          )}
+          {pageIgnoredItems.length > 0 && (
+            <div className="mt-4 flex items-center justify-center gap-2 border-t border-white/5 pt-3 text-xs text-gray-500">
+              <span>
+                {pageIgnoredItems.length} wallpaper{pageIgnoredItems.length === 1 ? '' : 's'} ignored on
+                this page
+              </span>
+              <button
+                onClick={() => setShowIgnored((v) => !v)}
+                className="rounded bg-white/5 px-2 py-1 text-gray-300 hover:bg-white/10"
+              >
+                {showIgnored ? 'Hide ignored' : 'Show ignored'}
+              </button>
             </div>
           )}
           {totalFiltered > 0 && (
@@ -911,7 +974,11 @@ export default function WorkshopBrowser({
             onClose={() => setDetailId(null)}
             onSubscribe={() => enqueueSubscribe([detailId])}
             onUnsubscribe={() => unsubscribeIds([detailId])}
-            onLiked={() => queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })}
+            onLiked={() => {
+              queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
+                old ? [...old, detailId] : [detailId]
+              )
+            }}
             onPlay={() => handlePlay(detailId)}
             onBrowseCreator={onBrowseCreator}
           />
@@ -980,6 +1047,26 @@ export default function WorkshopBrowser({
               <User size={12} /> Browse wallpapers from this creator
             </button>
           )}
+          {ctxMenu.ids.length === 1 && (() => {
+            const ctxItem = allItems.find((i) => i.publishedFileId === ctxMenu.ids[0])
+            const ctxCreatorIgnored = ctxItem ? ignoredCreatorSet.has(ctxItem.creatorSteamId) : false
+            return (
+              <button
+                onClick={ctxToggleIgnoreCreator}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+              >
+                {ctxCreatorIgnored ? (
+                  <>
+                    <Eye size={12} /> Unignore this creator
+                  </>
+                ) : (
+                  <>
+                    <EyeOff size={12} /> Ignore this creator
+                  </>
+                )}
+              </button>
+            )
+          })()}
         </div>
       )}
     </div>

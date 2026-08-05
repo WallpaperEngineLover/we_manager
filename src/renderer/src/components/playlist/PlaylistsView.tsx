@@ -195,8 +195,13 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
 
   async function ctxVote(up: boolean) {
     if (!ctxMenu) return
-    await window.electronAPI.steam.vote(ctxMenu.wallpaperId, up)
-    queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })
+    const wallpaperId = ctxMenu.wallpaperId
+    await window.electronAPI.steam.vote(wallpaperId, up)
+    if (up) {
+      queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
+        old ? [...new Set([...old, wallpaperId])] : [wallpaperId]
+      )
+    }
     closeCtxMenu()
   }
 

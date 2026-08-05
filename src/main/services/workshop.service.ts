@@ -53,8 +53,11 @@ export async function queryWorkshop(params: WorkshopQueryParams): Promise<Worksh
     client.workshop.getSubscribedItems().map((id) => id.toString())
   )
 
+  const items = result.items.filter(Boolean).map((item) => transformItem(item!, subscribedSet))
+  await attachFileSizes(items)
+
   return {
-    items: result.items.filter(Boolean).map((item) => transformItem(item!, subscribedSet)),
+    items,
     page,
     totalResults: result.totalResults
   }
@@ -62,15 +65,25 @@ export async function queryWorkshop(params: WorkshopQueryParams): Promise<Worksh
 
 export async function getWorkshopItem(publishedFileId: string): Promise<WorkshopItem | null> {
   const client = getClient()
-  const item = await client.workshop.getItem(BigInt(publishedFileId), {
-    includeLongDescription: true
-  })
+  let item: Awaited<ReturnType<typeof client.workshop.getItem>>
+  try {
+    item = await client.workshop.getItem(BigInt(publishedFileId), {
+      includeLongDescription: true
+    })
+  } catch {
+    // Steam's UGC details lookup throws a generic failure for an id it can no longer resolve
+    // (taken down, banned) rather than returning null the way a batch getItems() call does -
+    // treat it the same way: "we can't tell you about this item" rather than a hard error.
+    return null
+  }
   if (!item) return null
 
   const subscribedSet = new Set(
     client.workshop.getSubscribedItems().map((id) => id.toString())
   )
-  return transformItem(item, subscribedSet)
+  const transformed = transformItem(item, subscribedSet)
+  await attachFileSizes([transformed])
+  return transformed
 }
 
 // UserUGCList lets us query another Steam user's published items directly,
@@ -103,8 +116,11 @@ export async function queryWorkshopByCreator(
     client.workshop.getSubscribedItems().map((id) => id.toString())
   )
 
+  const items = result.items.filter(Boolean).map((item) => transformItem(item!, subscribedSet))
+  await attachFileSizes(items)
+
   return {
-    items: result.items.filter(Boolean).map((item) => transformItem(item!, subscribedSet)),
+    items,
     page,
     totalResults: result.totalResults
   }
@@ -168,6 +184,49 @@ export async function getUnavailableWorkshopItems(publishedFileIds: string[]): P
     if (item) unavailable.delete(item.publishedFileId.toString())
   }
   return unavailable
+}
+
+// steamworks.js's UGC query bindings don't surface a file's size (the underlying Steamworks SDK
+// struct has it, the napi wrapper just doesn't map that field). Steam's own public web API does,
+// unauthenticated, for any published file regardless of subscription state - this is the exact
+// "File Size" figure shown on the item's Steam Workshop page. Cached per id for the process
+// lifetime since it barely ever changes.
+const fileSizeCache = new Map<string, number>()
+const FILE_SIZE_BATCH = 100
+
+async function fetchFileSizesBatch(ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  const body = new URLSearchParams({ itemcount: String(ids.length) })
+  ids.forEach((id, i) => body.set(`publishedfileids[${i}]`, id))
+
+  const res = await fetch('https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/', {
+    method: 'POST',
+    body
+  })
+  const data = await res.json()
+  const details = data?.response?.publishedfiledetails ?? []
+  for (const d of details) {
+    if (d?.publishedfileid && d.file_size != null) {
+      fileSizeCache.set(d.publishedfileid, Number(d.file_size))
+    }
+  }
+}
+
+async function attachFileSizes(items: WorkshopItem[]): Promise<void> {
+  const uncached = [...new Set(items.map((i) => i.publishedFileId).filter((id) => !fileSizeCache.has(id)))]
+  if (uncached.length > 0) {
+    try {
+      for (let i = 0; i < uncached.length; i += FILE_SIZE_BATCH) {
+        await fetchFileSizesBatch(uncached.slice(i, i + FILE_SIZE_BATCH))
+      }
+    } catch (err) {
+      console.warn('[Workshop] Failed to fetch file sizes:', err)
+    }
+  }
+  for (const item of items) {
+    const size = fileSizeCache.get(item.publishedFileId)
+    if (size != null) item.fileSize = size
+  }
 }
 
 function transformItem(

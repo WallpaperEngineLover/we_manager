@@ -73,7 +73,6 @@ export function startDesktopIconsOverlay(): void {
   const envVars = buildOverlayEnvVars()
   const screens = getConnectedScreens()
 
-  // Spawn one overlay per screen
   const targets = screens.length > 0 ? screens : [undefined]
   for (const screen of targets) {
     const args = ['python3', scriptPath]

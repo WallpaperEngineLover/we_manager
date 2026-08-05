@@ -658,7 +658,6 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   const handleDrop = useCallback(
     async (folderId: string, wallpaperId: string) => {
-      // If the dragged item is in the selection, add all selected items
       const ids = selectedIds.has(wallpaperId)
         ? Array.from(selectedIds)
         : [wallpaperId]
@@ -1446,7 +1445,6 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                   queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
                     old ? [...old, wallpaper.id] : [wallpaper.id]
                   )
-                  queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })
                 }}
                 onUnsubscribed={() => {
                   queryClient.invalidateQueries({ queryKey: ['library'] })
@@ -1523,7 +1521,6 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
               queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
                 old ? [...old, detailId] : [detailId]
               )
-              queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })
             }}
             onPlay={() => handleApplyDetail(detailId)}
             onBrowseCreator={onBrowseCreator}

@@ -60,6 +60,10 @@ export const IpcChannels = {
   CONFIG_SET_AUDIO_SCREEN: 'config:set-audio-screen',
   CONFIG_SET_AMBIENT_VOLUME: 'config:set-ambient-volume',
   CONFIG_SET_DEFAULT_AUDIO_SENSITIVITY: 'config:set-default-audio-sensitivity',
+  CONFIG_SET_DISABLE_PUPPET_ANIMATION: 'config:set-disable-puppet-animation',
+  CONFIG_SET_STEAM_IDENTITY: 'config:set-steam-identity',
+  CONFIG_IGNORE_CREATOR: 'config:ignore-creator',
+  CONFIG_UNIGNORE_CREATOR: 'config:unignore-creator',
   CONFIG_PICK_FOLDER: 'config:pick-folder',
   CONFIG_PICK_FILE: 'config:pick-file',
   CONFIG_IMPORT_WE: 'config:import-we',
@@ -127,7 +131,9 @@ export const IpcChannels = {
   EVENT_STEAM_STATUS: 'event:steam-status',
   EVENT_LWE_INSTALL_PROGRESS: 'event:lwe-install-progress',
   EVENT_BACKUP_PROGRESS: 'event:backup-progress',
-  EVENT_PLAYLIST_STATE_CHANGED: 'event:playlist-state-changed'
+  EVENT_PLAYLIST_STATE_CHANGED: 'event:playlist-state-changed',
+  EVENT_VOTED_IDS_CHANGED: 'event:voted-ids-changed',
+  EVENT_LIBRARY_CHANGED: 'event:library-changed'
 } as const
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]

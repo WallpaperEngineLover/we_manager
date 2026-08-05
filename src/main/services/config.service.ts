@@ -3,6 +3,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { app } from 'electron'
 import { WE_APP_ID } from '@shared/constants'
+import type { SteamIdentity } from '@shared/types'
 
 interface AppConfig {
   workshopPath: string | null
@@ -23,6 +24,11 @@ interface AppConfig {
   ambientVolume: number | null
   /** Default --audio-sensitivity multiplier for audio-reactive objects with no per-wallpaper override */
   defaultAudioSensitivity: number
+  /** Passes --render-debug no-puppet-animation to LWE - freezes puppet (.mdl) meshes at their bind pose, for troubleshooting */
+  disablePuppetAnimation: boolean
+  steamIdentity: SteamIdentity
+  /** steamId64 of creators whose workshop items are hidden from browsing by default */
+  ignoredCreators: string[]
 }
 
 const store = new Store<AppConfig>({
@@ -44,7 +50,10 @@ const store = new Store<AppConfig>({
     killLweOnQuit: false,
     audioScreen: null,
     ambientVolume: null,
-    defaultAudioSensitivity: 1
+    defaultAudioSensitivity: 1,
+    disablePuppetAnimation: false,
+    steamIdentity: 'wallpaper-engine',
+    ignoredCreators: []
   }
 })
 
@@ -117,6 +126,31 @@ export function setKillLweOnQuit(enabled: boolean): void {
   store.set('killLweOnQuit', enabled)
 }
 
+/** How this process identifies itself to Steam - 'wallpaper-engine' registers under WE's own
+ *  app id (full workshop compatibility, but Steam treats this process as WE and closes it on
+ *  logout); 'standalone' registers under a neutral test app id so Steam leaves it running.
+ *  Only read once at startup (steam.service.ts initSteam()) - changing it takes effect on relaunch. */
+export function getSteamIdentity(): SteamIdentity {
+  return store.get('steamIdentity')
+}
+
+export function setSteamIdentity(identity: SteamIdentity): void {
+  store.set('steamIdentity', identity)
+}
+
+export function getIgnoredCreators(): string[] {
+  return store.get('ignoredCreators')
+}
+
+export function ignoreCreator(steamId: string): void {
+  const current = store.get('ignoredCreators')
+  if (!current.includes(steamId)) store.set('ignoredCreators', [...current, steamId])
+}
+
+export function unignoreCreator(steamId: string): void {
+  store.set('ignoredCreators', store.get('ignoredCreators').filter((id) => id !== steamId))
+}
+
 export function getDefaultFps(): number | null {
   return store.get('defaultFps')
 }
@@ -163,6 +197,15 @@ export function setAmbientVolume(volume: number | null): void {
   store.set('ambientVolume', volume)
 }
 
+/** Freezes puppet (.mdl) meshes at their bind pose (--render-debug no-puppet-animation) - troubleshooting only. */
+export function getDisablePuppetAnimation(): boolean {
+  return store.get('disablePuppetAnimation')
+}
+
+export function setDisablePuppetAnimation(disabled: boolean): void {
+  store.set('disablePuppetAnimation', disabled)
+}
+
 /** Default --audio-sensitivity multiplier for audio-reactive objects with no per-wallpaper override. */
 export function getDefaultAudioSensitivity(): number {
   return store.get('defaultAudioSensitivity')
@@ -196,7 +239,6 @@ export function setLweCmakeArgs(args: string | null): void {
   store.set('lweCmakeArgs', args?.trim() || null)
 }
 
-/** Path where we store our copy of config.json */
 export function getWeConfigPath(): string {
   return path.join(app.getPath('userData'), 'we-config.json')
 }
@@ -233,7 +275,6 @@ export function importWEConfigFile(sourcePath: string): string {
   return destPath
 }
 
-/** Create a fresh empty WE-style config.json */
 export function createFreshConfig(): string {
   const destPath = getWeConfigPath()
   const skeleton = {

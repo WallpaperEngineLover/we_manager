@@ -1,30 +1,53 @@
 import * as path from 'path'
-import { WE_APP_ID } from '@shared/constants'
+import { WE_APP_ID, STANDALONE_APP_ID } from '@shared/constants'
 import type { DownloadProgressEvent, WorkshopAuthorInfo } from '@shared/types'
+import { getSteamIdentity } from './config.service'
 
 let client: ReturnType<typeof import('steamworks.js')['init']> | null = null
 
+// Steam not running is a normal, common state (this app works as a local library manager
+// without it). Every isSteamRunning()/getClient() call used to retry the native init and log a
+// warning, so anything that polls (react-query refetches, library scans, ...) turned "Steam is
+// closed" into a continuous stream of console warnings. Only actually retry - and only warn -
+// once per cooldown window, and only log the first failure of a run.
+const RETRY_COOLDOWN_MS = 15000
+let lastInitAttempt = 0
+let hasWarnedThisOutage = false
+
 export function initSteam(): boolean {
+  lastInitAttempt = Date.now()
   try {
     // steamworks.js is a native module and must be required at runtime
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const steamworks: typeof import('steamworks.js') = require('steamworks.js')
-    client = steamworks.init(WE_APP_ID)
-    console.log('[Steam] Initialized')
+    const appId = getSteamIdentity() === 'standalone' ? STANDALONE_APP_ID : WE_APP_ID
+    client = steamworks.init(appId)
+    hasWarnedThisOutage = false
+    console.log(`[Steam] Initialized (app id ${appId})`)
     return true
   } catch (err) {
-    console.warn('[Steam] Init failed (Steam may not be running):', err)
+    client = null
+    if (!hasWarnedThisOutage) {
+      hasWarnedThisOutage = true
+      console.warn('[Steam] Init failed (Steam may not be running):', err)
+    }
     return false
   }
 }
 
+function ensureClient(): void {
+  if (client) return
+  if (Date.now() - lastInitAttempt < RETRY_COOLDOWN_MS) return
+  initSteam()
+}
+
 export function isSteamRunning(): boolean {
-  if (!client) initSteam()
+  ensureClient()
   return client !== null
 }
 
 export function getClient() {
-  if (!client) initSteam()
+  ensureClient()
   if (!client) throw new Error('Steam not initialized')
   return client
 }
@@ -95,12 +118,12 @@ export function openWorkshopItemOverlay(itemId: bigint): void {
   )
 }
 
-// Fetched via getUserItems(VotedUp) and cached for the process lifetime;
-// invalidateVoteCache() is called after each vote.
+// Cached for the process lifetime; invalidateVoteCache() is called after each vote, and
+// startVotedItemsSync() below periodically replaces it wholesale in the background so votes
+// cast outside this app (Steam client, community website) show up without a restart.
 let votedUpCache: Set<string> | null = null
 
-export async function getVotedUpItemIds(): Promise<string[]> {
-  if (votedUpCache) return [...votedUpCache]
+async function fetchVotedUpItems(): Promise<Set<string>> {
   const c = getClient()
   const accountId = c.localplayer.getSteamId().accountId
   const ids = new Set<string>()
@@ -118,12 +141,47 @@ export async function getVotedUpItemIds(): Promise<string[]> {
     if (r.returnedResults === 0 || ids.size >= r.totalResults) break
     page++
   }
-  votedUpCache = ids
-  return [...ids]
+  return ids
+}
+
+export async function getVotedUpItemIds(): Promise<string[]> {
+  if (votedUpCache) return [...votedUpCache]
+  votedUpCache = await fetchVotedUpItems()
+  return [...votedUpCache]
 }
 
 export function invalidateVoteCache(): void {
   votedUpCache = null
+}
+
+function sameIds(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false
+  for (const id of a) if (!b.has(id)) return false
+  return true
+}
+
+const VOTE_SYNC_INTERVAL_MS = 3 * 60 * 1000
+
+// Background reconciliation for the vote cache: an in-app vote already updates the renderer
+// optimistically (see WorkshopCard/WallpaperCard onLiked handlers), so this isn't on the
+// critical path for your own votes - it's what catches up on votes cast elsewhere (Steam
+// client, community website) and settles the rare case where SetUserItemVote's async call
+// didn't actually land before the optimistic update fired.
+let voteSyncTimer: ReturnType<typeof setInterval> | null = null
+
+export function startVotedItemsSync(onChange: (ids: string[]) => void): void {
+  if (voteSyncTimer) return
+  voteSyncTimer = setInterval(async () => {
+    if (!isSteamRunning()) return
+    try {
+      const fresh = await fetchVotedUpItems()
+      const changed = !votedUpCache || !sameIds(votedUpCache, fresh)
+      votedUpCache = fresh
+      if (changed) onChange([...fresh])
+    } catch {
+      // transient Steam hiccup - just try again next tick
+    }
+  }, VOTE_SYNC_INTERVAL_MS)
 }
 
 export function getSubscribedItems(): string[] {

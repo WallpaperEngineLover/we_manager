@@ -549,14 +549,18 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
 // author deleted it, Valve removed it, etc). Those items can never be
 // re-downloaded once lost locally, which is what "backup all unavailable"
 // is for - only workshop-sourced items with local content are worth checking.
-export async function checkUnavailableWallpapers(): Promise<{ checked: number; unavailable: number }> {
-  if (!isSteamRunning()) return { checked: 0, unavailable: 0 }
+export async function checkUnavailableWallpapers(): Promise<{
+  checked: number
+  unavailable: number
+  changed: boolean
+}> {
+  if (!isSteamRunning()) return { checked: 0, unavailable: 0, changed: false }
 
   const wallpapers = store.get('wallpapers')
   const candidates = Object.values(wallpapers).filter(
     (w) => w.source === 'workshop' && !!w.localPath && !w.downloading
   )
-  if (candidates.length === 0) return { checked: 0, unavailable: 0 }
+  if (candidates.length === 0) return { checked: 0, unavailable: 0, changed: false }
 
   let unavailableIds: Set<string>
   try {
@@ -564,7 +568,7 @@ export async function checkUnavailableWallpapers(): Promise<{ checked: number; u
   } catch {
     // Steam request failed outright - leave existing unavailable flags alone
     // rather than reporting everything as available again.
-    return { checked: 0, unavailable: 0 }
+    return { checked: 0, unavailable: 0, changed: false }
   }
 
   let changed = false
@@ -577,7 +581,7 @@ export async function checkUnavailableWallpapers(): Promise<{ checked: number; u
   }
   if (changed) store.set('wallpapers', wallpapers)
 
-  return { checked: candidates.length, unavailable: unavailableIds.size }
+  return { checked: candidates.length, unavailable: unavailableIds.size, changed }
 }
 
 export function getAllFolders(): WallpaperFolder[] {

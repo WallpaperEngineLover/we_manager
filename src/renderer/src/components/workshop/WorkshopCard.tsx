@@ -4,10 +4,12 @@ import type { WorkshopItem } from '@shared/types'
 import type { SubscribeState } from '../../hooks/useSubscriptionQueue'
 import clsx from 'clsx'
 import { openWorkshopPage } from '../../utils/steam'
+import { formatFileSize } from '../../utils/format'
 
 interface WorkshopCardProps {
   item: WorkshopItem
   selected?: boolean
+  ignored?: boolean
   isLiked?: boolean
   canPlay?: boolean
   lweInstalled?: boolean
@@ -24,6 +26,7 @@ interface WorkshopCardProps {
 export default function WorkshopCard({
   item,
   selected = false,
+  ignored = false,
   isLiked = false,
   canPlay = false,
   lweInstalled = false,
@@ -38,6 +41,8 @@ export default function WorkshopCard({
 }: WorkshopCardProps) {
   const [isLiking, setIsLiking] = useState(false)
   const [isApplying, setIsApplying] = useState(false)
+
+  const fileSizeLabel = formatFileSize(item.fileSize)
 
   const subscribed =
     item.isSubscribed ||
@@ -115,11 +120,19 @@ export default function WorkshopCard({
           <img
             src={item.previewUrl}
             alt={item.title}
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            className={clsx(
+              'h-full w-full object-cover transition-transform duration-300 group-hover:scale-105',
+              ignored && 'brightness-50'
+            )}
             loading="lazy"
           />
         ) : (
           <div className="flex h-full items-center justify-center text-gray-600">No preview</div>
+        )}
+        {ignored && (
+          <div className="absolute bottom-2 left-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-gray-300">
+            Ignored
+          </div>
         )}
         {subscribeState === 'downloading' && downloadPercentage != null && (
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
@@ -160,7 +173,10 @@ export default function WorkshopCard({
         <h3 className="truncate text-sm font-medium text-gray-200" title={item.title}>
           {item.title}
         </h3>
-        <p className="mt-1 text-xs text-gray-500">{item.subscriptions.toLocaleString()} subscribers</p>
+        <p className="mt-1 text-xs text-gray-500">
+          {item.subscriptions.toLocaleString()} subscribers
+          {fileSizeLabel ? ` · ${fileSizeLabel}` : ''}
+        </p>
         <div className="mt-2 flex items-center gap-1.5">
           {onLiked && (
             <button

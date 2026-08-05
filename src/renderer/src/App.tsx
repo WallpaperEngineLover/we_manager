@@ -57,6 +57,21 @@ export default function App() {
     })
   }, [queryClient])
 
+  // Background sync (main/index.ts) periodically re-checks votes and library availability
+  // against Steam and pushes updates here, so likes cast elsewhere and items pulled from the
+  // Workshop show up without a restart or a manual refresh.
+  useEffect(() => {
+    return window.electronAPI.on.votedIdsChanged((ids) => {
+      queryClient.setQueryData(['steam-voted-ids'], ids)
+    })
+  }, [queryClient])
+
+  useEffect(() => {
+    return window.electronAPI.on.libraryChanged(() => {
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+    })
+  }, [queryClient])
+
   if (setupDone === null) return null // loading
 
   if (!setupDone) {

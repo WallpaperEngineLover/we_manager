@@ -36,6 +36,7 @@ import {
 import clsx from 'clsx'
 import { openWorkshopPage, openProfilePage, isWorkshopId } from '../../utils/steam'
 import { WE_TYPES, WE_AGE_RATINGS, WE_RESOLUTION_GROUPS } from '../../constants/weFilters'
+import { formatFileSize } from '../../utils/format'
 import type { LweSceneObject, LweProperty, LweAudioObject, WallpaperMeta, ScalingMode } from '@shared/types'
 
 const SCALING_MODE_OPTIONS: { value: ScalingMode; label: string }[] = [
@@ -49,13 +50,6 @@ const SCALING_MODE_OPTIONS: { value: ScalingMode; label: string }[] = [
 const TYPE_TAGS = new Set(WE_TYPES.map((i) => i.tag))
 const AGE_TAGS = new Set(WE_AGE_RATINGS.map((i) => i.tag))
 const RESOLUTION_TAGS = new Set(WE_RESOLUTION_GROUPS.flatMap((g) => g.items.map((i) => i.tag)))
-
-function formatFileSize(bytes?: number): string | null {
-  if (!bytes) return null
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MB`
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
-}
 
 function StarRating({ upvotes, downvotes }: { upvotes: number; downvotes: number }) {
   const total = upvotes + downvotes
@@ -270,6 +264,48 @@ function AudioObjectRow({
   )
 }
 
+// One row per Sound object (e.g. an alternate music track) - volume is independent per track, so
+// muting all but one (or blending several) is just a matter of where each slider sits, applied
+// live without a wallpaper reload.
+function SoundTrackRow({
+  trackName,
+  volume,
+  busy,
+  onCommit
+}: {
+  trackName: string
+  volume: number
+  busy: boolean
+  onCommit: (volume: number) => void
+}) {
+  const [draft, setDraft] = useState<number | null>(null)
+  const value = draft ?? volume
+
+  return (
+    <div className="px-1.5 py-1">
+      <div className="mb-0.5 flex items-center justify-between text-xs text-gray-400">
+        <span className="truncate" title={trackName}>
+          {trackName}
+        </span>
+        <span className="text-gray-500">{value === 0 ? 'muted' : `${Math.round(value * 100)}%`}</span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={1}
+        step={0.1}
+        value={value}
+        disabled={busy}
+        onChange={(e) => setDraft(Number(e.target.value))}
+        onMouseUp={(e) => { onCommit(Number(e.currentTarget.value)); setDraft(null) }}
+        onTouchEnd={(e) => { onCommit(Number(e.currentTarget.value)); setDraft(null) }}
+        onKeyUp={(e) => { onCommit(Number(e.currentTarget.value)); setDraft(null) }}
+        className="w-full accent-indigo-500 disabled:opacity-50"
+      />
+    </div>
+  )
+}
+
 interface DetailSidebarProps {
   id: string
   fallbackTitle: string
@@ -320,6 +356,8 @@ export default function DetailSidebar({
   const [committingProperty, setCommittingProperty] = useState<string | null>(null)
   const [audioOpen, setAudioOpen] = useState(false)
   const [committingAudioObjectId, setCommittingAudioObjectId] = useState<string | null>(null)
+  const [soundTracksOpen, setSoundTracksOpen] = useState(false)
+  const [committingSoundObjectId, setCommittingSoundObjectId] = useState<string | null>(null)
 
   const { data: item } = useQuery({
     queryKey: ['workshop-detail', id],
@@ -348,6 +386,10 @@ export default function DetailSidebar({
   const localPath = libraryMeta?.localPath
   const disabledObjects = libraryMeta?.disabledObjects ?? []
   const enabledObjects = libraryMeta?.enabledObjects ?? []
+  // item resolves to exactly null (not undefined) once a workshop lookup confirms the id no
+  // longer exists on Steam - voting on it would just fail, so treat it like the library's own
+  // "unavailable" flag and grey out the vote buttons below.
+  const unavailable = !!libraryMeta?.unavailable || item === null
 
   const { data: activeWallpaper } = useQuery({
     queryKey: ['active-wallpaper'],
@@ -394,6 +436,11 @@ export default function DetailSidebar({
   }
   const audioSensitivity = libraryMeta?.audioSensitivity ?? {}
 
+  // Sound objects (e.g. alternate music tracks) are already in the objects list fetched for the
+  // Layers section above - no separate query needed, just filter by type.
+  const soundObjects = objects.filter((o) => o.type === 'sound')
+  const soundVolume = libraryMeta?.soundVolume ?? {}
+
   // Persists a settings patch and, if this wallpaper is currently playing, pushes it live via
   // the control-file hotswap (no process restart). Falls back to a full stop+relaunch if the
   // push fails, e.g. an older linux-wallpaperengine build without the extended protocol.
@@ -413,7 +460,8 @@ export default function DetailSidebar({
         cornerColor: patch.cornerColor,
         speed: patch.playbackSpeed,
         propertyOverrides: patch.propertyOverrides,
-        audioSensitivity: patch.audioSensitivity
+        audioSensitivity: patch.audioSensitivity,
+        soundVolume: patch.soundVolume
       })
       if (!ok) {
         await window.electronAPI.lwe.stop()
@@ -473,6 +521,16 @@ export default function DetailSidebar({
       await persistAndMaybeRelaunch({ audioSensitivity: { ...audioSensitivity, [objectId]: multiplier } })
     } finally {
       setCommittingAudioObjectId(null)
+    }
+  }
+
+  async function commitSoundVolume(objectId: string, volume: number) {
+    if (committingSoundObjectId) return
+    setCommittingSoundObjectId(objectId)
+    try {
+      await persistAndMaybeRelaunch({ soundVolume: { ...soundVolume, [objectId]: volume } })
+    } finally {
+      setCommittingSoundObjectId(null)
     }
   }
 
@@ -592,10 +650,12 @@ export default function DetailSidebar({
   const genreTags = tags.filter(
     (t) => t !== typeTag && t !== ageTag && !resolutionTags.includes(t)
   )
-  const fileSizeLabel = formatFileSize(localFileSize)
+  // Prefer the real on-disk size for an already-downloaded item over Steam's reported upload
+  // size (item.fileSize) - they can differ once extracted, and the local number is exact.
+  const fileSizeLabel = formatFileSize(libraryMeta?.fileSize ?? item?.fileSize ?? localFileSize)
 
   async function handleLike() {
-    if (isLiked || isLiking) return
+    if (isLiked || isLiking || unavailable) return
     setIsLiking(true)
     try {
       await window.electronAPI.steam.vote(id, true)
@@ -606,7 +666,7 @@ export default function DetailSidebar({
   }
 
   async function handleDislike() {
-    if (isDisliking) return
+    if (isDisliking || unavailable) return
     setIsDisliking(true)
     try {
       await window.electronAPI.steam.vote(id, false)
@@ -1061,16 +1121,51 @@ export default function DetailSidebar({
           </div>
         )}
 
+        {localPath && lweInstalled && (objectsLoading || soundObjects.length > 0) && (
+          <div className="border-t border-white/5 pt-3">
+            <button
+              onClick={() => setSoundTracksOpen((v) => !v)}
+              className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
+            >
+              {soundTracksOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              <Volume2 size={12} />
+              <span className="flex-1 text-left">Sound Tracks</span>
+              {isActive && (
+                <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
+                  live
+                </span>
+              )}
+              {objectsLoading && <Loader2 size={11} className="animate-spin" />}
+            </button>
+            {soundTracksOpen && (
+              <div className="mt-1.5 space-y-0.5">
+                {soundObjects.map((obj) => (
+                  <SoundTrackRow
+                    key={obj.id}
+                    trackName={obj.name}
+                    volume={soundVolume[obj.id] ?? 0}
+                    busy={committingSoundObjectId === obj.id}
+                    onCommit={(volume) => commitSoundVolume(obj.id, volume)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-col gap-1.5 border-t border-white/5 pt-3">
           <div className="flex gap-1.5">
             <button
               onClick={handleLike}
-              disabled={isLiked || isLiking}
+              disabled={isLiked || isLiking || unavailable}
+              title={unavailable ? 'Removed from the Steam Workshop - voting is no longer possible' : undefined}
               className={clsx(
-                'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs transition-colors disabled:cursor-default',
-                isLiked
-                  ? 'bg-green-600/30 text-green-300'
-                  : 'bg-white/5 text-gray-300 hover:bg-white/10'
+                'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs transition-colors disabled:cursor-not-allowed',
+                unavailable
+                  ? 'bg-white/5 text-gray-600 opacity-50'
+                  : isLiked
+                    ? 'bg-green-600/30 text-green-300'
+                    : 'bg-white/5 text-gray-300 hover:bg-white/10'
               )}
             >
               {isLiking ? <Loader2 size={12} className="animate-spin" /> : <ThumbsUp size={12} />}
@@ -1078,8 +1173,12 @@ export default function DetailSidebar({
             </button>
             <button
               onClick={handleDislike}
-              disabled={isDisliking}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-white/5 py-1.5 text-xs text-gray-300 transition-colors hover:bg-white/10"
+              disabled={isDisliking || unavailable}
+              title={unavailable ? 'Removed from the Steam Workshop - voting is no longer possible' : undefined}
+              className={clsx(
+                'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs transition-colors disabled:cursor-not-allowed',
+                unavailable ? 'bg-white/5 text-gray-600 opacity-50' : 'bg-white/5 text-gray-300 hover:bg-white/10'
+              )}
             >
               {isDisliking ? <Loader2 size={12} className="animate-spin" /> : <ThumbsDown size={12} />}
               Dislike
