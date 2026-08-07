@@ -12,7 +12,10 @@ import {
   Play,
   Download,
   EyeOff,
-  Eye
+  Eye,
+  Folder,
+  FolderInput,
+  Trash2
 } from 'lucide-react'
 import WorkshopCard from './WorkshopCard'
 import PreviewSizeToggle from '../common/PreviewSizeToggle'
@@ -30,7 +33,7 @@ import {
 } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
 import { useClickOutside } from '../../hooks/useClickOutside'
-import { useClampedPosition } from '../../hooks/useContextMenuPosition'
+import { useClampedPosition, useFlipSide } from '../../hooks/useContextMenuPosition'
 import { useSubscriptionQueue } from '../../hooks/useSubscriptionQueue'
 import { toggle } from '../../utils/array'
 import { forEachIgnoringErrors } from '../../utils/async'
@@ -149,6 +152,7 @@ interface CtxMenu {
   x: number
   y: number
   ids: string[]
+  showFolderSub: boolean
 }
 
 interface Marquee {
@@ -184,6 +188,7 @@ export default function WorkshopBrowser({
   const gridRef = useRef<HTMLDivElement>(null)
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null)
   const ctxRef = useRef<HTMLDivElement>(null)
+  const folderSubRef = useRef<HTMLDivElement>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [previewSize, setPreviewSize] = usePreviewSize()
@@ -192,6 +197,7 @@ export default function WorkshopBrowser({
 
   useClickOutside(ctxRef, () => setCtxMenu(null), !!ctxMenu)
   const ctxPos = useClampedPosition(ctxRef, ctxMenu)
+  const folderSubSide = useFlipSide(folderSubRef, !!ctxMenu?.showFolderSub)
 
   useEffect(() => {
     saveFilters(filters)
@@ -255,7 +261,7 @@ export default function WorkshopBrowser({
       if (!selection.has(itemId)) {
         setSelection(new Set(ids))
       }
-      setCtxMenu({ x: e.clientX, y: e.clientY, ids })
+      setCtxMenu({ x: e.clientX, y: e.clientY, ids, showFolderSub: false })
     },
     [selection]
   )
@@ -356,6 +362,22 @@ export default function WorkshopBrowser({
       ),
     [libraryWallpapers]
   )
+  const libraryIdSet = useMemo(
+    () => new Set(libraryWallpapers.map((w) => w.id)),
+    [libraryWallpapers]
+  )
+
+  const { data: folders = [], refetch: refetchFolders } = useQuery({
+    queryKey: ['folders'],
+    queryFn: () => window.electronAPI.folders.getAll()
+  })
+  const folderOfItem = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const f of folders) {
+      for (const id of f.items) map.set(id, f.id)
+    }
+    return map
+  }, [folders])
 
   const { data: lweStatus } = useQuery({
     queryKey: ['lwe-status'],
@@ -382,6 +404,28 @@ export default function WorkshopBrowser({
     if (!item) return
     onBrowseCreator?.(item.creatorSteamId)
     closeCtxMenu()
+  }
+
+  async function ctxMoveToFolder(folderId: string) {
+    if (!ctxMenu) return
+    const ids = ctxMenu.ids.filter((id) => libraryIdSet.has(id))
+    closeCtxMenu()
+    if (ids.length === 0) return
+    await window.electronAPI.folders.addItems(folderId, ids)
+    refetchFolders()
+  }
+
+  async function ctxRemoveFromFolder() {
+    if (!ctxMenu) return
+    const ids = ctxMenu.ids
+    closeCtxMenu()
+    for (const folder of folders) {
+      const overlap = ids.filter((id) => folder.items.includes(id))
+      if (overlap.length > 0) {
+        await window.electronAPI.folders.removeItems(folder.id, overlap)
+      }
+    }
+    refetchFolders()
   }
 
   async function ctxToggleIgnoreCreator() {
@@ -583,6 +627,15 @@ export default function WorkshopBrowser({
         height: Math.abs(marquee.endY - marquee.startY)
       }
     : null
+
+  const ctxLibraryIds = ctxMenu ? ctxMenu.ids.filter((id) => libraryIdSet.has(id)) : []
+  const ctxCurrentFolderIds = ctxMenu
+    ? new Set(ctxMenu.ids.map((id) => folderOfItem.get(id)).filter((id): id is string => !!id))
+    : new Set<string>()
+  const ctxHasFolder = ctxCurrentFolderIds.size > 0
+  const ctxMoveTargets = folders.filter(
+    (f) => !(ctxCurrentFolderIds.size === 1 && ctxCurrentFolderIds.has(f.id))
+  )
 
   const detailItem = detailId ? allItems.find((i) => i.publishedFileId === detailId) : undefined
   const detailSubscribeState = detailId ? subscribeEntries.get(detailId)?.state : undefined
@@ -1046,6 +1099,52 @@ export default function WorkshopBrowser({
             >
               <User size={12} /> Browse wallpapers from this creator
             </button>
+          )}
+          {ctxLibraryIds.length > 0 && (
+            <>
+              <div className="my-1 border-t border-white/5" />
+              <div className="relative">
+                <button
+                  onClick={() =>
+                    setCtxMenu((prev) => (prev ? { ...prev, showFolderSub: !prev.showFolderSub } : null))
+                  }
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+                >
+                  <FolderInput size={12} /> Move to folder
+                  <ChevronRight size={12} className="ml-auto" />
+                </button>
+                {ctxMenu.showFolderSub && (
+                  <div
+                    ref={folderSubRef}
+                    className={clsx(
+                      'absolute top-0 min-w-[160px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl',
+                      folderSubSide === 'left' ? 'right-full mr-1' : 'left-full ml-1'
+                    )}
+                  >
+                    {ctxMoveTargets.length === 0 && (
+                      <div className="px-3 py-1.5 text-gray-500">No other folders</div>
+                    )}
+                    {ctxMoveTargets.map((f) => (
+                      <button
+                        key={f.id}
+                        onClick={() => ctxMoveToFolder(f.id)}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+                      >
+                        <Folder size={12} /> {f.title}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {ctxHasFolder && (
+                <button
+                  onClick={ctxRemoveFromFolder}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
+                >
+                  <Trash2 size={12} /> Remove from folder
+                </button>
+              )}
+            </>
           )}
           {ctxMenu.ids.length === 1 && (() => {
             const ctxItem = allItems.find((i) => i.publishedFileId === ctxMenu.ids[0])

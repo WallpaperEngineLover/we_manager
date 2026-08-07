@@ -27,10 +27,12 @@ import clsx from 'clsx'
 import type { Playlist, PlaylistPlaybackState, PlaylistSettings } from '@shared/types'
 import PlaylistItemRow from './PlaylistItemRow'
 import WallpaperPickerModal from './WallpaperPickerModal'
+import DetailSidebar from '../common/DetailSidebar'
 import { useClickOutside } from '../../hooks/useClickOutside'
 import { useClampedPosition, useFlipSide } from '../../hooks/useContextMenuPosition'
 import { openWorkshopPage, isWorkshopId } from '../../utils/steam'
 import { useToast } from '../common/Toast'
+import { getPreviewSrc } from '../../utils/preview'
 
 const SORT_OPTIONS: { value: PlaylistSettings['sortBy']; label: string }[] = [
   { value: 'manual', label: 'Manual order' },
@@ -54,6 +56,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [detailId, setDetailId] = useState<string | null>(null)
 
   const [ctxMenu, setCtxMenu] = useState<{
     x: number
@@ -100,6 +103,18 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
     queryKey: ['playlist-playback-state'],
     queryFn: () => window.electronAPI.playlist.getState()
   })
+
+  const { data: lweStatus } = useQuery({
+    queryKey: ['lwe-status'],
+    queryFn: () => window.electronAPI.lwe.status()
+  })
+
+  const { data: votedIds } = useQuery({
+    queryKey: ['steam-voted-ids'],
+    queryFn: () => window.electronAPI.steam.getVotedIds(),
+    staleTime: Infinity
+  })
+  const votedSet = useMemo(() => new Set(votedIds ?? []), [votedIds])
 
   useEffect(() => {
     return window.electronAPI.on.playlistStateChanged((state: PlaylistPlaybackState) => {
@@ -191,6 +206,21 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
     closeCtxMenu()
     queryClient.invalidateQueries({ queryKey: ['library-all'] })
     refetchFolders()
+  }
+
+  async function unsubscribeWallpaper(wallpaperId: string) {
+    await window.electronAPI.steam.unsubscribe(wallpaperId)
+    queryClient.invalidateQueries({ queryKey: ['library-all'] })
+    refetchFolders()
+  }
+
+  async function handleApplyDetail(wallpaperId: string) {
+    try {
+      await window.electronAPI.wallpaper.apply({ wallpaperId })
+      queryClient.invalidateQueries({ queryKey: ['library-all'] })
+    } catch (err) {
+      showToast((err as Error).message)
+    }
   }
 
   async function ctxVote(up: boolean) {
@@ -445,6 +475,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
         ))}
       </div>
 
+      <div className="flex flex-1 overflow-hidden">
       <div className="flex flex-1 flex-col overflow-hidden">
         {!activePlaylist ? (
           <div className="flex h-full items-center justify-center text-gray-600">
@@ -605,6 +636,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                   onRemove={() => handleRemoveItem(item.wallpaperId)}
                   onUpdate={(patch) => handleUpdateItem(item.wallpaperId, patch)}
                   onContextMenu={(e) => openItemCtxMenu(e, item.wallpaperId)}
+                  onOpenDetail={() => setDetailId(item.wallpaperId)}
                   defaultDurationSec={activePlaylist.settings.defaultDurationSec}
                   defaultVolume={activePlaylist.settings.defaultVolume}
                 />
@@ -612,6 +644,39 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
             </div>
           </>
         )}
+      </div>
+
+      {detailId && wallpaperById.get(detailId) && (
+        <DetailSidebar
+          id={detailId}
+          fallbackTitle={wallpaperById.get(detailId)!.title}
+          fallbackPreviewUrl={getPreviewSrc(wallpaperById.get(detailId))}
+          fallbackTags={wallpaperById.get(detailId)!.tags}
+          fallbackAuthorSteamId={wallpaperById.get(detailId)!.authorSteamId}
+          localFileSize={wallpaperById.get(detailId)!.fileSize}
+          isSubscribed={wallpaperById.get(detailId)!.subscribed}
+          isLiked={votedSet.has(detailId)}
+          canPlay={
+            !!wallpaperById.get(detailId)!.localPath &&
+            !wallpaperById.get(detailId)!.downloading &&
+            !wallpaperById.get(detailId)!.downloadFailed
+          }
+          lweInstalled={lweStatus?.installed ?? false}
+          onClose={() => setDetailId(null)}
+          onSubscribe={async () => {
+            await window.electronAPI.steam.subscribe(detailId)
+            queryClient.invalidateQueries({ queryKey: ['library-all'] })
+          }}
+          onUnsubscribe={() => unsubscribeWallpaper(detailId)}
+          onLiked={() => {
+            queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
+              old ? [...old, detailId] : [detailId]
+            )
+          }}
+          onPlay={() => handleApplyDetail(detailId)}
+          onBrowseCreator={onBrowseCreator}
+        />
+      )}
       </div>
 
       {pickerOpen && activePlaylist && (

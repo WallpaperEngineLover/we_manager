@@ -7,6 +7,7 @@ import { getWallpaper, updateWallpaper } from './library.service'
 import { applyWallpaperMeta } from './wallpaper.service'
 import { setActiveWallpaperId } from './wallpaper-state.service'
 import { getLweStatus } from './lwe.service'
+import { getAutostartPlaylistId } from './config.service'
 
 interface PlaybackStore {
   activePlaylistId: string | null
@@ -277,7 +278,8 @@ export function initPlaylistPlayer(window: BrowserWindow): boolean {
   if (!getLweStatus().installed) return false
 
   const wasPlaying = store.get('isPlaying')
+  const isConfiguredAutostart = activeId === getAutostartPlaylistId()
   startPlaylist(activeId)
-  if (!wasPlaying) pausePlaylist()
+  if (!wasPlaying && !isConfiguredAutostart) pausePlaylist()
   return true
 }

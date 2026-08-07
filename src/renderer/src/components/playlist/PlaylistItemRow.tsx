@@ -17,6 +17,7 @@ interface PlaylistItemRowProps {
   onRemove: () => void
   onUpdate: (patch: { volume?: number; durationSec?: number }) => void
   onContextMenu: (e: React.MouseEvent) => void
+  onOpenDetail: () => void
   defaultDurationSec: number
   defaultVolume: number
 }
@@ -34,6 +35,7 @@ export default function PlaylistItemRow({
   onRemove,
   onUpdate,
   onContextMenu,
+  onOpenDetail,
   defaultDurationSec,
   defaultVolume
 }: PlaylistItemRowProps) {
@@ -83,14 +85,18 @@ export default function PlaylistItemRow({
             )}
           </div>
         </button>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm text-gray-200" title={wallpaper?.title}>
+        <button
+          onClick={onOpenDetail}
+          title="View details"
+          className="min-w-0 flex-1 text-left"
+        >
+          <p className="truncate text-sm text-gray-200 hover:text-white" title={wallpaper?.title}>
             {wallpaper?.title ?? item.wallpaperId}
           </p>
           <p className="text-xs text-gray-600">
             {item.durationSec ?? defaultDurationSec}s · Vol {item.volume ?? defaultVolume}
           </p>
-        </div>
+        </button>
         <button
           onClick={() => setExpanded((v) => !v)}
           title="Per-wallpaper overrides"
