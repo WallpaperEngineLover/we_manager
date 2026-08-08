@@ -35,6 +35,7 @@ import type { LibraryFilters, WallpaperFolder, LweStatus } from '@shared/types'
 import clsx from 'clsx'
 import { WE_TYPES, WE_LIBRARY_AGE_RATINGS } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
+import { useSelectableGrid } from '../../hooks/useSelectableGrid'
 import { useClickOutside } from '../../hooks/useClickOutside'
 import { useClampedPosition, useFlipSide } from '../../hooks/useContextMenuPosition'
 import { toggle } from '../../utils/array'
@@ -250,13 +251,6 @@ function FolderMenu({
   )
 }
 
-interface Marquee {
-  startX: number
-  startY: number
-  endX: number
-  endY: number
-}
-
 interface LibraryViewProps {
   onBrowseCreator?: (creatorSteamId: string) => void
 }
@@ -288,12 +282,6 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   } | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [lastClickedId, setLastClickedId] = useState<string | null>(null)
-  const [marquee, setMarquee] = useState<Marquee | null>(null)
-  const marqueeActive = useRef(false)
-  const gridRef = useRef<HTMLDivElement>(null)
 
   const [ctxMenu, setCtxMenu] = useState<{
     x: number
@@ -482,6 +470,23 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   useEffect(() => { setPage(1) }, [filterState, activeFolder, search, sortBy, sortDir, pageSize])
 
+  const wallpaperIds = useMemo(() => wallpapers.map((w) => w.id), [wallpapers])
+  const {
+    selectedIds,
+    setSelectedIds,
+    setLastClickedId,
+    gridRef,
+    handleCardSelect,
+    handleMarqueeStart,
+    handleMarqueeMove,
+    handleMarqueeEnd,
+    marqueeRect
+  } = useSelectableGrid({
+    ids: wallpaperIds,
+    dataAttr: 'data-wallpaper-id',
+    onOpenDetail: setDetailId
+  })
+
   // Count for "All" sidebar button: unsorted items only
   const unsortedCount = useMemo(
     () => filtered.filter((w) => !allFolderItemIds.has(w.id)).length,
@@ -667,124 +672,6 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     [refetchFolders, selectedIds]
   )
 
-  const handleCardSelect = useCallback(
-    (wallpaperId: string, e: React.MouseEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        // Ctrl+click: toggle individual
-        setSelectedIds((prev) => {
-          const next = new Set(prev)
-          if (next.has(wallpaperId)) next.delete(wallpaperId)
-          else next.add(wallpaperId)
-          return next
-        })
-        setLastClickedId(wallpaperId)
-      } else if (e.shiftKey && lastClickedId) {
-        // Shift+click: range select
-        const ids = wallpapers.map((w) => w.id)
-        const from = ids.indexOf(lastClickedId)
-        const to = ids.indexOf(wallpaperId)
-        if (from !== -1 && to !== -1) {
-          const start = Math.min(from, to)
-          const end = Math.max(from, to)
-          const rangeIds = ids.slice(start, end + 1)
-          setSelectedIds((prev) => {
-            const next = new Set(prev)
-            for (const id of rangeIds) next.add(id)
-            return next
-          })
-        }
-      } else {
-        // Normal click: select single
-        setSelectedIds(new Set([wallpaperId]))
-        setLastClickedId(wallpaperId)
-      }
-    },
-    [lastClickedId, wallpapers]
-  )
-
-  const handleMarqueeStart = useCallback(
-    (e: React.MouseEvent) => {
-      // Only start marquee when clicking on the grid background, not on a card
-      if ((e.target as HTMLElement).closest('[data-wallpaper-id]')) return
-      if (e.button !== 0) return
-
-      const container = gridRef.current
-      if (!container) return
-
-      const rect = container.getBoundingClientRect()
-      const x = e.clientX - rect.left + container.scrollLeft
-      const y = e.clientY - rect.top + container.scrollTop
-
-      marqueeActive.current = true
-      setMarquee({ startX: x, startY: y, endX: x, endY: y })
-
-      if (!e.ctrlKey && !e.metaKey) {
-        setSelectedIds(new Set())
-      }
-    },
-    []
-  )
-
-  const handleMarqueeMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (!marqueeActive.current || !marquee) return
-
-      const container = gridRef.current
-      if (!container) return
-
-      const rect = container.getBoundingClientRect()
-      const x = e.clientX - rect.left + container.scrollLeft
-      const y = e.clientY - rect.top + container.scrollTop
-
-      setMarquee((prev) => prev ? { ...prev, endX: x, endY: y } : null)
-    },
-    [marquee]
-  )
-
-  const handleMarqueeEnd = useCallback(() => {
-    if (!marqueeActive.current || !marquee) return
-    marqueeActive.current = false
-
-    const container = gridRef.current
-    if (!container) return
-
-    const mx1 = Math.min(marquee.startX, marquee.endX)
-    const my1 = Math.min(marquee.startY, marquee.endY)
-    const mx2 = Math.max(marquee.startX, marquee.endX)
-    const my2 = Math.max(marquee.startY, marquee.endY)
-
-    // Skip if marquee is too small (just a click)
-    if (Math.abs(mx2 - mx1) < 5 && Math.abs(my2 - my1) < 5) {
-      setMarquee(null)
-      return
-    }
-
-    const containerRect = container.getBoundingClientRect()
-    const cards = container.querySelectorAll('[data-wallpaper-id]')
-    const hits = new Set<string>()
-
-    cards.forEach((card) => {
-      const cardRect = card.getBoundingClientRect()
-      const cx1 = cardRect.left - containerRect.left + container.scrollLeft
-      const cy1 = cardRect.top - containerRect.top + container.scrollTop
-      const cx2 = cx1 + cardRect.width
-      const cy2 = cy1 + cardRect.height
-
-      if (cx1 < mx2 && cx2 > mx1 && cy1 < my2 && cy2 > my1) {
-        const id = card.getAttribute('data-wallpaper-id')
-        if (id) hits.add(id)
-      }
-    })
-
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      hits.forEach((id) => next.add(id))
-      return next
-    })
-
-    setMarquee(null)
-  }, [marquee])
-
   useEffect(() => {
     setSelectedIds(new Set())
     setLastClickedId(null)
@@ -792,16 +679,6 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        setSelectedIds(new Set())
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-        // Only if library grid is focused (not a text input)
-        const active = document.activeElement
-        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
-        e.preventDefault()
-        setSelectedIds(new Set(wallpapers.map((w) => w.id)))
-      }
       if (e.key === '+' && selectedIds.size > 0) {
         const active = document.activeElement
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
@@ -810,16 +687,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [wallpapers, selectedIds, currentPlaylistId])
-
-  const marqueeRect = marquee
-    ? {
-        left: Math.min(marquee.startX, marquee.endX),
-        top: Math.min(marquee.startY, marquee.endY),
-        width: Math.abs(marquee.endX - marquee.startX),
-        height: Math.abs(marquee.endY - marquee.startY)
-      }
-    : null
+  }, [selectedIds, currentPlaylistId])
 
   const openWallpaperCtxMenu = useCallback(
     (e: React.MouseEvent, wallpaperId: string) => {
@@ -912,12 +780,11 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   async function ctxOpenLocally() {
     if (!ctxMenu) return
-    for (const w of ctxWallpapers) {
-      if (w.localPath) {
-        await window.electronAPI.shell.openPath(w.localPath)
-      }
-    }
+    const paths = ctxWallpapers.filter((w) => w.localPath).map((w) => w.localPath!)
     closeCtxMenu()
+    if (paths.length > 0) {
+      await window.electronAPI.shell.openPaths(paths)
+    }
   }
 
   async function ctxPreviewVideo() {
@@ -1431,6 +1298,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 key={wallpaper.id}
                 wallpaper={wallpaper}
                 selected={selectedIds.has(wallpaper.id)}
+                isDetailOpen={detailId === wallpaper.id}
                 lweInstalled={lweStatus?.installed ?? false}
                 isLiked={votedSet.has(wallpaper.id)}
                 currentPlaylistId={currentPlaylistId}
@@ -1455,7 +1323,6 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 }
                 onSelect={(e) => handleCardSelect(wallpaper.id, e)}
                 onContextMenu={(e) => openWallpaperCtxMenu(e, wallpaper.id)}
-                onOpenDetail={() => setDetailId(wallpaper.id)}
               />
             ))}
           </div>

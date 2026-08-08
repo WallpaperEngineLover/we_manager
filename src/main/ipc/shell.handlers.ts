@@ -2,6 +2,8 @@ import { ipcMain, shell } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import * as path from 'path'
 import * as fs from 'fs'
+import { spawn } from 'child_process'
+import { isCommandAvailable } from '../utils/platform'
 
 export function registerShellHandlers(): void {
   // Open a file with the OS default application (e.g. video in media player)
@@ -25,6 +27,29 @@ export function registerShellHandlers(): void {
     const resolved = path.resolve(targetPath)
     const result = await shell.openPath(resolved)
     return { ok: !result, error: result || undefined }
+  })
+
+  // Open several folders in one file manager window (tabs) instead of one window per path
+  ipcMain.handle(IpcChannels.SHELL_OPEN_PATHS, async (_e, targetPaths: string[]) => {
+    const resolved = [...new Set(targetPaths.map((p) => path.resolve(p)))].filter((p) =>
+      fs.existsSync(p)
+    )
+    if (resolved.length === 0) return { ok: false, error: 'No valid paths' }
+    if (resolved.length === 1) {
+      const result = await shell.openPath(resolved[0])
+      return { ok: !result, error: result || undefined }
+    }
+
+    const tabbedFileManager = ['dolphin', 'nautilus'].find(isCommandAvailable)
+    if (tabbedFileManager) {
+      spawn(tabbedFileManager, resolved, { detached: true, stdio: 'ignore' }).unref()
+      return { ok: true }
+    }
+
+    for (const p of resolved) {
+      await shell.openPath(p)
+    }
+    return { ok: true }
   })
 
   // Open a URL or protocol link (e.g. steam://, https://) with the OS handler

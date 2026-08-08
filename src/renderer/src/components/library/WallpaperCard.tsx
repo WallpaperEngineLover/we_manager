@@ -10,6 +10,7 @@ import type { PreviewSize } from '../../hooks/usePreviewSize'
 interface WallpaperCardProps {
   wallpaper: WallpaperMeta
   selected?: boolean
+  isDetailOpen?: boolean
   lweInstalled?: boolean
   isLiked?: boolean
   currentPlaylistId?: string | null
@@ -21,12 +22,12 @@ interface WallpaperCardProps {
   onRedownloaded?: () => void
   onSelect?: (e: React.MouseEvent) => void
   onContextMenu?: (e: React.MouseEvent) => void
-  onOpenDetail?: () => void
 }
 
 export default function WallpaperCard({
   wallpaper,
   selected,
+  isDetailOpen,
   lweInstalled,
   isLiked = false,
   currentPlaylistId = null,
@@ -37,8 +38,7 @@ export default function WallpaperCard({
   onAddedToPlaylist,
   onRedownloaded,
   onSelect,
-  onContextMenu,
-  onOpenDetail
+  onContextMenu
 }: WallpaperCardProps) {
   const { showToast } = useToast()
   const [isApplying, setIsApplying] = useState(false)
@@ -170,9 +170,11 @@ export default function WallpaperCard({
       onContextMenu={onContextMenu}
       className={clsx(
         'group relative overflow-hidden rounded-lg bg-[#1a1a1a] transition-all cursor-pointer select-none',
-        selected
-          ? 'ring-2 ring-indigo-500'
-          : 'hover:ring-1 hover:ring-indigo-500/50'
+        isDetailOpen
+          ? 'ring-2 ring-sky-400'
+          : selected
+            ? 'ring-2 ring-indigo-500'
+            : 'hover:ring-1 hover:ring-indigo-500/50'
       )}
     >
       <div
@@ -186,13 +188,7 @@ export default function WallpaperCard({
         <Check size={12} />
       </div>
 
-      <div
-        className="aspect-video overflow-hidden bg-[#111] relative cursor-pointer"
-        onClick={(e) => {
-          e.stopPropagation()
-          onOpenDetail?.()
-        }}
-      >
+      <div className="aspect-video overflow-hidden bg-[#111] relative">
         {previewSrc ? (
           <img
             src={previewSrc}

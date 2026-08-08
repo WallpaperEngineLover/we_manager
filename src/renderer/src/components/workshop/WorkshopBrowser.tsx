@@ -32,6 +32,7 @@ import {
   WE_GENRES
 } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
+import { useSelectableGrid } from '../../hooks/useSelectableGrid'
 import { useClickOutside } from '../../hooks/useClickOutside'
 import { useClampedPosition, useFlipSide } from '../../hooks/useContextMenuPosition'
 import { useSubscriptionQueue } from '../../hooks/useSubscriptionQueue'
@@ -155,13 +156,6 @@ interface CtxMenu {
   showFolderSub: boolean
 }
 
-interface Marquee {
-  startX: number
-  startY: number
-  endX: number
-  endY: number
-}
-
 interface WorkshopBrowserProps {
   creatorFilter?: string | null
   onClearCreatorFilter?: () => void
@@ -181,11 +175,6 @@ export default function WorkshopBrowser({
   const [queryType, setQueryType] = useState<WorkshopQueryType>('RankedByPublicationDate')
   const [showFilters, setShowFilters] = useState(true)
   const [filters, setFilters] = useState<WorkshopFilterState>(loadFilters)
-  const [selection, setSelection] = useState<Set<string>>(new Set())
-  const [lastClickedId, setLastClickedId] = useState<string | null>(null)
-  const [marquee, setMarquee] = useState<Marquee | null>(null)
-  const marqueeActive = useRef(false)
-  const gridRef = useRef<HTMLDivElement>(null)
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null)
   const ctxRef = useRef<HTMLDivElement>(null)
   const folderSubRef = useRef<HTMLDivElement>(null)
@@ -253,18 +242,6 @@ export default function WorkshopBrowser({
   function clearAll() {
     setFilters((prev) => ({ ...DEFAULT_STATE, filterMode: prev.filterMode }))
   }
-
-  const openCtxMenu = useCallback(
-    (e: React.MouseEvent, itemId: string) => {
-      e.preventDefault()
-      const ids = selection.has(itemId) ? [...selection] : [itemId]
-      if (!selection.has(itemId)) {
-        setSelection(new Set(ids))
-      }
-      setCtxMenu({ x: e.clientX, y: e.clientY, ids, showFolderSub: false })
-    },
-    [selection]
-  )
 
   function closeCtxMenu() {
     setCtxMenu(null)
@@ -481,6 +458,34 @@ export default function WorkshopBrowser({
     [showIgnored, pageShownItems, pageIgnoredItems]
   )
 
+  const paginatedIds = useMemo(() => paginatedItems.map((i) => i.publishedFileId), [paginatedItems])
+  const {
+    selectedIds: selection,
+    setSelectedIds: setSelection,
+    gridRef,
+    handleCardSelect,
+    handleMarqueeStart,
+    handleMarqueeMove,
+    handleMarqueeEnd,
+    marqueeRect
+  } = useSelectableGrid({
+    ids: paginatedIds,
+    dataAttr: 'data-workshop-id',
+    onOpenDetail: setDetailId
+  })
+
+  const openCtxMenu = useCallback(
+    (e: React.MouseEvent, itemId: string) => {
+      e.preventDefault()
+      const ids = selection.has(itemId) ? [...selection] : [itemId]
+      if (!selection.has(itemId)) {
+        setSelection(new Set(ids))
+      }
+      setCtxMenu({ x: e.clientX, y: e.clientY, ids, showFolderSub: false })
+    },
+    [selection, setSelection]
+  )
+
   // Auto-fetch more Steam API pages if needed to fill the current view
   const totalResults = data?.pages[0]?.totalResults ?? 0
   const needMore = page * pageSize > allItems.length && allItems.length < totalResults
@@ -491,142 +496,6 @@ export default function WorkshopBrowser({
   }, [needMore, hasNextPage, isFetchingNextPage, fetchNextPage])
 
   const assetSelected = filters.types.includes('Asset') || effectiveTypes.length === 0
-
-  // Card click handler: normal = select single, ctrl = toggle, shift = range
-  const handleCardSelect = useCallback(
-    (itemId: string, e: React.MouseEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        setSelection((prev) => {
-          const next = new Set(prev)
-          if (next.has(itemId)) next.delete(itemId)
-          else next.add(itemId)
-          return next
-        })
-        setLastClickedId(itemId)
-      } else if (e.shiftKey && lastClickedId) {
-        const ids = paginatedItems.map((i) => i.publishedFileId)
-        const from = ids.indexOf(lastClickedId)
-        const to = ids.indexOf(itemId)
-        if (from !== -1 && to !== -1) {
-          const start = Math.min(from, to)
-          const end = Math.max(from, to)
-          const rangeIds = ids.slice(start, end + 1)
-          setSelection((prev) => {
-            const next = new Set(prev)
-            for (const id of rangeIds) next.add(id)
-            return next
-          })
-        }
-      } else {
-        setSelection(new Set([itemId]))
-        setLastClickedId(itemId)
-      }
-    },
-    [lastClickedId, paginatedItems]
-  )
-
-  const handleMarqueeStart = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('[data-workshop-id]')) return
-    if (e.button !== 0) return
-
-    const container = gridRef.current
-    if (!container) return
-
-    const rect = container.getBoundingClientRect()
-    const x = e.clientX - rect.left + container.scrollLeft
-    const y = e.clientY - rect.top + container.scrollTop
-
-    marqueeActive.current = true
-    setMarquee({ startX: x, startY: y, endX: x, endY: y })
-
-    if (!e.ctrlKey && !e.metaKey) {
-      setSelection(new Set())
-    }
-  }, [])
-
-  const handleMarqueeMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (!marqueeActive.current || !marquee) return
-
-      const container = gridRef.current
-      if (!container) return
-
-      const rect = container.getBoundingClientRect()
-      const x = e.clientX - rect.left + container.scrollLeft
-      const y = e.clientY - rect.top + container.scrollTop
-
-      setMarquee((prev) => (prev ? { ...prev, endX: x, endY: y } : null))
-    },
-    [marquee]
-  )
-
-  const handleMarqueeEnd = useCallback(() => {
-    if (!marqueeActive.current || !marquee) return
-    marqueeActive.current = false
-
-    const container = gridRef.current
-    if (!container) return
-
-    const mx1 = Math.min(marquee.startX, marquee.endX)
-    const my1 = Math.min(marquee.startY, marquee.endY)
-    const mx2 = Math.max(marquee.startX, marquee.endX)
-    const my2 = Math.max(marquee.startY, marquee.endY)
-
-    if (Math.abs(mx2 - mx1) < 5 && Math.abs(my2 - my1) < 5) {
-      setMarquee(null)
-      return
-    }
-
-    const containerRect = container.getBoundingClientRect()
-    const cards = container.querySelectorAll('[data-workshop-id]')
-    const hits = new Set<string>()
-
-    cards.forEach((card) => {
-      const cardRect = card.getBoundingClientRect()
-      const cx1 = cardRect.left - containerRect.left + container.scrollLeft
-      const cy1 = cardRect.top - containerRect.top + container.scrollTop
-      const cx2 = cx1 + cardRect.width
-      const cy2 = cy1 + cardRect.height
-
-      if (cx1 < mx2 && cx2 > mx1 && cy1 < my2 && cy2 > my1) {
-        const id = card.getAttribute('data-workshop-id')
-        if (id) hits.add(id)
-      }
-    })
-
-    setSelection((prev) => {
-      const next = new Set(prev)
-      hits.forEach((id) => next.add(id))
-      return next
-    })
-
-    setMarquee(null)
-  }, [marquee])
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        setSelection(new Set())
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-        const active = document.activeElement
-        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
-        e.preventDefault()
-        setSelection(new Set(paginatedItems.map((i) => i.publishedFileId)))
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [paginatedItems])
-
-  const marqueeRect = marquee
-    ? {
-        left: Math.min(marquee.startX, marquee.endX),
-        top: Math.min(marquee.startY, marquee.endY),
-        width: Math.abs(marquee.endX - marquee.startX),
-        height: Math.abs(marquee.endY - marquee.startY)
-      }
-    : null
 
   const ctxLibraryIds = ctxMenu ? ctxMenu.ids.filter((id) => libraryIdSet.has(id)) : []
   const ctxCurrentFolderIds = ctxMenu
@@ -926,6 +795,7 @@ export default function WorkshopBrowser({
                 key={item.publishedFileId}
                 item={item}
                 selected={selection.has(item.publishedFileId)}
+                isDetailOpen={detailId === item.publishedFileId}
                 ignored={ignoredCreatorSet.has(item.creatorSteamId)}
                 isLiked={votedSet.has(item.publishedFileId)}
                 canPlay={playableSet.has(item.publishedFileId)}
@@ -942,7 +812,6 @@ export default function WorkshopBrowser({
                 }}
                 onPlay={() => handlePlay(item.publishedFileId)}
                 onSubscribe={() => enqueueSubscribe([item.publishedFileId])}
-                onOpenDetail={() => setDetailId(item.publishedFileId)}
               />
             ))}
           </div>

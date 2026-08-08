@@ -301,6 +301,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.SHELL_OPEN_WITH_DEFAULT, filePath),
     openPath: (targetPath: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke(IpcChannels.SHELL_OPEN_PATH, targetPath),
+    openPaths: (targetPaths: string[]): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke(IpcChannels.SHELL_OPEN_PATHS, targetPaths),
     openExternal: (url: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke(IpcChannels.SHELL_OPEN_EXTERNAL, url)
   },

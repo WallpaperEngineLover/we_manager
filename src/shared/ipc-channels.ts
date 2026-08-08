@@ -102,6 +102,7 @@ export const IpcChannels = {
 
   // Shell operations
   SHELL_OPEN_PATH: 'shell:open-path',
+  SHELL_OPEN_PATHS: 'shell:open-paths',
   SHELL_OPEN_IN_FILE_MANAGER: 'shell:open-in-file-manager',
   SHELL_OPEN_WITH_DEFAULT: 'shell:open-with-default',
   SHELL_OPEN_EXTERNAL: 'shell:open-external',

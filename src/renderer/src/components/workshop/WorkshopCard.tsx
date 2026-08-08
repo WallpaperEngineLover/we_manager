@@ -9,6 +9,7 @@ import { formatFileSize } from '../../utils/format'
 interface WorkshopCardProps {
   item: WorkshopItem
   selected?: boolean
+  isDetailOpen?: boolean
   ignored?: boolean
   isLiked?: boolean
   canPlay?: boolean
@@ -20,12 +21,12 @@ interface WorkshopCardProps {
   onLiked?: () => void
   onPlay?: () => void | Promise<void>
   onSubscribe?: () => void
-  onOpenDetail?: () => void
 }
 
 export default function WorkshopCard({
   item,
   selected = false,
+  isDetailOpen = false,
   ignored = false,
   isLiked = false,
   canPlay = false,
@@ -36,8 +37,7 @@ export default function WorkshopCard({
   onContextMenu,
   onLiked,
   onPlay,
-  onSubscribe,
-  onOpenDetail
+  onSubscribe
 }: WorkshopCardProps) {
   const [isLiking, setIsLiking] = useState(false)
   const [isApplying, setIsApplying] = useState(false)
@@ -85,8 +85,12 @@ export default function WorkshopCard({
     <div
       data-workshop-id={item.publishedFileId}
       className={clsx(
-        'group relative overflow-hidden rounded-lg bg-[#1a1a1a] transition-all hover:ring-1',
-        selected ? 'ring-2 ring-indigo-500' : 'hover:ring-indigo-500/50'
+        'group relative overflow-hidden rounded-lg bg-[#1a1a1a] transition-all cursor-pointer select-none',
+        isDetailOpen
+          ? 'ring-2 ring-sky-400'
+          : selected
+            ? 'ring-2 ring-indigo-500'
+            : 'hover:ring-1 hover:ring-indigo-500/50'
       )}
       onContextMenu={onContextMenu}
       onClick={onSelect}
@@ -109,13 +113,7 @@ export default function WorkshopCard({
         </div>
       </div>
 
-      <div
-        className="aspect-video overflow-hidden bg-[#111] relative cursor-pointer"
-        onClick={(e) => {
-          e.stopPropagation()
-          onOpenDetail?.()
-        }}
-      >
+      <div className="aspect-video overflow-hidden bg-[#111] relative">
         {item.previewUrl ? (
           <img
             src={item.previewUrl}
