@@ -486,9 +486,12 @@ export default function WorkshopBrowser({
     [selection, setSelection]
   )
 
-  // Auto-fetch more Steam API pages if needed to fill the current view
+  // Auto-fetch more Steam API pages if needed to fill the current view.
+  // Must compare against the tag-filtered count, not the raw fetched count - in OR mode a
+  // raw batch can lose most of its items to client-side filtering, so having "enough" raw
+  // items doesn't mean the current page actually has enough items to show.
   const totalResults = data?.pages[0]?.totalResults ?? 0
-  const needMore = page * pageSize > allItems.length && allItems.length < totalResults
+  const needMore = totalFiltered < page * pageSize && allItems.length < totalResults
   useEffect(() => {
     if (needMore && hasNextPage && !isFetchingNextPage) {
       fetchNextPage()
