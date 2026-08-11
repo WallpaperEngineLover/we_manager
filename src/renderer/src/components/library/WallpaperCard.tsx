@@ -14,6 +14,7 @@ interface WallpaperCardProps {
   lweInstalled?: boolean
   isLiked?: boolean
   currentPlaylistId?: string | null
+  isInCurrentPlaylist?: boolean
   previewSize?: PreviewSize
   onApplied?: () => void
   onLiked?: () => void
@@ -31,6 +32,7 @@ export default function WallpaperCard({
   lweInstalled,
   isLiked = false,
   currentPlaylistId = null,
+  isInCurrentPlaylist = false,
   previewSize = 'normal',
   onApplied,
   onLiked,
@@ -120,7 +122,7 @@ export default function WallpaperCard({
 
   async function handleAddToPlaylist(e: React.MouseEvent) {
     e.stopPropagation()
-    if (!currentPlaylistId || isAddingToPlaylist) return
+    if (!currentPlaylistId || isAddingToPlaylist || isInCurrentPlaylist) return
     setIsAddingToPlaylist(true)
     setError(null)
     try {
@@ -302,15 +304,30 @@ export default function WallpaperCard({
           </button>
           <button
             onClick={handleAddToPlaylist}
-            disabled={!currentPlaylistId || isAddingToPlaylist}
-            title={currentPlaylistId ? 'Add to current playlist (+)' : 'No playlist is currently active'}
+            disabled={!currentPlaylistId || isAddingToPlaylist || isInCurrentPlaylist}
+            title={
+              !currentPlaylistId
+                ? 'No playlist is currently active'
+                : isInCurrentPlaylist
+                  ? 'Already in current playlist'
+                  : 'Add to current playlist (+)'
+            }
             className={clsx(
-              'flex items-center gap-1 rounded bg-white/5 text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50',
-              compact ? 'p-1.5' : 'px-2 py-1'
+              'flex items-center gap-1 rounded text-xs transition-colors disabled:cursor-not-allowed',
+              compact ? 'p-1.5' : 'px-2 py-1',
+              isInCurrentPlaylist
+                ? 'bg-green-600/30 text-green-300'
+                : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200 disabled:opacity-50'
             )}
           >
-            {isAddingToPlaylist ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
-            {!compact && 'Add'}
+            {isAddingToPlaylist ? (
+              <Loader2 size={11} className="animate-spin" />
+            ) : isInCurrentPlaylist ? (
+              <Check size={11} />
+            ) : (
+              <Plus size={11} />
+            )}
+            {!compact && (isInCurrentPlaylist ? 'Added' : 'Add')}
           </button>
           {unsubState === 'confirm' ? (
             <div className="flex items-center gap-1">

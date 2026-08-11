@@ -521,6 +521,15 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     })
   }, [queryClient])
 
+  const { data: playlists } = useQuery({
+    queryKey: ['playlists'],
+    queryFn: () => window.electronAPI.playlist.getAll()
+  })
+  const currentPlaylistItemIds = useMemo(() => {
+    const playlist = playlists?.find((p) => p.id === currentPlaylistId)
+    return new Set(playlist?.items.map((item) => item.wallpaperId) ?? [])
+  }, [playlists, currentPlaylistId])
+
   const { showToast } = useToast()
 
   async function addToCurrentPlaylist(wallpaperIds: string[]) {
@@ -1302,6 +1311,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 lweInstalled={lweStatus?.installed ?? false}
                 isLiked={votedSet.has(wallpaper.id)}
                 currentPlaylistId={currentPlaylistId}
+                isInCurrentPlaylist={currentPlaylistItemIds.has(wallpaper.id)}
                 previewSize={previewSize}
                 onApplied={() =>
                   queryClient.invalidateQueries({ queryKey: ['library'] })
