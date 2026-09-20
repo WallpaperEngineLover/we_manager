@@ -1,6 +1,6 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
-import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, stopLwe, isLweRunning, killAllLweProcesses, listLweObjects, hotswapLweSettings, listLweProperties, listLweAudioObjects } from '../services/lwe.service'
+import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, stopLwe, isLweRunning, killAllLweProcesses, listLweObjects, hotswapLweSettings, listLweProperties, listLweAudioObjects, listLweEffects } from '../services/lwe.service'
 import { invalidateEnvCache } from '../services/wallpaper.service'
 import { getConnectedScreens } from '../utils/platform'
 
@@ -65,6 +65,8 @@ export function registerLweHandlers(win: BrowserWindow): void {
         xray?: boolean
         scaling?: string
         zoom?: number
+        offsetX?: number
+        offsetY?: number
         disableParallax?: boolean
         cornerColor?: string
         speed?: number
@@ -101,6 +103,15 @@ export function registerLweHandlers(win: BrowserWindow): void {
       return await listLweAudioObjects(wallpaperPath)
     } catch (err) {
       console.warn('[LWE] list-audio-objects failed for', wallpaperPath, ':', (err as Error).message)
+      return []
+    }
+  })
+
+  ipcMain.handle(IpcChannels.LWE_LIST_EFFECTS, async (_e, wallpaperPath: string) => {
+    try {
+      return await listLweEffects(wallpaperPath)
+    } catch (err) {
+      console.warn('[LWE] list-effects failed for', wallpaperPath, ':', (err as Error).message)
       return []
     }
   })

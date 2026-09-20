@@ -40,6 +40,8 @@ import {
   setDefaultAudioSensitivity,
   getDisablePuppetAnimation,
   setDisablePuppetAnimation,
+  getDisableAnimations,
+  setDisableAnimations,
   getSteamIdentity,
   setSteamIdentity,
   getIgnoredCreators,
@@ -78,6 +80,7 @@ export function registerConfigHandlers(): void {
     ambientVolume: getAmbientVolume(),
     defaultAudioSensitivity: getDefaultAudioSensitivity(),
     disablePuppetAnimation: getDisablePuppetAnimation(),
+    disableAnimations: getDisableAnimations(),
     steamIdentity: getSteamIdentity(),
     ignoredCreators: getIgnoredCreators()
   }))
@@ -167,6 +170,11 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle(IpcChannels.CONFIG_SET_DISABLE_PUPPET_ANIMATION, (_e, disabled: boolean) => {
     setDisablePuppetAnimation(disabled)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_DISABLE_ANIMATIONS, (_e, disabled: boolean) => {
+    setDisableAnimations(disabled)
     return { ok: true }
   })
 

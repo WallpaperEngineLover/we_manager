@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull, Film, Globe, Shield, Bug } from 'lucide-react'
+import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull, Film, Globe, Shield, Bug, Pause } from 'lucide-react'
 import type { LweStatus, LweInstallProgress, LinuxDistro, SteamIdentity } from '../../../../shared/types'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
@@ -69,6 +69,7 @@ export default function SettingsView() {
   const [defaultAudioSensitivity, setDefaultAudioSensitivity] = useState<string>('100')
   const [defaultAudioSensitivitySaved, setDefaultAudioSensitivitySaved] = useState(false)
   const [disablePuppetAnimation, setDisablePuppetAnimation] = useState(false)
+  const [disableAnimations, setDisableAnimations] = useState(false)
 
   useEffect(() => {
     window.electronAPI.config.get().then((cfg) => {
@@ -93,6 +94,7 @@ export default function SettingsView() {
       setAmbientVolume(cfg.ambientVolume != null ? String(cfg.ambientVolume) : '')
       setDefaultAudioSensitivity(String(Math.round(cfg.defaultAudioSensitivity * 100)))
       setDisablePuppetAnimation(cfg.disablePuppetAnimation)
+      setDisableAnimations(cfg.disableAnimations)
     })
     window.electronAPI.lwe.status().then(setLweStatus)
     window.electronAPI.lwe.detectDistro().then(setDistro)
@@ -277,6 +279,12 @@ export default function SettingsView() {
     const newVal = !disablePuppetAnimation
     setDisablePuppetAnimation(newVal)
     await window.electronAPI.config.setDisablePuppetAnimation(newVal)
+  }
+
+  async function handleDisableAnimationsToggle() {
+    const newVal = !disableAnimations
+    setDisableAnimations(newVal)
+    await window.electronAPI.config.setDisableAnimations(newVal)
   }
 
   async function handleSteamIdentityChange(identity: SteamIdentity) {
@@ -892,6 +900,37 @@ export default function SettingsView() {
               </span>
             </label>
           </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+            Effects &amp; Animation
+          </label>
+          <p className="mt-1 text-xs text-gray-600">
+            Freezes every wallpaper's scene time - scripts, particles, effects and puppet meshes all stop
+            advancing and stay on whatever frame they were on. Only applies to wallpapers played after enabling
+            this; a wallpaper already running needs to be replayed to pick it up. To disable a specific effect
+            (bloom, fog, glow, etc) on one wallpaper instead of freezing everything everywhere, use the Effects
+            panel on that wallpaper's detail page.
+          </p>
+          <label className="mt-3 flex items-center gap-3 cursor-pointer">
+            <button
+              onClick={handleDisableAnimationsToggle}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                disableAnimations ? 'bg-indigo-600' : 'bg-white/10'
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  disableAnimations ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+            <span className="flex items-center gap-2 text-sm text-gray-300">
+              <Pause size={16} />
+              Disable wallpaper animation
+            </span>
+          </label>
         </div>
 
         <div>

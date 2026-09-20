@@ -61,6 +61,7 @@ export const IpcChannels = {
   CONFIG_SET_AMBIENT_VOLUME: 'config:set-ambient-volume',
   CONFIG_SET_DEFAULT_AUDIO_SENSITIVITY: 'config:set-default-audio-sensitivity',
   CONFIG_SET_DISABLE_PUPPET_ANIMATION: 'config:set-disable-puppet-animation',
+  CONFIG_SET_DISABLE_ANIMATIONS: 'config:set-disable-animations',
   CONFIG_SET_STEAM_IDENTITY: 'config:set-steam-identity',
   CONFIG_IGNORE_CREATOR: 'config:ignore-creator',
   CONFIG_UNIGNORE_CREATOR: 'config:unignore-creator',
@@ -121,6 +122,7 @@ export const IpcChannels = {
   LWE_LIST_PROPERTIES: 'lwe:list-properties',
   LWE_LIST_SCREENS: 'lwe:list-screens',
   LWE_LIST_AUDIO_OBJECTS: 'lwe:list-audio-objects',
+  LWE_LIST_EFFECTS: 'lwe:list-effects',
 
   // Desktop icons overlay
   DESKTOP_ICONS_SET_ENABLED: 'desktop-icons:set-enabled',

@@ -18,6 +18,7 @@ import type {
   LweSceneObject,
   LweProperty,
   LweAudioObject,
+  LweSceneEffect,
   BackupProgressEvent,
   Playlist,
   PlaylistSettings,
@@ -52,7 +53,7 @@ const api = {
       ipcRenderer.invoke(IpcChannels.STEAM_DOWNLOAD_INFO, itemId),
     itemState: (itemId: string): Promise<number> =>
       ipcRenderer.invoke(IpcChannels.STEAM_ITEM_STATE, itemId),
-    vote: (itemId: string, voteUp: boolean): Promise<{ ok: boolean }> =>
+    vote: (itemId: string, voteUp: boolean): Promise<{ ok: boolean; confirmed: boolean }> =>
       ipcRenderer.invoke(IpcChannels.STEAM_VOTE, itemId, voteUp),
     openWorkshopItem: (itemId: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.STEAM_OPEN_WORKSHOP, itemId),
@@ -113,6 +114,7 @@ const api = {
       ambientVolume: number | null
       defaultAudioSensitivity: number
       disablePuppetAnimation: boolean
+      disableAnimations: boolean
       steamIdentity: SteamIdentity
       ignoredCreators: string[]
     }> => ipcRenderer.invoke(IpcChannels.CONFIG_GET),
@@ -160,6 +162,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DEFAULT_AUDIO_SENSITIVITY, multiplier),
     setDisablePuppetAnimation: (disabled: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DISABLE_PUPPET_ANIMATION, disabled),
+    setDisableAnimations: (disabled: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_DISABLE_ANIMATIONS, disabled),
     setSteamIdentity: (identity: SteamIdentity): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_STEAM_IDENTITY, identity),
     ignoreCreator: (steamId: string): Promise<{ ok: boolean }> =>
@@ -260,6 +264,8 @@ const api = {
       xray?: boolean
       scaling?: string
       zoom?: number
+      offsetX?: number
+      offsetY?: number
       disableParallax?: boolean
       cornerColor?: string
       speed?: number
@@ -275,7 +281,9 @@ const api = {
     listScreens: (): Promise<string[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_SCREENS),
     listAudioObjects: (wallpaperPath: string): Promise<LweAudioObject[]> =>
-      ipcRenderer.invoke(IpcChannels.LWE_LIST_AUDIO_OBJECTS, wallpaperPath)
+      ipcRenderer.invoke(IpcChannels.LWE_LIST_AUDIO_OBJECTS, wallpaperPath),
+    listEffects: (wallpaperPath: string): Promise<LweSceneEffect[]> =>
+      ipcRenderer.invoke(IpcChannels.LWE_LIST_EFFECTS, wallpaperPath)
   },
 
   backup: {

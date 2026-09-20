@@ -226,13 +226,21 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
   async function ctxVote(up: boolean) {
     if (!ctxMenu) return
     const wallpaperId = ctxMenu.wallpaperId
-    await window.electronAPI.steam.vote(wallpaperId, up)
-    if (up) {
-      queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
-        old ? [...new Set([...old, wallpaperId])] : [wallpaperId]
-      )
-    }
     closeCtxMenu()
+    try {
+      const { confirmed } = await window.electronAPI.steam.vote(wallpaperId, up)
+      if (!confirmed) {
+        showToast(`Could not confirm the ${up ? 'like' : 'dislike'} on Steam - try again`)
+        return
+      }
+      if (up) {
+        queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
+          old ? [...new Set([...old, wallpaperId])] : [wallpaperId]
+        )
+      }
+    } catch (err) {
+      showToast((err as Error).message)
+    }
   }
 
   function ctxOpenInSteam() {

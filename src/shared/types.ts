@@ -58,6 +58,9 @@ export interface WallpaperMeta {
   scalingMode?: ScalingMode
   /** Manual zoom layered on top of scalingMode via linux-wallpaperengine --zoom (1 = no extra zoom) */
   zoom?: number
+  /** Re-centers the crop window, each axis in [-1, 1] (0 = centered), via linux-wallpaperengine --offset */
+  offsetX?: number
+  offsetY?: number
   /** Force-disables the scene's mouse parallax effect via linux-wallpaperengine --disable-parallax */
   disableParallax?: boolean
   /**
@@ -77,6 +80,10 @@ export interface WallpaperMeta {
   disabledObjects?: string[]
   /** Object/layer ids or names to force-show via linux-wallpaperengine --enable-object */
   enabledObjects?: string[]
+  /** Effect ids or editor names to force-hide via linux-wallpaperengine --disable-effect */
+  disabledEffects?: string[]
+  /** Effect ids or editor names to force-show via linux-wallpaperengine --enable-effect */
+  enabledEffects?: string[]
   /** Property name -> override value, applied via linux-wallpaperengine --set-property name=value */
   propertyOverrides?: Record<string, string>
   /**
@@ -92,12 +99,28 @@ export interface WallpaperMeta {
    * tracks (each its own Sound object) play only one.
    */
   soundVolume?: Record<string, number>
+  /**
+   * Extra linux-wallpaperengine arguments appended verbatim to the launch, e.g. `--render-debug skip-effect=726`.
+   * Launch-time only, so changing this always restarts the process.
+   */
+  customArgs?: string
 }
 
 export interface LweSceneObject {
   id: string
   name: string
   type: 'image' | 'particle' | 'text' | 'sound' | 'unknown'
+}
+
+/** One effect (bloom, blur, glow, etc) attached to an object, as reported by --list-effects */
+export interface LweSceneEffect {
+  id: string
+  /** Effect's name for the editor, e.g. "Bloom" - not necessarily unique across objects */
+  name: string
+  objectId: string
+  objectName: string
+  /** The effect asset's own category, e.g. "Blur/Sharpen" - empty if the wallpaper doesn't set one */
+  group: string
 }
 
 /** One audio-reactive script property on a scene object, as reported by --list-audio-objects */
@@ -226,7 +249,7 @@ export interface BackupProgressEvent {
   bytesCopied: number
   bytesTotal: number
   percentage: number
-  status: 'copying' | 'completed' | 'error'
+  status: 'copying' | 'verifying' | 'completed' | 'error'
   message?: string
 }
 

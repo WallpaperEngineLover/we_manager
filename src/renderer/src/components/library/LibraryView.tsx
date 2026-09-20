@@ -542,15 +542,48 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   const [backingUpSelection, setBackingUpSelection] = useState(false)
   const [backupScanning, setBackupScanning] = useState(false)
   const [backupStatus, setBackupStatus] = useState<string | null>(null)
+  const [backupProgress, setBackupProgress] = useState<
+    Map<string, { percentage: number; status: 'copying' | 'verifying' }>
+  >(new Map())
+
+  useEffect(() => {
+    return window.electronAPI.on.backupProgress((progress) => {
+      setBackupProgress((prev) => {
+        const next = new Map(prev)
+        if (progress.status === 'copying' || progress.status === 'verifying') {
+          next.set(progress.itemId, { percentage: progress.percentage, status: progress.status })
+        } else {
+          next.delete(progress.itemId)
+        }
+        return next
+      })
+      if (progress.status === 'error') {
+        showToast(`Backup failed: ${progress.message ?? 'verification error'}`)
+      }
+    })
+  }, [])
 
   async function handleBackupSelection() {
     if (selectedIds.size === 0) return
+    const targets = wallpapers.filter((w) => selectedIds.has(w.id))
+    const alreadyBackedUp = targets.filter((w) => w.backedUp)
+    const toBackUp = targets.filter((w) => !w.backedUp)
+
+    if (toBackUp.length === 0) {
+      setBackupStatus(
+        alreadyBackedUp.length === 1
+          ? 'Already backed up.'
+          : `All ${alreadyBackedUp.length} selected wallpapers are already backed up.`
+      )
+      return
+    }
+
     setBackingUpSelection(true)
     setBackupStatus(null)
     try {
-      const result = await window.electronAPI.backup.selection(Array.from(selectedIds))
+      const result = await window.electronAPI.backup.selection(toBackUp.map((w) => w.id))
       setBackupStatus(
-        `Backed up ${result.backedUp}${result.unsubscribed > 0 ? ` (${result.unsubscribed} unsubscribed)` : ''}${result.failed > 0 ? `, ${result.failed} failed` : ''}.`
+        `Backed up ${result.backedUp}${alreadyBackedUp.length > 0 ? `, ${alreadyBackedUp.length} already were` : ''}${result.unsubscribed > 0 ? ` (${result.unsubscribed} unsubscribed)` : ''}${result.failed > 0 ? `, ${result.failed} failed` : ''}.`
       )
     } finally {
       setBackingUpSelection(false)
@@ -745,9 +778,27 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   async function ctxVote(up: boolean) {
     if (!ctxMenu) return
-    await forEachIgnoringErrors(ctxMenu.ids, (id) => window.electronAPI.steam.vote(id, up))
-    queryClient.invalidateQueries({ queryKey: ['steam-voted-ids'] })
+    const ids = ctxMenu.ids
     closeCtxMenu()
+
+    const results = await Promise.allSettled(ids.map((id) => window.electronAPI.steam.vote(id, up)))
+    const confirmedIds = ids.filter((_, i) => {
+      const r = results[i]
+      return r.status === 'fulfilled' && r.value.confirmed
+    })
+
+    if (up && confirmedIds.length > 0) {
+      queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) => [
+        ...new Set([...(old ?? []), ...confirmedIds])
+      ])
+    }
+
+    const failed = ids.length - confirmedIds.length
+    showToast(
+      failed === 0
+        ? `${up ? 'Liked' : 'Disliked'} ${confirmedIds.length} on Steam`
+        : `${up ? 'Liked' : 'Disliked'} ${confirmedIds.length}, ${failed} could not be confirmed`
+    )
   }
 
   function ctxOpenInSteam() {
@@ -778,11 +829,37 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   async function ctxBackup() {
     if (!ctxMenu) return
+    const targets = ctxWallpapers
     closeCtxMenu()
-    if (ctxMenu.ids.length === 1) {
-      await window.electronAPI.backup.item(ctxMenu.ids[0])
-    } else {
-      await window.electronAPI.backup.selection(ctxMenu.ids)
+
+    const alreadyBackedUp = targets.filter((w) => w.backedUp)
+    const toBackUp = targets.filter((w) => !w.backedUp)
+
+    if (toBackUp.length === 0) {
+      showToast(
+        alreadyBackedUp.length === 1
+          ? 'Already backed up'
+          : `All ${alreadyBackedUp.length} wallpapers are already backed up`
+      )
+      return
+    }
+
+    try {
+      if (toBackUp.length === 1) {
+        await window.electronAPI.backup.item(toBackUp[0].id)
+        showToast(
+          alreadyBackedUp.length > 0
+            ? `Backed up (${alreadyBackedUp.length} already were)`
+            : 'Backed up'
+        )
+      } else {
+        const result = await window.electronAPI.backup.selection(toBackUp.map((w) => w.id))
+        showToast(
+          `Backed up ${result.backedUp}${alreadyBackedUp.length > 0 ? `, ${alreadyBackedUp.length} already were` : ''}${result.failed > 0 ? `, ${result.failed} failed` : ''}`
+        )
+      }
+    } catch (err) {
+      showToast(`Backup failed: ${(err as Error).message}`)
     }
     queryClient.invalidateQueries({ queryKey: ['library'] })
   }
@@ -1113,6 +1190,21 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
         </div>
       )}
 
+      {backupProgress.size > 0 && (
+        <div className="border-b border-white/5 px-4 py-2 text-xs text-gray-400">
+          Backing up {backupProgress.size} wallpaper{backupProgress.size === 1 ? '' : 's'}
+          {Array.from(backupProgress.values()).some((p) => p.status === 'verifying')
+            ? ' (verifying copies)'
+            : ''}
+          ...{' '}
+          {Math.round(
+            Array.from(backupProgress.values()).reduce((sum, p) => sum + p.percentage, 0) /
+              backupProgress.size
+          )}
+          % avg
+        </div>
+      )}
+
       {backupStatus && (
         <div className="border-b border-white/5 px-4 py-2 text-xs text-gray-400">
           {backupStatus}
@@ -1313,6 +1405,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 currentPlaylistId={currentPlaylistId}
                 isInCurrentPlaylist={currentPlaylistItemIds.has(wallpaper.id)}
                 previewSize={previewSize}
+                backupProgress={backupProgress.get(wallpaper.id) ?? null}
                 onApplied={() =>
                   queryClient.invalidateQueries({ queryKey: ['library'] })
                 }

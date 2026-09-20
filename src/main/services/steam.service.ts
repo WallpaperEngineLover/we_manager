@@ -1,4 +1,6 @@
 import * as path from 'path'
+import Store from 'electron-store'
+import { app } from 'electron'
 import { WE_APP_ID, STANDALONE_APP_ID } from '@shared/constants'
 import type { DownloadProgressEvent, WorkshopAuthorInfo } from '@shared/types'
 import { getSteamIdentity } from './config.service'
@@ -75,6 +77,24 @@ export async function unsubscribeFromItem(itemId: bigint): Promise<void> {
 // flat C API directly via koffi FFI. libsteam_api.so is already loaded by
 // steamworks.js, so dlopen just returns the existing handle. Set up lazily
 // after SteamAPI_Init so a load failure can't take down the whole app.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+type Koffi = typeof import('koffi')
+
+let steamLibHandle: ReturnType<Koffi['load']> | null = null
+
+function getSteamLib(): ReturnType<Koffi['load']> {
+  if (!steamLibHandle) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const koffi: Koffi = require('koffi')
+    const libPath = path.join(
+      path.dirname(require.resolve('steamworks.js')),
+      'dist', 'linux64', 'libsteam_api.so'
+    ).replace(/app\.asar(?!\.unpacked)/, 'app.asar.unpacked')
+    steamLibHandle = koffi.load(libPath)
+  }
+  return steamLibHandle
+}
+
 interface UgcFfi {
   setUserItemVote: (ugc: unknown, itemId: bigint, voteUp: boolean) => bigint
   ugcPtr: unknown
@@ -85,12 +105,8 @@ let ugcFfi: UgcFfi | null = null
 function getUgcFfi(): UgcFfi {
   if (!ugcFfi) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const koffi = require('koffi')
-    const libPath = path.join(
-      path.dirname(require.resolve('steamworks.js')),
-      'dist', 'linux64', 'libsteam_api.so'
-    ).replace(/app\.asar(?!\.unpacked)/, 'app.asar.unpacked')
-    const steamLib = koffi.load(libPath)
+    const koffi: Koffi = require('koffi')
+    const steamLib = getSteamLib()
     const ugcPtrType = koffi.pointer(koffi.opaque('ISteamUGC'))
     const getSteamUGC = steamLib.func('SteamAPI_SteamUGC_v020', ugcPtrType, [])
     ugcFfi = {
@@ -103,13 +119,73 @@ function getUgcFfi(): UgcFfi {
   return ugcFfi
 }
 
-export function voteOnItem(itemId: bigint, voteUp: boolean): void {
+let isLoggedOnFn: (() => boolean) | null = null
+
+function isSteamOnline(): boolean {
+  if (!isLoggedOnFn) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const koffi: Koffi = require('koffi')
+    const steamLib = getSteamLib()
+    const userPtrType = koffi.pointer(koffi.opaque('ISteamUser'))
+    const getSteamUser = steamLib.func('SteamAPI_SteamUser_v023', userPtrType, [])
+    const bLoggedOn = steamLib.func('SteamAPI_ISteamUser_BLoggedOn', 'bool', [userPtrType])
+    const userPtr = getSteamUser()
+    isLoggedOnFn = () => bLoggedOn(userPtr)
+  }
+  return isLoggedOnFn()
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// steamworks.js async calls have no timeout and can hang forever if Steam stalls
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        clearTimeout(timer)
+        reject(err)
+      }
+    )
+  })
+}
+
+// steamworks.js has no vote bindings; this app's fork adds them (patches/steamworks-vote/), feature-detected so unpatched builds still work
+interface PatchedVoteWorkshop {
+  voteItem(itemId: bigint, voteUp: boolean): Promise<void>
+  getUserVote(itemId: bigint): Promise<{ votedUp: boolean; votedDown: boolean; voteSkipped: boolean }>
+}
+
+function getPatchedVoteApi(client: ReturnType<typeof getClient>): PatchedVoteWorkshop | null {
+  const workshop = client.workshop as unknown as Partial<PatchedVoteWorkshop>
+  if (typeof workshop.voteItem === 'function' && typeof workshop.getUserVote === 'function') {
+    return workshop as PatchedVoteWorkshop
+  }
+  return null
+}
+
+export async function checkUserVote(
+  itemId: bigint
+): Promise<{ votedUp: boolean; votedDown: boolean } | null> {
+  const patched = getPatchedVoteApi(getClient())
+  if (!patched) return null
+  const result = await patched.getUserVote(itemId)
+  return { votedUp: result.votedUp, votedDown: result.votedDown }
+}
+
+export function voteOnItem(itemId: bigint, voteUp: boolean): bigint {
   getClient() // ensure Steam is initialized before touching the flat API
   const ffi = getUgcFfi()
   const handle = ffi.setUserItemVote(ffi.ugcPtr, itemId, voteUp)
   // k_uAPICallInvalid = 0 means the call failed immediately
   if (handle === BigInt(0)) throw new Error('SetUserItemVote failed')
-  invalidateVoteCache()
+  return handle
 }
 
 export function openWorkshopItemOverlay(itemId: bigint): void {
@@ -118,40 +194,242 @@ export function openWorkshopItemOverlay(itemId: bigint): void {
   )
 }
 
-// Cached for the process lifetime; invalidateVoteCache() is called after each vote, and
-// startVotedItemsSync() below periodically replaces it wholesale in the background so votes
-// cast outside this app (Steam client, community website) show up without a restart.
-let votedUpCache: Set<string> | null = null
+const USER_ITEM_TYPE = 13 // UGCType.All, since WE items span multiple subtypes
+const CREATION_ORDER_DESC = 1
+const VOTED_UP = 2
+const VOTED_DOWN = 3
+const PAGE_FETCH_TIMEOUT_MS = 8000
+const VOTE_TIMEOUT_MS = 15000
 
-async function fetchVotedUpItems(): Promise<Set<string>> {
+async function getUserItemsPage(
+  accountId: number,
+  listType: number,
+  page: number,
+  retries = 2
+): Promise<{ items: Array<{ publishedFileId: bigint } | null | undefined>; returnedResults: number; totalResults: number }> {
   const c = getClient()
-  const accountId = c.localplayer.getSteamId().accountId
-  const ids = new Set<string>()
-  let page = 1
-  while (true) {
-    const r = await c.workshop.getUserItems(
-      page, accountId,
-      2 /* VotedUp */, 13 /* UGCType.All, since WE items span multiple subtypes */,
-      1 /* CreationOrderDesc */,
-      { consumer: WE_APP_ID }
-    )
-    for (const item of r.items) {
-      if (item) ids.add(item.publishedFileId.toString())
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await withTimeout(
+        c.workshop.getUserItems(
+          page, accountId, listType, USER_ITEM_TYPE, CREATION_ORDER_DESC, { consumer: WE_APP_ID }
+        ),
+        PAGE_FETCH_TIMEOUT_MS,
+        `getUserItems page ${page}`
+      )
+    } catch (err) {
+      if (attempt >= retries) throw err
+      await sleep(300 * (attempt + 1))
     }
-    if (r.returnedResults === 0 || ids.size >= r.totalResults) break
-    page++
   }
+}
+
+interface VoteCacheStore {
+  accountId: number | null
+  up: string[]
+  missing: string[]
+  lastFullSync: number
+  pending: Record<string, { up: boolean; at: number }>
+}
+
+const voteStore = new Store<VoteCacheStore>({
+  name: 'vote-cache',
+  defaults: { accountId: null, up: [], missing: [], lastFullSync: 0, pending: {} }
+})
+
+let votedUpCache = new Set<string>(voteStore.get('up'))
+
+// an id must be missing on two consecutive full crawls before it is dropped, to absorb pagination drift
+let missingLastCycle = new Set<string>(voteStore.get('missing'))
+
+// Steam's voted-up list lags behind the vote itself, so local votes stay authoritative until the crawl agrees or this window runs out
+const PENDING_VOTE_TTL_MS = 15 * 60 * 1000
+const pendingVotes = new Map<string, { up: boolean; at: number }>(
+  Object.entries(voteStore.get('pending')).filter(([, v]) => Date.now() - v.at <= PENDING_VOTE_TTL_MS)
+)
+
+function applyPendingVotes(fresh: Set<string>): Set<string> {
+  const now = Date.now()
+  const merged = new Set(fresh)
+  for (const [id, vote] of pendingVotes) {
+    if (fresh.has(id) === vote.up || now - vote.at > PENDING_VOTE_TTL_MS) {
+      pendingVotes.delete(id)
+      continue
+    }
+    if (vote.up) merged.add(id)
+    else merged.delete(id)
+  }
+  return merged
+}
+
+const PERSIST_DELAY_MS = 3000
+let persistTimer: ReturnType<typeof setTimeout> | null = null
+let persistDirty = false
+
+function persistVoteCache(): void {
+  persistDirty = true
+  if (persistTimer) return
+  persistTimer = setTimeout(flushVoteCache, PERSIST_DELAY_MS)
+}
+
+function flushVoteCache(): void {
+  if (persistTimer) {
+    clearTimeout(persistTimer)
+    persistTimer = null
+  }
+  if (!persistDirty) return
+  persistDirty = false
+  voteStore.set('up', [...votedUpCache])
+  voteStore.set('missing', [...missingLastCycle])
+  voteStore.set('pending', Object.fromEntries(pendingVotes))
+}
+
+app.on('will-quit', flushVoteCache)
+
+const VOTE_FETCH_CONCURRENCY = 3
+const PAGE_PACING_MS = 150
+
+// list sort orders use the item's publish date, not the vote date, so the only way to get the full liked list is to crawl all of it
+async function fetchVotedItems(
+  accountId: number,
+  listType: number,
+  onPage: (ids: string[]) => void
+): Promise<Set<string>> {
+  const ids = new Set<string>()
+  const take = (items: Array<{ publishedFileId: bigint } | null | undefined>): void => {
+    const pageIds: string[] = []
+    for (const item of items) if (item) pageIds.push(item.publishedFileId.toString())
+    for (const id of pageIds) ids.add(id)
+    onPage(pageIds)
+  }
+
+  const first = await getUserItemsPage(accountId, listType, 1)
+  take(first.items)
+
+  const pageSize = first.returnedResults
+  if (pageSize <= 0 || ids.size >= first.totalResults) return ids
+
+  const totalPages = Math.ceil(first.totalResults / pageSize)
+  const remainingPages = Array.from({ length: Math.max(0, totalPages - 1) }, (_, i) => i + 2)
+  let cursor = 0
+
+  async function worker(): Promise<void> {
+    while (cursor < remainingPages.length) {
+      const page = remainingPages[cursor++]
+      const r = await getUserItemsPage(accountId, listType, page)
+      take(r.items)
+      await sleep(PAGE_PACING_MS)
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(VOTE_FETCH_CONCURRENCY, remainingPages.length) }, worker)
+  )
+
   return ids
 }
 
-export async function getVotedUpItemIds(): Promise<string[]> {
-  if (votedUpCache) return [...votedUpCache]
-  votedUpCache = await fetchVotedUpItems()
-  return [...votedUpCache]
+const FULL_SYNC_INTERVAL_MS = 12 * 60 * 60 * 1000
+const SYNC_CHECK_INTERVAL_MS = 10 * 60 * 1000
+const SYNC_STARTUP_DELAY_MS = 20 * 1000
+const PROGRESS_NOTIFY_INTERVAL_MS = 15 * 1000
+
+let votedIdsChangeListener: ((ids: string[]) => void) | null = null
+let syncInFlight = false
+let lastSyncFailure = 0
+
+function notifyVotedIds(): void {
+  votedIdsChangeListener?.([...votedUpCache])
 }
 
-export function invalidateVoteCache(): void {
-  votedUpCache = null
+async function runFullSync(): Promise<void> {
+  const accountId = getClient().localplayer.getSteamId().accountId
+  if (voteStore.get('accountId') !== null && voteStore.get('accountId') !== accountId) {
+    votedUpCache = new Set()
+    missingLastCycle = new Set()
+    pendingVotes.clear()
+    notifyVotedIds()
+  }
+  voteStore.set('accountId', accountId)
+
+  let lastNotify = Date.now()
+  const seen = await fetchVotedItems(accountId, VOTED_UP, (pageIds) => {
+    let added = false
+    for (const id of pageIds) {
+      if (!votedUpCache.has(id) && pendingVotes.get(id)?.up !== false) {
+        votedUpCache.add(id)
+        added = true
+      }
+    }
+    if (!added) return
+    persistVoteCache()
+    if (Date.now() - lastNotify >= PROGRESS_NOTIFY_INTERVAL_MS) {
+      lastNotify = Date.now()
+      notifyVotedIds()
+    }
+  })
+
+  const fresh = applyPendingVotes(seen)
+  const merged = new Set(fresh)
+  const missingThisCycle = new Set<string>()
+  for (const id of votedUpCache) {
+    if (fresh.has(id)) continue
+    if (missingLastCycle.has(id)) continue
+    merged.add(id)
+    missingThisCycle.add(id)
+  }
+  const changed = !sameIds(votedUpCache, merged)
+  missingLastCycle = missingThisCycle
+  votedUpCache = merged
+  voteStore.set('lastFullSync', Date.now())
+  persistVoteCache()
+  if (changed) notifyVotedIds()
+  console.log(`[Steam] Liked list synced: ${votedUpCache.size} items`)
+}
+
+function maybeRunFullSync(): void {
+  if (syncInFlight || !isSteamRunning()) return
+  const now = Date.now()
+  if (now - voteStore.get('lastFullSync') < FULL_SYNC_INTERVAL_MS) return
+  if (now - lastSyncFailure < SYNC_CHECK_INTERVAL_MS) return
+  syncInFlight = true
+  runFullSync()
+    .catch((err) => {
+      lastSyncFailure = Date.now()
+      console.warn('[Steam] Liked list sync failed, will retry later:', err?.message ?? err)
+    })
+    .finally(() => {
+      syncInFlight = false
+    })
+}
+
+function recordVote(idStr: string, voteUp: boolean): void {
+  pendingVotes.set(idStr, { up: voteUp, at: Date.now() })
+  if (voteUp) votedUpCache.add(idStr)
+  else votedUpCache.delete(idStr)
+  missingLastCycle.delete(idStr)
+  persistVoteCache()
+}
+
+// Without the patched steamworks.js, success is reported once SetUserItemVote is enqueued: its result can't be read back,
+// because steamworks.js's manual dispatch loop consumes every call result on the shared Steam pipe first.
+export async function voteOnItemAndConfirm(itemId: bigint, voteUp: boolean): Promise<boolean> {
+  if (!isSteamRunning()) throw new Error('Steam is not running - start Steam to like wallpapers')
+  const client = getClient()
+  if (!isSteamOnline()) throw new Error('Steam is offline - check your internet connection and try again')
+  const idStr = itemId.toString()
+  const patched = getPatchedVoteApi(client)
+
+  if (patched) {
+    await withTimeout(patched.voteItem(itemId, voteUp), VOTE_TIMEOUT_MS, 'Vote').catch((err) => {
+      throw new Error(`Could not reach Steam to ${voteUp ? 'like' : 'dislike'} this wallpaper: ${err?.message ?? err}`)
+    })
+    recordVote(idStr, voteUp)
+    return true
+  }
+
+  voteOnItem(itemId, voteUp)
+  recordVote(idStr, voteUp)
+  return true
 }
 
 function sameIds(a: Set<string>, b: Set<string>): boolean {
@@ -160,28 +438,17 @@ function sameIds(a: Set<string>, b: Set<string>): boolean {
   return true
 }
 
-const VOTE_SYNC_INTERVAL_MS = 3 * 60 * 1000
+export async function getVotedUpItemIds(): Promise<string[]> {
+  return [...votedUpCache]
+}
 
-// Background reconciliation for the vote cache: an in-app vote already updates the renderer
-// optimistically (see WorkshopCard/WallpaperCard onLiked handlers), so this isn't on the
-// critical path for your own votes - it's what catches up on votes cast elsewhere (Steam
-// client, community website) and settles the rare case where SetUserItemVote's async call
-// didn't actually land before the optimistic update fired.
 let voteSyncTimer: ReturnType<typeof setInterval> | null = null
 
 export function startVotedItemsSync(onChange: (ids: string[]) => void): void {
+  votedIdsChangeListener = onChange
   if (voteSyncTimer) return
-  voteSyncTimer = setInterval(async () => {
-    if (!isSteamRunning()) return
-    try {
-      const fresh = await fetchVotedUpItems()
-      const changed = !votedUpCache || !sameIds(votedUpCache, fresh)
-      votedUpCache = fresh
-      if (changed) onChange([...fresh])
-    } catch {
-      // transient Steam hiccup - just try again next tick
-    }
-  }, VOTE_SYNC_INTERVAL_MS)
+  setTimeout(maybeRunFullSync, SYNC_STARTUP_DELAY_MS)
+  voteSyncTimer = setInterval(maybeRunFullSync, SYNC_CHECK_INTERVAL_MS)
 }
 
 export function getSubscribedItems(): string[] {

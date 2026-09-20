@@ -6,6 +6,7 @@ import * as path from 'path'
 import { detectDisplayServer, detectDesktopEnv, isCommandAvailable } from '../utils/platform'
 import type { WallpaperBackend, WallpaperEnvironment, WallpaperMeta } from '@shared/types'
 import { getLweStatus, launchLweAsync } from './lwe.service'
+import { ensureDependencyInstalled } from './dependency.service'
 import { getDefaultFps, getRecommendedFpsEnabled, getRecommendedWebFpsEnabled } from './config.service'
 import { findWallpaperVideoFile, getVideoFps } from '../utils/video'
 import { RECOMMENDED_WEB_FPS } from '@shared/constants'
@@ -202,9 +203,16 @@ function findWallpaperImage(dirPath: string): string {
  */
 export async function applyWallpaperMeta(
   wallpaper: WallpaperMeta,
-  options: { fps?: number; volume?: number; backend?: WallpaperBackend } = {}
+  options: {
+    fps?: number
+    volume?: number
+    backend?: WallpaperBackend
+    dependencyPrompt?: 'always' | 'once'
+  } = {}
 ): Promise<string> {
   if (!wallpaper.localPath) throw new Error(`Wallpaper ${wallpaper.id} has no local path`)
+
+  await ensureDependencyInstalled(wallpaper, options.dependencyPrompt)
 
   const isAnimated = wallpaper.type === 'scene' || wallpaper.type === 'web' || wallpaper.type === 'video'
   const lwe = getLweStatus()
@@ -225,18 +233,23 @@ export async function applyWallpaperMeta(
       volume,
       disabledObjects: wallpaper.disabledObjects,
       enabledObjects: wallpaper.enabledObjects,
+      disabledEffects: wallpaper.disabledEffects,
+      enabledEffects: wallpaper.enabledEffects,
       propertyOverrides: wallpaper.propertyOverrides,
       // Explicit even when off: xray state lives on the running LWE process, not per-wallpaper,
       // so a hot-reload into a wallpaper with xray off must actively clear a previous wallpaper's "on".
       xrayFullReveal: wallpaper.xrayFullReveal ?? false,
       scalingMode: wallpaper.scalingMode,
       zoom: wallpaper.zoom,
+      offsetX: wallpaper.offsetX,
+      offsetY: wallpaper.offsetY,
       // Explicit even when off, same reasoning as xrayFullReveal above.
       disableParallax: wallpaper.disableParallax ?? false,
       cornerColor: wallpaper.cornerColor,
       speed: wallpaper.playbackSpeed,
       audioSensitivity: wallpaper.audioSensitivity,
-      soundVolume: wallpaper.soundVolume
+      soundVolume: wallpaper.soundVolume,
+      customArgs: wallpaper.customArgs
     })
     return wallpaper.localPath
   }

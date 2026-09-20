@@ -16,6 +16,7 @@ interface WallpaperCardProps {
   currentPlaylistId?: string | null
   isInCurrentPlaylist?: boolean
   previewSize?: PreviewSize
+  backupProgress?: { percentage: number; status: 'copying' | 'verifying' } | null
   onApplied?: () => void
   onLiked?: () => void
   onUnsubscribed?: () => void
@@ -34,6 +35,7 @@ export default function WallpaperCard({
   currentPlaylistId = null,
   isInCurrentPlaylist = false,
   previewSize = 'normal',
+  backupProgress = null,
   onApplied,
   onLiked,
   onUnsubscribed,
@@ -102,8 +104,12 @@ export default function WallpaperCard({
     if (isLiked || isLiking || wallpaper.unavailable) return
     setIsLiking(true)
     try {
-      await window.electronAPI.steam.vote(wallpaper.id, true)
-      onLiked?.()
+      const { confirmed } = await window.electronAPI.steam.vote(wallpaper.id, true)
+      if (confirmed) {
+        onLiked?.()
+      } else {
+        setError('Could not confirm the like on Steam - try again')
+      }
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -232,7 +238,23 @@ export default function WallpaperCard({
             </button>
           </div>
         )}
-        {(wallpaper.backedUp || wallpaper.source === 'backup') && (
+        {backupProgress != null && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/70 px-4">
+            <Archive size={20} className="text-indigo-400 animate-pulse" />
+            <span className="text-xs text-gray-300">
+              {backupProgress.status === 'verifying'
+                ? `Verifying... ${backupProgress.percentage}%`
+                : `Backing up... ${backupProgress.percentage}%`}
+            </span>
+            <div className="h-1 w-full max-w-[140px] overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full bg-indigo-500 transition-[width]"
+                style={{ width: `${backupProgress.percentage}%` }}
+              />
+            </div>
+          </div>
+        )}
+        {backupProgress == null && (wallpaper.backedUp || wallpaper.source === 'backup') && (
           <div
             className="absolute bottom-2 right-2 flex h-5 w-5 items-center justify-center rounded bg-black/60 text-indigo-300"
             title="Backed up locally"

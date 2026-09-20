@@ -26,6 +26,8 @@ interface AppConfig {
   defaultAudioSensitivity: number
   /** Passes --render-debug no-puppet-animation to LWE - freezes puppet (.mdl) meshes at their bind pose, for troubleshooting */
   disablePuppetAnimation: boolean
+  /** Passes --disable-animations to LWE - freezes all scene time (scripts, particles, effects and puppet meshes) */
+  disableAnimations: boolean
   steamIdentity: SteamIdentity
   /** steamId64 of creators whose workshop items are hidden from browsing by default */
   ignoredCreators: string[]
@@ -52,6 +54,7 @@ const store = new Store<AppConfig>({
     ambientVolume: null,
     defaultAudioSensitivity: 1,
     disablePuppetAnimation: false,
+    disableAnimations: false,
     steamIdentity: 'wallpaper-engine',
     ignoredCreators: []
   }
@@ -204,6 +207,14 @@ export function getDisablePuppetAnimation(): boolean {
 
 export function setDisablePuppetAnimation(disabled: boolean): void {
   store.set('disablePuppetAnimation', disabled)
+}
+
+export function getDisableAnimations(): boolean {
+  return store.get('disableAnimations')
+}
+
+export function setDisableAnimations(disabled: boolean): void {
+  store.set('disableAnimations', disabled)
 }
 
 /** Default --audio-sensitivity multiplier for audio-reactive objects with no per-wallpaper override. */

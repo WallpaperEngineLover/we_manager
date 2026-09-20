@@ -1,0 +1,33 @@
+--- a/client.d.ts	2026-09-18 16:42:37.407700450 +0000
++++ b/client.d.ts	2026-09-18 16:42:37.407700450 +0000
+@@ -268,6 +268,11 @@
+     current: bigint
+     total: bigint
+   }
++  export interface UserItemVote {
++    votedUp: boolean
++    votedDown: boolean
++    voteSkipped: boolean
++  }
+   export const enum UpdateStatus {
+     Invalid = 0,
+     PreparingConfig = 1,
+@@ -297,6 +302,18 @@
+    */
+   export function unsubscribe(itemId: bigint): Promise<void>
+   /**
++   * Sets the current user's vote (up or down) on a workshop item.
++   *
++   * {@link https://partner.steamgames.com/doc/api/ISteamUGC#SetUserItemVote}
++   */
++  export function voteItem(itemId: bigint, voteUp: boolean): Promise<void>
++  /**
++   * Gets the current user's existing vote (if any) on a workshop item.
++   *
++   * {@link https://partner.steamgames.com/doc/api/ISteamUGC#GetUserItemVote}
++   */
++  export function getUserVote(itemId: bigint): Promise<UserItemVote>
++  /**
+    * Gets the current state of a workshop item on this client. States can be combined.
+    *
+    * @returns a number with the current item state, e.g. 9

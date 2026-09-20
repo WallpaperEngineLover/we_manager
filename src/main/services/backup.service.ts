@@ -1,4 +1,5 @@
 import { BrowserWindow } from 'electron'
+import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 import { IpcChannels } from '@shared/ipc-channels'
@@ -18,6 +19,29 @@ export function isBackedUp(id: string): boolean {
     return fs.existsSync(getBackupDir(id))
   } catch {
     return false
+  }
+}
+
+function hashFile(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256')
+    const stream = fs.createReadStream(filePath)
+    stream.on('error', reject)
+    stream.on('data', (chunk) => hash.update(chunk))
+    stream.on('end', () => resolve(hash.digest('hex')))
+  })
+}
+
+async function verifyCopy(srcFile: string, destFile: string, expectedSize: number): Promise<void> {
+  const destSize = (await fs.promises.stat(destFile)).size
+  if (destSize !== expectedSize) {
+    throw new Error(
+      `Backup verification failed for ${path.basename(destFile)}: expected ${expectedSize} bytes, got ${destSize}`
+    )
+  }
+  const [srcHash, destHash] = await Promise.all([hashFile(srcFile), hashFile(destFile)])
+  if (srcHash !== destHash) {
+    throw new Error(`Backup verification failed for ${path.basename(destFile)}: hash mismatch`)
   }
 }
 
@@ -51,8 +75,31 @@ export async function backupWallpaper(
     for (const file of files) {
       const srcFile = path.join(sourcePath, file.relPath)
       const destFile = path.join(destDir, file.relPath)
+
+      let srcStat: fs.Stats
+      try {
+        srcStat = await fs.promises.stat(srcFile)
+      } catch {
+        throw new Error(`Source file is gone, refusing to back up: ${file.relPath}`)
+      }
+      if (!srcStat.isFile() || srcStat.size !== file.size) {
+        throw new Error(`Source file changed since it was scanned, refusing to back up: ${file.relPath}`)
+      }
+
       fs.mkdirSync(path.dirname(destFile), { recursive: true })
       await fs.promises.copyFile(srcFile, destFile)
+
+      if (!win.isDestroyed()) {
+        win.webContents.send(IpcChannels.EVENT_BACKUP_PROGRESS, {
+          itemId: id,
+          bytesCopied,
+          bytesTotal,
+          percentage: bytesTotal > 0 ? Math.round((bytesCopied / bytesTotal) * 100) : 0,
+          status: 'verifying'
+        })
+      }
+
+      await verifyCopy(srcFile, destFile, file.size)
       bytesCopied += file.size
 
       if (!win.isDestroyed()) {
@@ -66,6 +113,11 @@ export async function backupWallpaper(
       }
     }
   } catch (err) {
+    try {
+      await fs.promises.rm(destDir, { recursive: true, force: true })
+    } catch {
+      /* ignore */
+    }
     if (!win.isDestroyed()) {
       win.webContents.send(IpcChannels.EVENT_BACKUP_PROGRESS, {
         itemId: id,

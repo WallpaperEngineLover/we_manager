@@ -51,6 +51,10 @@ interface WorkshopFilterState {
   ageRatings: string[]
   resolutions: string[]
   genres: string[]
+  notDownloaded: boolean
+  notLiked: boolean
+  sizeFilterMode: 'none' | 'lt' | 'gt'
+  sizeFilterMb: number
 }
 
 const ALL_RESOLUTIONS = WE_RESOLUTION_GROUPS.flatMap((g) => g.items.map((i) => i.tag))
@@ -66,7 +70,11 @@ const DEFAULT_STATE: WorkshopFilterState = {
   assetTypes: [],
   ageRatings: ALL_AGE_RATINGS,
   resolutions: ALL_RESOLUTIONS,
-  genres: ALL_GENRES
+  genres: ALL_GENRES,
+  notDownloaded: false,
+  notLiked: false,
+  sizeFilterMode: 'none',
+  sizeFilterMb: 100
 }
 
 function loadFilters(): WorkshopFilterState {
@@ -83,6 +91,20 @@ function loadFilters(): WorkshopFilterState {
 
 function saveFilters(state: WorkshopFilterState) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, _v: STORAGE_VERSION }))
+}
+
+function parseSearchQuery(raw: string): { positiveText: string; excludeTerms: string[] } {
+  const tokens = raw.trim().split(/\s+/).filter(Boolean)
+  const positiveTokens: string[] = []
+  const excludeTerms: string[] = []
+  for (const token of tokens) {
+    if (token.length > 1 && token.startsWith('-')) {
+      excludeTerms.push(token.slice(1).toLowerCase())
+    } else {
+      positiveTokens.push(token)
+    }
+  }
+  return { positiveText: positiveTokens.join(' '), excludeTerms }
 }
 
 function CheckItem({
@@ -172,6 +194,10 @@ export default function WorkshopBrowser({
   const { entries: subscribeEntries, enqueue: enqueueSubscribe, clear: clearSubscribeEntries } =
     useSubscriptionQueue(() => queryClient.invalidateQueries({ queryKey: ['library'] }))
   const [searchText, setSearchText] = useState('')
+  const { positiveText: searchPositiveText, excludeTerms: searchExcludeTerms } = useMemo(
+    () => parseSearchQuery(searchText),
+    [searchText]
+  )
   const [queryType, setQueryType] = useState<WorkshopQueryType>('RankedByPublicationDate')
   const [showFilters, setShowFilters] = useState(true)
   const [filters, setFilters] = useState<WorkshopFilterState>(loadFilters)
@@ -198,6 +224,22 @@ export default function WorkshopBrowser({
 
   function update<K extends keyof WorkshopFilterState>(key: K, tag: string) {
     setFilters((prev) => ({ ...prev, [key]: toggle(prev[key] as string[], tag) }))
+  }
+
+  function toggleNotDownloaded() {
+    setFilters((prev) => ({ ...prev, notDownloaded: !prev.notDownloaded }))
+  }
+
+  function toggleNotLiked() {
+    setFilters((prev) => ({ ...prev, notLiked: !prev.notLiked }))
+  }
+
+  function setSizeFilterMode(mode: WorkshopFilterState['sizeFilterMode']) {
+    setFilters((prev) => ({ ...prev, sizeFilterMode: mode }))
+  }
+
+  function setSizeFilterMb(mb: number) {
+    setFilters((prev) => ({ ...prev, sizeFilterMb: mb }))
   }
 
   // Having every option of a category selected means no filter for that category
@@ -237,7 +279,10 @@ export default function WorkshopBrowser({
     effectiveAssetTypes.length +
     effectiveAgeRatings.length +
     effectiveResolutions.length +
-    effectiveGenres.length
+    effectiveGenres.length +
+    (filters.notDownloaded ? 1 : 0) +
+    (filters.notLiked ? 1 : 0) +
+    (filters.sizeFilterMode !== 'none' ? 1 : 0)
 
   function clearAll() {
     setFilters((prev) => ({ ...DEFAULT_STATE, filterMode: prev.filterMode }))
@@ -269,13 +314,26 @@ export default function WorkshopBrowser({
   async function ctxVote(up: boolean) {
     if (!ctxMenu) return
     const ids = ctxMenu.ids
-    await forEachIgnoringErrors(ids, (id) => window.electronAPI.steam.vote(id, up))
-    if (up) {
+    closeCtxMenu()
+
+    const results = await Promise.allSettled(ids.map((id) => window.electronAPI.steam.vote(id, up)))
+    const confirmedIds = ids.filter((_, i) => {
+      const r = results[i]
+      return r.status === 'fulfilled' && r.value.confirmed
+    })
+
+    if (up && confirmedIds.length > 0) {
       queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) => [
-        ...new Set([...(old ?? []), ...ids])
+        ...new Set([...(old ?? []), ...confirmedIds])
       ])
     }
-    closeCtxMenu()
+
+    const failed = ids.length - confirmedIds.length
+    showToast(
+      failed === 0
+        ? `${up ? 'Liked' : 'Disliked'} ${confirmedIds.length} on Steam`
+        : `${up ? 'Liked' : 'Disliked'} ${confirmedIds.length}, ${failed} could not be confirmed`
+    )
   }
 
   function ctxOpenInSteam() {
@@ -292,17 +350,17 @@ export default function WorkshopBrowser({
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error } =
     useInfiniteQuery({
-      queryKey: ['workshop', creatorFilter, searchText, queryType, steamTags],
+      queryKey: ['workshop', creatorFilter, searchPositiveText, queryType, steamTags],
       queryFn: ({ pageParam = 1 }) =>
         creatorFilter
           ? window.electronAPI.workshop.queryByCreator(creatorFilter, {
-              searchText: searchText || undefined,
+              searchText: searchPositiveText || undefined,
               queryType,
               tags: steamTags.length > 0 ? steamTags : undefined,
               page: pageParam as number
             })
           : window.electronAPI.workshop.query({
-              searchText: searchText || undefined,
+              searchText: searchPositiveText || undefined,
               queryType,
               tags: steamTags.length > 0 ? steamTags : undefined,
               page: pageParam as number
@@ -420,19 +478,57 @@ export default function WorkshopBrowser({
 
   // In OR mode: client-side OR filtering for multi-selected categories
   const tagFiltered = useMemo(() => {
-    if (filters.filterMode !== 'or') return allItems
-    return allItems.filter((item) => {
-      if (effectiveTypes.length > 1 && !effectiveTypes.some((t) => item.tags.includes(t)))
-        return false
-      if (effectiveAgeRatings.length > 1 && !effectiveAgeRatings.some((t) => item.tags.includes(t)))
-        return false
-      if (effectiveResolutions.length > 1 && !effectiveResolutions.some((t) => item.tags.includes(t)))
-        return false
-      if (effectiveGenres.length > 1 && !effectiveGenres.some((t) => item.tags.includes(t)))
-        return false
+    const tagMatched =
+      filters.filterMode !== 'or'
+        ? allItems
+        : allItems.filter((item) => {
+            if (effectiveTypes.length > 1 && !effectiveTypes.some((t) => item.tags.includes(t)))
+              return false
+            if (
+              effectiveAgeRatings.length > 1 &&
+              !effectiveAgeRatings.some((t) => item.tags.includes(t))
+            )
+              return false
+            if (
+              effectiveResolutions.length > 1 &&
+              !effectiveResolutions.some((t) => item.tags.includes(t))
+            )
+              return false
+            if (effectiveGenres.length > 1 && !effectiveGenres.some((t) => item.tags.includes(t)))
+              return false
+            return true
+          })
+    const sizeThresholdBytes = filters.sizeFilterMb * 1024 * 1024
+
+    return tagMatched.filter((item) => {
+      if (filters.notDownloaded && playableSet.has(item.publishedFileId)) return false
+      if (filters.notLiked && votedSet.has(item.publishedFileId)) return false
+      if (filters.sizeFilterMode !== 'none') {
+        if (item.fileSize == null) return false
+        if (filters.sizeFilterMode === 'lt' && item.fileSize >= sizeThresholdBytes) return false
+        if (filters.sizeFilterMode === 'gt' && item.fileSize <= sizeThresholdBytes) return false
+      }
+      if (searchExcludeTerms.length > 0) {
+        const haystack = `${item.title} ${item.description} ${item.tags.join(' ')}`.toLowerCase()
+        if (searchExcludeTerms.some((term) => haystack.includes(term))) return false
+      }
       return true
     })
-  }, [allItems, filters.filterMode, effectiveTypes, effectiveAgeRatings, effectiveResolutions, effectiveGenres])
+  }, [
+    allItems,
+    searchExcludeTerms,
+    filters.filterMode,
+    filters.notDownloaded,
+    filters.notLiked,
+    filters.sizeFilterMode,
+    filters.sizeFilterMb,
+    effectiveTypes,
+    effectiveAgeRatings,
+    effectiveResolutions,
+    effectiveGenres,
+    playableSet,
+    votedSet
+  ])
 
   // Page boundaries are fixed against the full tag-filtered list (ignored creators' items
   // included) so a page's contents don't shift around as the ignore list changes. Within a
@@ -541,7 +637,8 @@ export default function WorkshopBrowser({
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
           <input
             type="text"
-            placeholder="Search wallpapers..."
+            placeholder="Search wallpapers... (-word to exclude)"
+            title="Prefix a word with - to exclude it, e.g. holo -hololive"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             className="w-full rounded-lg bg-white/5 py-2 pl-9 pr-3 text-sm text-gray-200 placeholder-gray-500 outline-none focus:ring-1 focus:ring-indigo-500"
@@ -630,6 +727,43 @@ export default function WorkshopBrowser({
               </div>
             </div>
 
+            <FilterSection
+              title="Status"
+              activeCount={(filters.notDownloaded ? 1 : 0) + (filters.notLiked ? 1 : 0)}
+            >
+              <CheckItem
+                label="Not downloaded"
+                checked={filters.notDownloaded}
+                onChange={toggleNotDownloaded}
+              />
+              <CheckItem label="Not liked" checked={filters.notLiked} onChange={toggleNotLiked} />
+            </FilterSection>
+            <FilterSection
+              title="File Size"
+              activeCount={filters.sizeFilterMode !== 'none' ? 1 : 0}
+            >
+              <select
+                value={filters.sizeFilterMode}
+                onChange={(e) => setSizeFilterMode(e.target.value as WorkshopFilterState['sizeFilterMode'])}
+                className="w-full rounded bg-[#1a1a1a] px-1.5 py-1 text-xs text-gray-300 outline-none [&>option]:bg-[#1a1a1a] [&>option]:text-gray-300"
+              >
+                <option value="none">Any size</option>
+                <option value="lt">Less than</option>
+                <option value="gt">More than</option>
+              </select>
+              {filters.sizeFilterMode !== 'none' && (
+                <div className="mt-1 flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={0}
+                    value={filters.sizeFilterMb}
+                    onChange={(e) => setSizeFilterMb(Math.max(0, Number(e.target.value) || 0))}
+                    className="w-16 rounded bg-[#1a1a1a] px-1.5 py-1 text-xs text-gray-300 outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <span className="text-xs text-gray-500">MB</span>
+                </div>
+              )}
+            </FilterSection>
             <FilterSection
               title="Show Only"
               defaultOpen={false}

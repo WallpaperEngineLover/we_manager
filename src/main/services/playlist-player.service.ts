@@ -104,7 +104,7 @@ async function applyCurrent(playlist: Playlist): Promise<void> {
 
   applying = true
   try {
-    await applyWallpaperMeta(wallpaper, { volume })
+    await applyWallpaperMeta(wallpaper, { volume, dependencyPrompt: 'once' })
     setActiveWallpaperId(wallpaperId)
     updateWallpaper(wallpaperId, {
       appliedCount: (wallpaper.appliedCount ?? 0) + 1,

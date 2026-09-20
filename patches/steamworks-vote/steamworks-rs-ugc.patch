@@ -1,0 +1,81 @@
+--- a/src/ugc.rs	2026-09-18 16:42:37.405700424 +0000
++++ b/src/ugc.rs	2026-09-18 16:42:37.406700437 +0000
+@@ -517,6 +517,14 @@
+     pub timestamp: u32,
+ }
+ 
++#[derive(Clone, Copy, Debug)]
++#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
++pub struct UserItemVote {
++    pub voted_up: bool,
++    pub voted_down: bool,
++    pub vote_skipped: bool,
++}
++
+ impl<Manager> UGC<Manager> {
+     /// Suspends or resumes all workshop downloads
+     pub fn suspend_downloads(&self, suspend: bool) {
+@@ -614,6 +622,63 @@
+                     })
+                 },
+             );
++        }
++    }
++
++    /// Sets the current user's vote (up or down) on a workshop item.
++    ///
++    /// {@link https://partner.steamgames.com/doc/api/ISteamUGC#SetUserItemVote}
++    pub fn vote_up_item<F>(&self, published_file_id: PublishedFileId, vote_up: bool, cb: F)
++    where
++        F: FnOnce(Result<(), SteamError>) + 'static + Send,
++    {
++        unsafe {
++            let api_call =
++                sys::SteamAPI_ISteamUGC_SetUserItemVote(self.ugc, published_file_id.0, vote_up);
++            register_call_result::<sys::SetUserItemVoteResult_t, _, _>(
++                &self.inner,
++                api_call,
++                CALLBACK_BASE_ID + 8,
++                move |v, io_error| {
++                    cb(if io_error {
++                        Err(SteamError::IOFailure)
++                    } else if v.m_eResult != sys::EResult::k_EResultOK {
++                        Err(v.m_eResult.into())
++                    } else {
++                        Ok(())
++                    })
++                },
++            );
++        }
++    }
++
++    /// Gets the current user's existing vote (if any) on a workshop item.
++    ///
++    /// {@link https://partner.steamgames.com/doc/api/ISteamUGC#GetUserItemVote}
++    pub fn user_item_vote<F>(&self, published_file_id: PublishedFileId, cb: F)
++    where
++        F: FnOnce(Result<UserItemVote, SteamError>) + 'static + Send,
++    {
++        unsafe {
++            let api_call = sys::SteamAPI_ISteamUGC_GetUserItemVote(self.ugc, published_file_id.0);
++            register_call_result::<sys::GetUserItemVoteResult_t, _, _>(
++                &self.inner,
++                api_call,
++                CALLBACK_BASE_ID + 9,
++                move |v, io_error| {
++                    cb(if io_error {
++                        Err(SteamError::IOFailure)
++                    } else if v.m_eResult != sys::EResult::k_EResultOK {
++                        Err(v.m_eResult.into())
++                    } else {
++                        Ok(UserItemVote {
++                            voted_up: v.m_bVotedUp,
++                            voted_down: v.m_bVotedDown,
++                            vote_skipped: v.m_bVoteSkipped,
++                        })
++                    })
++                },
++            );
+         }
+     }
+ 

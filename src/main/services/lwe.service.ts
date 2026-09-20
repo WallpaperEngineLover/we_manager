@@ -11,7 +11,8 @@ import type {
   LinuxDistro,
   LweSceneObject,
   LweProperty,
-  LweAudioObject
+  LweAudioObject,
+  LweSceneEffect
 } from '@shared/types'
 import {
   isCommandAvailable,
@@ -29,7 +30,8 @@ import {
   getAudioScreen,
   getAmbientVolume,
   getDefaultAudioSensitivity,
-  getDisablePuppetAnimation
+  getDisablePuppetAnimation,
+  getDisableAnimations
 } from './config.service'
 import { DEFAULT_LWE_REPO } from '@shared/constants'
 
@@ -418,6 +420,8 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     invalidateObjectFlagsSupport()
     invalidateAudioSensitivitySupport()
     invalidateSoundVolumeSupport()
+    invalidateEffectFlagsSupport()
+    invalidateDisableAnimationsSupport()
 
     const status = getLweStatus()
     if (status.installed) {
@@ -533,6 +537,8 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
     invalidateObjectFlagsSupport()
     invalidateAudioSensitivitySupport()
     invalidateSoundVolumeSupport()
+    invalidateEffectFlagsSupport()
+    invalidateDisableAnimationsSupport()
 
     return { ok: true, message: 'linux-wallpaperengine has been uninstalled.' }
   } catch (err) {
@@ -706,6 +712,62 @@ function supportsSoundVolume(): boolean {
   return soundVolumeSupported
 }
 
+let effectFlagsSupported: boolean | null = null
+
+function invalidateEffectFlagsSupport(): void {
+  effectFlagsSupported = null
+}
+
+function supportsEffectFlags(): boolean {
+  if (effectFlagsSupported !== null) return effectFlagsSupported
+  try {
+    const binaryPath = getLweBinaryPath()
+    const envVars = buildLweEnvVars()
+    const stdout = execFileSync('env', [...envVars, binaryPath, '--help'], {
+      timeout: 5_000,
+      encoding: 'utf8',
+      maxBuffer: 2 * 1024 * 1024
+    })
+    effectFlagsSupported = stdout.includes('--list-effects')
+  } catch {
+    effectFlagsSupported = false
+  }
+  return effectFlagsSupported
+}
+
+let disableAnimationsSupported: boolean | null = null
+
+function invalidateDisableAnimationsSupport(): void {
+  disableAnimationsSupported = null
+}
+
+function supportsDisableAnimations(): boolean {
+  if (disableAnimationsSupported !== null) return disableAnimationsSupported
+  try {
+    const binaryPath = getLweBinaryPath()
+    const envVars = buildLweEnvVars()
+    const stdout = execFileSync('env', [...envVars, binaryPath, '--help'], {
+      timeout: 5_000,
+      encoding: 'utf8',
+      maxBuffer: 2 * 1024 * 1024
+    })
+    disableAnimationsSupported = stdout.includes('--disable-animations')
+  } catch {
+    disableAnimationsSupported = false
+  }
+  return disableAnimationsSupported
+}
+
+export function parseCustomArgs(raw: string): string[] {
+  const tokens: string[] = []
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g
+  let match: RegExpExecArray | null
+  while ((match = re.exec(raw)) !== null) {
+    tokens.push(match[1] ?? match[2] ?? match[3])
+  }
+  return tokens
+}
+
 /** Build the common LWE args (assets dir, screen roots, fps, volume, object overrides). */
 function buildLweArgs(
   wallpaperPath: string,
@@ -715,14 +777,19 @@ function buildLweArgs(
     volume?: number
     disabledObjects?: string[]
     enabledObjects?: string[]
+    disabledEffects?: string[]
+    enabledEffects?: string[]
     propertyOverrides?: Record<string, string>
     scalingMode?: string
     zoom?: number
+    offsetX?: number
+    offsetY?: number
     disableParallax?: boolean
     cornerColor?: string
     speed?: number
     audioSensitivity?: Record<string, number>
     soundVolume?: Record<string, number>
+    customArgs?: string
   }
 ): string[] {
   const args: string[] = []
@@ -745,14 +812,22 @@ function buildLweArgs(
   const ambientVolume = getAmbientVolume()
   if (ambientVolume !== null) args.push('--ambient-volume', String(ambientVolume))
   if (getDisablePuppetAnimation()) args.push('--render-debug', 'no-puppet-animation')
+  if (getDisableAnimations() && supportsDisableAnimations()) args.push('--disable-animations')
   if (options.scalingMode) args.push('--scaling', options.scalingMode)
   if (options.zoom !== undefined) args.push('--zoom', String(options.zoom))
+  if (options.offsetX !== undefined || options.offsetY !== undefined) {
+    args.push('--offset', `${options.offsetX ?? 0},${options.offsetY ?? 0}`)
+  }
   if (options.disableParallax) args.push('--disable-parallax')
   if (options.cornerColor) args.push('--corner-color', options.cornerColor)
   if (options.speed !== undefined) args.push('--speed', String(options.speed))
   if ((options.disabledObjects?.length || options.enabledObjects?.length) && supportsObjectFlags()) {
     for (const id of options.disabledObjects ?? []) args.push('--disable-object', id)
     for (const id of options.enabledObjects ?? []) args.push('--enable-object', id)
+  }
+  if ((options.disabledEffects?.length || options.enabledEffects?.length) && supportsEffectFlags()) {
+    for (const id of options.disabledEffects ?? []) args.push('--disable-effect', id)
+    for (const id of options.enabledEffects ?? []) args.push('--enable-effect', id)
   }
   for (const [name, value] of Object.entries(options.propertyOverrides ?? {})) {
     args.push('--set-property', `${name}=${value}`)
@@ -771,6 +846,9 @@ function buildLweArgs(
     for (const [id, volume] of Object.entries(options.soundVolume ?? {})) {
       args.push('--sound-volume', `${id}=${volume}`)
     }
+  }
+  if (options.customArgs?.trim()) {
+    args.push(...parseCustomArgs(options.customArgs))
   }
   args.push(wallpaperPath)
   return args
@@ -847,7 +925,7 @@ function resolveActivePid(): number | null {
 }
 
 /**
- * Pushes a background swap and/or layer/volume/xray/scaling/zoom/parallax changes to an already-
+ * Pushes a background swap and/or layer/volume/xray/scaling/zoom/offset/parallax changes to an already-
  * running instance via the extended key=value control file. All fields are optional and
  * independent - only the ones provided get written. All fields for one logical change must go
  * through a single call: the engine has only one pending-request slot, so two calls in quick
@@ -867,6 +945,8 @@ export function hotswapLweSettings(options: {
   xray?: boolean
   scaling?: string
   zoom?: number
+  offsetX?: number
+  offsetY?: number
   disableParallax?: boolean
   cornerColor?: string
   speed?: number
@@ -893,6 +973,9 @@ export function hotswapLweSettings(options: {
   if (options.xray !== undefined) lines.push(`xray=${options.xray ? 'on' : 'off'}`)
   if (options.scaling !== undefined) lines.push(`scaling=${options.scaling}`)
   if (options.zoom !== undefined) lines.push(`zoom=${options.zoom}`)
+  if (options.offsetX !== undefined || options.offsetY !== undefined) {
+    lines.push(`offset=${options.offsetX ?? 0},${options.offsetY ?? 0}`)
+  }
   if (options.disableParallax !== undefined) lines.push(`disable-parallax=${options.disableParallax ? 'on' : 'off'}`)
   if (options.cornerColor !== undefined) lines.push(`corner-color=${options.cornerColor}`)
   if (options.speed !== undefined) lines.push(`speed=${options.speed}`)
@@ -929,15 +1012,20 @@ export async function launchLweAsync(
     volume?: number
     disabledObjects?: string[]
     enabledObjects?: string[]
+    disabledEffects?: string[]
+    enabledEffects?: string[]
     propertyOverrides?: Record<string, string>
     xrayFullReveal?: boolean
     scalingMode?: string
     zoom?: number
+    offsetX?: number
+    offsetY?: number
     disableParallax?: boolean
     cornerColor?: string
     speed?: number
     audioSensitivity?: Record<string, number>
     soundVolume?: Record<string, number>
+    customArgs?: string
   } = {}
 ): Promise<void> {
   // Hot-reload if already running. xray has no launch flag and the running instance keeps its own
@@ -945,14 +1033,20 @@ export async function launchLweAsync(
   // parallax/cornerColor/speed/propertyOverrides do have launch flags, but hot-reload doesn't
   // restart the process - the running instance keeps whatever the previous wallpaper set, so they
   // need the same explicit push, defaulting to "no override" when the new wallpaper doesn't set them.
+  // customArgs and effect overrides have no hotswap control-file key, so they always force a restart
   const defaultSensitivity = getDefaultAudioSensitivity()
   if (
     isLweRunning() &&
+    !options.customArgs?.trim() &&
+    !options.disabledEffects?.length &&
+    !options.enabledEffects?.length &&
     hotswapLweSettings({
       path: wallpaperPath,
       xray: options.xrayFullReveal,
       scaling: options.scalingMode ?? 'default',
       zoom: options.zoom ?? 1,
+      offsetX: options.offsetX ?? 0,
+      offsetY: options.offsetY ?? 0,
       disableParallax: options.disableParallax ?? false,
       cornerColor: options.cornerColor ?? '000000',
       speed: options.speed ?? 1,
@@ -1087,6 +1181,45 @@ export async function listLweObjects(wallpaperPath: string): Promise<LweSceneObj
     const e = err as Error & { stdout?: string; stderr?: string }
     const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
     throw new Error(`Failed to list wallpaper objects: ${msg}`)
+  }
+}
+
+// Matches lines like `  42 - Bloom (object=17 objectName="body" group="Lighting")` printed by --list-effects
+const EFFECT_LINE_RE = /^\s*(\S+)\s-\s(.*)\s\(object=(\S+)\sobjectName="(.*)"\sgroup="(.*)"\)\s*$/
+
+function parseLweEffectList(output: string): LweSceneEffect[] {
+  const effects: LweSceneEffect[] = []
+  for (const line of output.split('\n')) {
+    const m = line.match(EFFECT_LINE_RE)
+    if (m) effects.push({ id: m[1], name: m[2], objectId: m[3], objectName: m[4], group: m[5] })
+  }
+  return effects
+}
+
+export async function listLweEffects(wallpaperPath: string): Promise<LweSceneEffect[]> {
+  const status = getLweStatus()
+  if (!status.installed) throw new Error('linux-wallpaperengine is not installed.')
+  // older builds ignore unknown flags and render the wallpaper instead of exiting
+  if (!supportsEffectFlags()) return []
+
+  const binaryPath = getLweBinaryPath()
+  const args = ['--list-effects']
+  const assetsDir = findWeAssetsDir()
+  if (assetsDir) args.push('--assets-dir', assetsDir)
+  args.push(wallpaperPath)
+
+  const envVars = buildLweEnvVars()
+  try {
+    const { stdout } = await execFileAsync('env', [...envVars, binaryPath, ...args], {
+      timeout: 15_000,
+      maxBuffer: 5 * 1024 * 1024,
+      encoding: 'utf8'
+    })
+    return parseLweEffectList(stdout)
+  } catch (err) {
+    const e = err as Error & { stdout?: string; stderr?: string }
+    const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
+    throw new Error(`Failed to list wallpaper effects: ${msg}`)
   }
 }
 

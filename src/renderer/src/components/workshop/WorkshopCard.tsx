@@ -5,6 +5,7 @@ import type { SubscribeState } from '../../hooks/useSubscriptionQueue'
 import clsx from 'clsx'
 import { openWorkshopPage } from '../../utils/steam'
 import { formatFileSize } from '../../utils/format'
+import { useToast } from '../common/Toast'
 
 interface WorkshopCardProps {
   item: WorkshopItem
@@ -39,6 +40,7 @@ export default function WorkshopCard({
   onPlay,
   onSubscribe
 }: WorkshopCardProps) {
+  const { showToast } = useToast()
   const [isLiking, setIsLiking] = useState(false)
   const [isApplying, setIsApplying] = useState(false)
 
@@ -72,10 +74,14 @@ export default function WorkshopCard({
     if (isLiked || isLiking) return
     setIsLiking(true)
     try {
-      await window.electronAPI.steam.vote(item.publishedFileId, true)
-      onLiked?.()
+      const { confirmed } = await window.electronAPI.steam.vote(item.publishedFileId, true)
+      if (confirmed) {
+        onLiked?.()
+      } else {
+        showToast('Could not confirm the like on Steam - try again')
+      }
     } catch (err) {
-      console.error('Like failed:', err)
+      showToast((err as Error).message)
     } finally {
       setIsLiking(false)
     }

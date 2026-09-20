@@ -37,6 +37,20 @@ const store = new Store<LibraryStore>({
 
 export function initLibrary(): void {
   console.log('[Library] Store initialized at', store.path)
+  repairStaleDownloadFlags()
+}
+
+function repairStaleDownloadFlags(): void {
+  const wallpapers = store.get('wallpapers')
+  let changed = false
+  for (const wallpaper of Object.values(wallpapers)) {
+    if (!wallpaper.subscribed && (wallpaper.downloading || wallpaper.downloadFailed)) {
+      wallpaper.downloading = false
+      wallpaper.downloadFailed = false
+      changed = true
+    }
+  }
+  if (changed) store.set('wallpapers', wallpapers)
 }
 
 export function getAllWallpapers(filters?: LibraryFilters): WallpaperMeta[] {

@@ -4,6 +4,7 @@ import { IpcChannels } from '@shared/ipc-channels'
 import * as steam from '../services/steam.service'
 import * as library from '../services/library.service'
 import * as backup from '../services/backup.service'
+import { setDependencyInstaller } from '../services/dependency.service'
 
 function startDownloadPoll(win: BrowserWindow, itemId: string): void {
   const idBig = BigInt(itemId)
@@ -35,6 +36,12 @@ function startDownloadPoll(win: BrowserWindow, itemId: string): void {
 }
 
 export function registerSteamHandlers(win: BrowserWindow): void {
+  setDependencyInstaller(async (itemId) => {
+    await steam.subscribeToItem(BigInt(itemId))
+    steam.downloadItem(BigInt(itemId))
+    startDownloadPoll(win, itemId)
+  })
+
   ipcMain.handle(IpcChannels.STEAM_IS_RUNNING, () => {
     return steam.isSteamRunning()
   })
@@ -67,10 +74,12 @@ export function registerSteamHandlers(win: BrowserWindow): void {
         library.updateWallpaper(itemId, {
           source: 'backup',
           localPath: backup.getBackupDir(itemId),
-          subscribed: false
+          subscribed: false,
+          downloading: false,
+          downloadFailed: false
         })
       } catch (err) {
-        library.updateWallpaper(itemId, { subscribed: false })
+        library.updateWallpaper(itemId, { subscribed: false, downloading: false, downloadFailed: false })
         console.error('[Steam] Failed to resolve backup dir on unsubscribe:', err)
       }
     } else {
@@ -93,9 +102,9 @@ export function registerSteamHandlers(win: BrowserWindow): void {
     return { ok: true }
   })
 
-  ipcMain.handle(IpcChannels.STEAM_VOTE, (_e, itemId: string, voteUp: boolean) => {
-    steam.voteOnItem(BigInt(itemId), voteUp)
-    return { ok: true }
+  ipcMain.handle(IpcChannels.STEAM_VOTE, async (_e, itemId: string, voteUp: boolean) => {
+    const confirmed = await steam.voteOnItemAndConfirm(BigInt(itemId), voteUp)
+    return { ok: true, confirmed }
   })
 
   ipcMain.handle(IpcChannels.STEAM_OPEN_WORKSHOP, (_e, itemId: string) => {

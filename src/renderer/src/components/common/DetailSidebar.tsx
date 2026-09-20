@@ -27,17 +27,29 @@ import {
   Maximize,
   ZoomIn,
   ZoomOut,
+  Move,
   Move3d,
   Palette,
   Gauge,
   Zap,
-  Music2
+  Music2,
+  Terminal,
+  Sparkles,
+  CloudFog
 } from 'lucide-react'
 import clsx from 'clsx'
 import { openWorkshopPage, openProfilePage, isWorkshopId } from '../../utils/steam'
 import { WE_TYPES, WE_AGE_RATINGS, WE_RESOLUTION_GROUPS } from '../../constants/weFilters'
 import { formatFileSize } from '../../utils/format'
-import type { LweSceneObject, LweProperty, LweAudioObject, WallpaperMeta, ScalingMode } from '@shared/types'
+import { useToast } from './Toast'
+import type {
+  LweSceneObject,
+  LweSceneEffect,
+  LweProperty,
+  LweAudioObject,
+  WallpaperMeta,
+  ScalingMode
+} from '@shared/types'
 
 const SCALING_MODE_OPTIONS: { value: ScalingMode; label: string }[] = [
   { value: 'default', label: 'Default' },
@@ -125,6 +137,50 @@ function LayerRow({
         {object.name}
       </span>
       <span className="shrink-0 text-gray-600">{object.type}</span>
+    </button>
+  )
+}
+
+function EffectRow({
+  effect,
+  state,
+  busy,
+  onToggle
+}: {
+  effect: LweSceneEffect
+  state: ObjectState
+  busy: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      disabled={busy}
+      title={
+        state === 'default'
+          ? 'Visible (default) - click to disable'
+          : state === 'hidden'
+            ? 'Disabled - click to force visible'
+            : 'Forced visible - click to reset to default'
+      }
+      className={clsx(
+        'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-white/5 disabled:opacity-40',
+        state === 'hidden' ? 'text-gray-600' : 'text-gray-300'
+      )}
+    >
+      {state === 'hidden' ? (
+        <EyeOff size={12} className="shrink-0 text-gray-600" />
+      ) : state === 'forced' ? (
+        <Pin size={12} className="shrink-0 text-indigo-400" />
+      ) : (
+        <Eye size={12} className="shrink-0 text-gray-500" />
+      )}
+      <span className={clsx('flex-1 truncate', state === 'hidden' && 'line-through')}>
+        {effect.name}
+      </span>
+      <span className="shrink-0 truncate text-gray-600" title={effect.objectName}>
+        on {effect.objectName}
+      </span>
     </button>
   )
 }
@@ -345,6 +401,7 @@ export default function DetailSidebar({
 }: DetailSidebarProps) {
   const workshopId = isWorkshopId(id)
   const queryClient = useQueryClient()
+  const { showToast } = useToast()
   const [isLiking, setIsLiking] = useState(false)
   const [isDisliking, setIsDisliking] = useState(false)
   const [isApplying, setIsApplying] = useState(false)
@@ -352,6 +409,9 @@ export default function DetailSidebar({
   const [isUnsubscribing, setIsUnsubscribing] = useState(false)
   const [layersOpen, setLayersOpen] = useState(false)
   const [togglingObjectId, setTogglingObjectId] = useState<string | null>(null)
+  const [effectsOpen, setEffectsOpen] = useState(false)
+  const [togglingEffectId, setTogglingEffectId] = useState<string | null>(null)
+  const [togglingFog, setTogglingFog] = useState(false)
   const [propertiesOpen, setPropertiesOpen] = useState(false)
   const [committingProperty, setCommittingProperty] = useState<string | null>(null)
   const [audioOpen, setAudioOpen] = useState(false)
@@ -406,6 +466,18 @@ export default function DetailSidebar({
     retry: false
   })
 
+  const { data: effects = [], isLoading: effectsLoading } = useQuery({
+    queryKey: ['lwe-effects', localPath],
+    queryFn: () => window.electronAPI.lwe.listEffects(localPath!),
+    enabled: !!localPath && lweInstalled,
+    staleTime: Infinity,
+    retry: false
+  })
+  const disabledEffects = libraryMeta?.disabledEffects ?? []
+  const enabledEffects = libraryMeta?.enabledEffects ?? []
+  const fogObjects = objects.filter((o) => /fog/i.test(o.name))
+  const fogDisabled = fogObjects.length > 0 && fogObjects.every((o) => disabledObjects.includes(o.id))
+
   const { data: allProperties = [], isLoading: propertiesLoading } = useQuery({
     queryKey: ['lwe-properties', localPath],
     queryFn: () => window.electronAPI.lwe.listProperties(localPath!),
@@ -449,20 +521,25 @@ export default function DetailSidebar({
     queryClient.setQueryData(['library-item', id], updated)
     queryClient.invalidateQueries({ queryKey: ['library'] })
     if (isActive) {
-      const { ok } = await window.electronAPI.lwe.hotswapSettings({
-        disabledObjects: patch.disabledObjects,
-        enabledObjects: patch.enabledObjects,
-        volume: patch.volumeOverride,
-        xray: patch.xrayFullReveal,
-        scaling: patch.scalingMode,
-        zoom: patch.zoom,
-        disableParallax: patch.disableParallax,
-        cornerColor: patch.cornerColor,
-        speed: patch.playbackSpeed,
-        propertyOverrides: patch.propertyOverrides,
-        audioSensitivity: patch.audioSensitivity,
-        soundVolume: patch.soundVolume
-      })
+      // customArgs and effect overrides have no hotswap control-file key, so they always force a restart
+      const { ok } = 'customArgs' in patch || 'disabledEffects' in patch || 'enabledEffects' in patch
+        ? { ok: false }
+        : await window.electronAPI.lwe.hotswapSettings({
+            disabledObjects: patch.disabledObjects,
+            enabledObjects: patch.enabledObjects,
+            volume: patch.volumeOverride,
+            xray: patch.xrayFullReveal,
+            scaling: patch.scalingMode,
+            zoom: patch.zoom,
+            offsetX: patch.offsetX,
+            offsetY: patch.offsetY,
+            disableParallax: patch.disableParallax,
+            cornerColor: patch.cornerColor,
+            speed: patch.playbackSpeed,
+            propertyOverrides: patch.propertyOverrides,
+            audioSensitivity: patch.audioSensitivity,
+            soundVolume: patch.soundVolume
+          })
       if (!ok) {
         await window.electronAPI.lwe.stop()
         await window.electronAPI.wallpaper.apply({ wallpaperId: id })
@@ -476,7 +553,13 @@ export default function DetailSidebar({
   // Pushes a value live while a slider is being dragged, debounced so a fast drag doesn't flood
   // the control-file/SIGUSR1 channel. Doesn't touch the library store - mouseup/touchend/keyup
   // still do that persisted commit, which also re-pushes the final value.
-  function previewLive(patch: { volume?: number; zoom?: number; speed?: number }) {
+  function previewLive(patch: {
+    volume?: number
+    zoom?: number
+    offsetX?: number
+    offsetY?: number
+    speed?: number
+  }) {
     if (!isActive) return
     if (livePreviewTimer.current) clearTimeout(livePreviewTimer.current)
     livePreviewTimer.current = setTimeout(() => {
@@ -501,6 +584,46 @@ export default function DetailSidebar({
       await persistAndMaybeRelaunch({ disabledObjects: [...disabled], enabledObjects: [...enabled] })
     } finally {
       setTogglingObjectId(null)
+    }
+  }
+
+  async function toggleFog() {
+    if (togglingFog || fogObjects.length === 0) return
+    const disabled = new Set(disabledObjects)
+    const enabled = new Set(enabledObjects)
+    for (const obj of fogObjects) {
+      if (fogDisabled) {
+        disabled.delete(obj.id)
+      } else {
+        disabled.add(obj.id)
+        enabled.delete(obj.id)
+      }
+    }
+    setTogglingFog(true)
+    try {
+      await persistAndMaybeRelaunch({ disabledObjects: [...disabled], enabledObjects: [...enabled] })
+    } finally {
+      setTogglingFog(false)
+    }
+  }
+
+  async function toggleEffect(effectId: string) {
+    if (togglingEffectId) return
+    const disabled = new Set(disabledEffects)
+    const enabled = new Set(enabledEffects)
+    if (disabled.has(effectId)) {
+      disabled.delete(effectId)
+      enabled.add(effectId)
+    } else if (enabled.has(effectId)) {
+      enabled.delete(effectId)
+    } else {
+      disabled.add(effectId)
+    }
+    setTogglingEffectId(effectId)
+    try {
+      await persistAndMaybeRelaunch({ disabledEffects: [...disabled], enabledEffects: [...enabled] })
+    } finally {
+      setTogglingEffectId(null)
     }
   }
 
@@ -588,6 +711,23 @@ export default function DetailSidebar({
     }
   }
 
+  const [offsetXDraft, setOffsetXDraft] = useState<number | null>(null)
+  const [offsetYDraft, setOffsetYDraft] = useState<number | null>(null)
+  const [isCommittingOffset, setIsCommittingOffset] = useState(false)
+  const offsetX = offsetXDraft ?? libraryMeta?.offsetX ?? 0
+  const offsetY = offsetYDraft ?? libraryMeta?.offsetY ?? 0
+
+  async function commitOffset(x: number, y: number) {
+    setIsCommittingOffset(true)
+    try {
+      await persistAndMaybeRelaunch({ offsetX: x, offsetY: y })
+    } finally {
+      setOffsetXDraft(null)
+      setOffsetYDraft(null)
+      setIsCommittingOffset(false)
+    }
+  }
+
   const [fpsDraft, setFpsDraft] = useState<number | null>(null)
   const [isCommittingFps, setIsCommittingFps] = useState(false)
   const fps = fpsDraft ?? libraryMeta?.fpsOverride ?? null
@@ -644,6 +784,24 @@ export default function DetailSidebar({
     }
   }
 
+  const [customArgsDraft, setCustomArgsDraft] = useState<string | null>(null)
+  const [isCommittingCustomArgs, setIsCommittingCustomArgs] = useState(false)
+  const customArgs = customArgsDraft ?? libraryMeta?.customArgs ?? ''
+
+  async function commitCustomArgs(value: string) {
+    if (value === (libraryMeta?.customArgs ?? '')) {
+      setCustomArgsDraft(null)
+      return
+    }
+    setIsCommittingCustomArgs(true)
+    try {
+      await persistAndMaybeRelaunch({ customArgs: value || undefined })
+    } finally {
+      setCustomArgsDraft(null)
+      setIsCommittingCustomArgs(false)
+    }
+  }
+
   const typeTag = tags.find((t) => TYPE_TAGS.has(t))
   const ageTag = tags.find((t) => AGE_TAGS.has(t))
   const resolutionTags = tags.filter((t) => RESOLUTION_TAGS.has(t))
@@ -658,8 +816,14 @@ export default function DetailSidebar({
     if (isLiked || isLiking || unavailable) return
     setIsLiking(true)
     try {
-      await window.electronAPI.steam.vote(id, true)
-      onLiked()
+      const { confirmed } = await window.electronAPI.steam.vote(id, true)
+      if (confirmed) {
+        onLiked()
+      } else {
+        showToast('Could not confirm the like on Steam - try again')
+      }
+    } catch (err) {
+      showToast((err as Error).message)
     } finally {
       setIsLiking(false)
     }
@@ -669,7 +833,10 @@ export default function DetailSidebar({
     if (isDisliking || unavailable) return
     setIsDisliking(true)
     try {
-      await window.electronAPI.steam.vote(id, false)
+      const { confirmed } = await window.electronAPI.steam.vote(id, false)
+      if (!confirmed) showToast('Could not confirm the dislike on Steam - try again')
+    } catch (err) {
+      showToast((err as Error).message)
     } finally {
       setIsDisliking(false)
     }
@@ -772,20 +939,36 @@ export default function DetailSidebar({
 
         {localPath && lweInstalled && (objectsLoading || objects.length > 0) && (
           <div className="border-t border-white/5 pt-3">
-            <button
-              onClick={() => setLayersOpen((v) => !v)}
-              className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
-            >
-              {layersOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-              <Layers size={12} />
-              <span className="flex-1 text-left">Layers</span>
-              {isActive && (
-                <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
-                </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setLayersOpen((v) => !v)}
+                className="flex flex-1 items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
+              >
+                {layersOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                <Layers size={12} />
+                <span className="flex-1 text-left">Layers</span>
+                {isActive && (
+                  <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
+                    live
+                  </span>
+                )}
+                {objectsLoading && <Loader2 size={11} className="animate-spin" />}
+              </button>
+              {fogObjects.length > 0 && (
+                <button
+                  onClick={toggleFog}
+                  disabled={togglingFog}
+                  title={fogDisabled ? 'Fog disabled - click to re-enable' : 'Click to disable fog'}
+                  className={clsx(
+                    'flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium normal-case transition-colors disabled:opacity-40',
+                    fogDisabled ? 'bg-white/5 text-gray-500' : 'bg-white/10 text-gray-300 hover:bg-white/15'
+                  )}
+                >
+                  {togglingFog ? <Loader2 size={10} className="animate-spin" /> : <CloudFog size={10} />}
+                  Fog
+                </button>
               )}
-              {objectsLoading && <Loader2 size={11} className="animate-spin" />}
-            </button>
+            </div>
             {layersOpen && (
               <div className="mt-1.5 space-y-0.5">
                 {objects.map((obj) => (
@@ -795,6 +978,33 @@ export default function DetailSidebar({
                     state={objectState(obj.id, disabledObjects, enabledObjects)}
                     busy={togglingObjectId === obj.id}
                     onToggle={() => toggleObject(obj.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {localPath && lweInstalled && (effectsLoading || effects.length > 0) && (
+          <div className="border-t border-white/5 pt-3">
+            <button
+              onClick={() => setEffectsOpen((v) => !v)}
+              className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
+            >
+              {effectsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              <Sparkles size={12} />
+              <span className="flex-1 text-left">Effects</span>
+              {effectsLoading && <Loader2 size={11} className="animate-spin" />}
+            </button>
+            {effectsOpen && (
+              <div className="mt-1.5 space-y-0.5">
+                {effects.map((fx) => (
+                  <EffectRow
+                    key={fx.id}
+                    effect={fx}
+                    state={objectState(fx.id, disabledEffects, enabledEffects)}
+                    busy={togglingEffectId === fx.id}
+                    onToggle={() => toggleEffect(fx.id)}
                   />
                 ))}
               </div>
@@ -859,6 +1069,67 @@ export default function DetailSidebar({
               onKeyUp={(e) => commitZoom(Number(e.currentTarget.value))}
               className="w-full accent-indigo-500 disabled:opacity-50"
             />
+          </div>
+        )}
+
+        {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
+          <div className="border-t border-white/5 pt-3">
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <Move size={12} />
+              <span className="flex-1 text-left">Position</span>
+              {isActive && (
+                <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
+                  live
+                </span>
+              )}
+              {isCommittingOffset && <Loader2 size={11} className="animate-spin" />}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-12 shrink-0 text-[10px] normal-case text-gray-500">Left/Right</span>
+              <input
+                type="range"
+                min={-100}
+                max={100}
+                step={1}
+                value={Math.round(offsetX * 100)}
+                disabled={isCommittingOffset}
+                onChange={(e) => {
+                  const v = Number(e.target.value) / 100
+                  setOffsetXDraft(v)
+                  previewLive({ offsetX: v, offsetY })
+                }}
+                onMouseUp={(e) => commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
+                onTouchEnd={(e) => commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
+                onKeyUp={(e) => commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
+                className="w-full accent-indigo-500 disabled:opacity-50"
+              />
+              <span className="w-8 shrink-0 text-right text-[10px] text-gray-400">
+                {Math.round(offsetX * 100)}
+              </span>
+            </div>
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <span className="w-12 shrink-0 text-[10px] normal-case text-gray-500">Up/Down</span>
+              <input
+                type="range"
+                min={-100}
+                max={100}
+                step={1}
+                value={Math.round(offsetY * 100)}
+                disabled={isCommittingOffset}
+                onChange={(e) => {
+                  const v = Number(e.target.value) / 100
+                  setOffsetYDraft(v)
+                  previewLive({ offsetX, offsetY: v })
+                }}
+                onMouseUp={(e) => commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
+                onTouchEnd={(e) => commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
+                onKeyUp={(e) => commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
+                className="w-full accent-indigo-500 disabled:opacity-50"
+              />
+              <span className="w-8 shrink-0 text-right text-[10px] text-gray-400">
+                {Math.round(offsetY * 100)}
+              </span>
+            </div>
           </div>
         )}
 
@@ -1053,6 +1324,34 @@ export default function DetailSidebar({
                 <ToggleLeft size={14} className="text-gray-600" />
               )}
             </button>
+          </div>
+        )}
+
+        {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
+          <div className="border-t border-white/5 pt-3">
+            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <Terminal size={12} />
+              <span className="flex-1 text-left">Custom launch arguments</span>
+              {isCommittingCustomArgs && <Loader2 size={11} className="animate-spin" />}
+            </label>
+            <p className="mb-1.5 text-[11px] text-gray-600">
+              Extra linux-wallpaperengine flags for this wallpaper only, e.g.{' '}
+              <code className="text-gray-500">--render-debug skip-effect=726</code>. Applying a
+              change always restarts the wallpaper if it's playing.
+            </p>
+            <input
+              type="text"
+              spellCheck={false}
+              value={customArgs}
+              disabled={isCommittingCustomArgs}
+              onChange={(e) => setCustomArgsDraft(e.target.value)}
+              onBlur={(e) => commitCustomArgs(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+              }}
+              placeholder="--render-debug skip-effect=726"
+              className="w-full rounded border border-white/10 bg-black/30 px-2 py-1 text-xs text-gray-200 placeholder:text-gray-600 focus:border-indigo-500/50 focus:outline-none disabled:opacity-50"
+            />
           </div>
         )}
 

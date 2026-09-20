@@ -24,7 +24,9 @@ async function backupOne(id: string, win: BrowserWindow): Promise<{ ok: boolean;
     library.updateWallpaper(id, {
       source: 'backup',
       localPath: backup.getBackupDir(id),
-      subscribed: false
+      subscribed: false,
+      downloading: false,
+      downloadFailed: false
     })
     unsubscribed = true
   }
