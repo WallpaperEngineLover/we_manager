@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS: PlaylistSettings = {
   randomize: false,
   sortBy: 'manual',
   defaultDurationSec: 600,
+  finishVideos: false,
   defaultVolume: 100
 }
 

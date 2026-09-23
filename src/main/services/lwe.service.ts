@@ -33,7 +33,7 @@ import {
   getDisablePuppetAnimation,
   getDisableAnimations
 } from './config.service'
-import { DEFAULT_LWE_REPO } from '@shared/constants'
+import { DEFAULT_LWE_FPS, DEFAULT_LWE_REPO } from '@shared/constants'
 
 const execFileAsync = promisify(execFile)
 
@@ -422,6 +422,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     invalidateSoundVolumeSupport()
     invalidateEffectFlagsSupport()
     invalidateDisableAnimationsSupport()
+    invalidateExpandCanvasSupport()
 
     const status = getLweStatus()
     if (status.installed) {
@@ -539,6 +540,7 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
     invalidateSoundVolumeSupport()
     invalidateEffectFlagsSupport()
     invalidateDisableAnimationsSupport()
+    invalidateExpandCanvasSupport()
 
     return { ok: true, message: 'linux-wallpaperengine has been uninstalled.' }
   } catch (err) {
@@ -758,6 +760,29 @@ function supportsDisableAnimations(): boolean {
   return disableAnimationsSupported
 }
 
+let expandCanvasSupported: boolean | null = null
+
+function invalidateExpandCanvasSupport(): void {
+  expandCanvasSupported = null
+}
+
+function supportsExpandCanvas(): boolean {
+  if (expandCanvasSupported !== null) return expandCanvasSupported
+  try {
+    const binaryPath = getLweBinaryPath()
+    const envVars = buildLweEnvVars()
+    const stdout = execFileSync('env', [...envVars, binaryPath, '--help'], {
+      timeout: 5_000,
+      encoding: 'utf8',
+      maxBuffer: 2 * 1024 * 1024
+    })
+    expandCanvasSupported = stdout.includes('--expand-canvas')
+  } catch {
+    expandCanvasSupported = false
+  }
+  return expandCanvasSupported
+}
+
 export function parseCustomArgs(raw: string): string[] {
   const tokens: string[] = []
   const re = /"([^"]*)"|'([^']*)'|(\S+)/g
@@ -785,6 +810,7 @@ function buildLweArgs(
     offsetX?: number
     offsetY?: number
     disableParallax?: boolean
+    expandCanvas?: boolean
     cornerColor?: string
     speed?: number
     audioSensitivity?: Record<string, number>
@@ -819,6 +845,7 @@ function buildLweArgs(
     args.push('--offset', `${options.offsetX ?? 0},${options.offsetY ?? 0}`)
   }
   if (options.disableParallax) args.push('--disable-parallax')
+  if (options.expandCanvas && supportsExpandCanvas()) args.push('--expand-canvas')
   if (options.cornerColor) args.push('--corner-color', options.cornerColor)
   if (options.speed !== undefined) args.push('--speed', String(options.speed))
   if ((options.disabledObjects?.length || options.enabledObjects?.length) && supportsObjectFlags()) {
@@ -942,12 +969,14 @@ export function hotswapLweSettings(options: {
   disabledObjects?: string[]
   enabledObjects?: string[]
   volume?: number
+  fps?: number
   xray?: boolean
   scaling?: string
   zoom?: number
   offsetX?: number
   offsetY?: number
   disableParallax?: boolean
+  expandCanvas?: boolean
   cornerColor?: string
   speed?: number
   propertyOverrides?: Record<string, string>
@@ -970,6 +999,7 @@ export function hotswapLweSettings(options: {
     for (const id of options.enabledObjects ?? []) lines.push(`enable-object=${id}`)
   }
   if (options.volume !== undefined) lines.push(`volume=${options.volume}`)
+  if (options.fps !== undefined) lines.push(`fps=${options.fps}`)
   if (options.xray !== undefined) lines.push(`xray=${options.xray ? 'on' : 'off'}`)
   if (options.scaling !== undefined) lines.push(`scaling=${options.scaling}`)
   if (options.zoom !== undefined) lines.push(`zoom=${options.zoom}`)
@@ -977,6 +1007,7 @@ export function hotswapLweSettings(options: {
     lines.push(`offset=${options.offsetX ?? 0},${options.offsetY ?? 0}`)
   }
   if (options.disableParallax !== undefined) lines.push(`disable-parallax=${options.disableParallax ? 'on' : 'off'}`)
+  if (options.expandCanvas !== undefined) lines.push(`expand-canvas=${options.expandCanvas ? 'on' : 'off'}`)
   if (options.cornerColor !== undefined) lines.push(`corner-color=${options.cornerColor}`)
   if (options.speed !== undefined) lines.push(`speed=${options.speed}`)
   if (options.audioScreen !== undefined) lines.push(`audio-screen=${options.audioScreen}`)
@@ -1021,6 +1052,7 @@ export async function launchLweAsync(
     offsetX?: number
     offsetY?: number
     disableParallax?: boolean
+    expandCanvas?: boolean
     cornerColor?: string
     speed?: number
     audioSensitivity?: Record<string, number>
@@ -1042,12 +1074,19 @@ export async function launchLweAsync(
     !options.enabledEffects?.length &&
     hotswapLweSettings({
       path: wallpaperPath,
+      // the engine drops the previous wallpaper's overrides on a path swap, the new one's go with it
+      disabledObjects: options.disabledObjects ?? [],
+      enabledObjects: options.enabledObjects ?? [],
+      // the running engine keeps the previous wallpaper's limit, so a wallpaper without one has to
+      // put it back to what a fresh launch without --fps gets
+      fps: options.fps ?? DEFAULT_LWE_FPS,
       xray: options.xrayFullReveal,
       scaling: options.scalingMode ?? 'default',
       zoom: options.zoom ?? 1,
       offsetX: options.offsetX ?? 0,
       offsetY: options.offsetY ?? 0,
       disableParallax: options.disableParallax ?? false,
+      expandCanvas: options.expandCanvas ?? false,
       cornerColor: options.cornerColor ?? '000000',
       speed: options.speed ?? 1,
       propertyOverrides: options.propertyOverrides ?? {},

@@ -33,7 +33,7 @@ import DetailSidebar from '../common/DetailSidebar'
 import { useToast } from '../common/Toast'
 import type { LibraryFilters, WallpaperFolder, LweStatus } from '@shared/types'
 import clsx from 'clsx'
-import { WE_TYPES, WE_LIBRARY_AGE_RATINGS } from '../../constants/weFilters'
+import { WE_TYPES, WE_LIBRARY_AGE_RATINGS, WE_RESOLUTION_GROUPS } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
 import { useSelectableGrid } from '../../hooks/useSelectableGrid'
 import { useClickOutside } from '../../hooks/useClickOutside'
@@ -49,6 +49,7 @@ interface LibraryFilterState {
   types: string[]
   ageRatings: string[]
   genres: string[]
+  resolutions: string[]
   sources: string[]
   failedOnly: boolean
   likedOnly: boolean
@@ -59,6 +60,7 @@ const DEFAULT_STATE: LibraryFilterState = {
   types: [],
   ageRatings: [],
   genres: [],
+  resolutions: [],
   sources: [],
   failedOnly: false,
   likedOnly: false,
@@ -211,6 +213,92 @@ function TagDropdown({
   )
 }
 
+function ResolutionDropdown({
+  counts,
+  selected,
+  onChange
+}: {
+  counts: Map<string, number>
+  selected: string[]
+  onChange: (resolutions: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useClickOutside(ref, () => setOpen(false))
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={clsx(
+          'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors',
+          selected.length > 0
+            ? 'bg-indigo-600 text-white'
+            : 'bg-white/5 text-gray-300 hover:bg-white/10'
+        )}
+      >
+        Resolution
+        {selected.length > 0 && (
+          <span className="rounded-full bg-white/20 px-1.5">{selected.length}</span>
+        )}
+        <ChevronDown size={12} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1 w-60 rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl">
+          <div className="max-h-80 overflow-y-auto">
+            {WE_RESOLUTION_GROUPS.map((group) => {
+              const groupTags = group.items.map((i) => i.tag)
+              const allChecked = groupTags.every((t) => selected.includes(t))
+              return (
+                <div key={group.label}>
+                  <label className="flex cursor-pointer items-center gap-2 px-3 pb-1 pt-2 hover:bg-white/5">
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      onChange={() =>
+                        onChange(
+                          allChecked
+                            ? selected.filter((t) => !groupTags.includes(t))
+                            : [...new Set([...selected, ...groupTags])]
+                        )
+                      }
+                      className="accent-indigo-500"
+                    />
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                      {group.label}
+                    </span>
+                  </label>
+                  {group.items.map((item) => {
+                    const count = counts.get(item.tag) ?? 0
+                    return (
+                      <label
+                        key={item.tag}
+                        className="flex cursor-pointer items-center gap-2 py-1 pl-6 pr-3 hover:bg-white/5"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(item.tag)}
+                          onChange={() => onChange(toggle(selected, item.tag))}
+                          className="accent-indigo-500"
+                        />
+                        <span className={clsx('flex-1 text-xs', count > 0 ? 'text-gray-300' : 'text-gray-600')}>
+                          {item.label}
+                        </span>
+                        <span className="text-[11px] text-gray-600">{count}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function FolderMenu({
   x,
   y,
@@ -324,6 +412,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     filterState.types.length +
     filterState.ageRatings.length +
     filterState.genres.length +
+    filterState.resolutions.length +
     filterState.sources.length +
     (filterState.failedOnly ? 1 : 0) +
     (filterState.likedOnly ? 1 : 0) +
@@ -385,6 +474,9 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       }
       if (filterState.genres.length > 0) {
         if (!filterState.genres.some((g) => w.tags.includes(g))) return false
+      }
+      if (filterState.resolutions.length > 0) {
+        if (!filterState.resolutions.some((r) => w.resolutions?.includes(r))) return false
       }
       if (filterState.sources.length > 0) {
         const sources = filterState.sources.map((s) => SOURCE_MAP[s]).filter(Boolean)
@@ -492,6 +584,14 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     () => filtered.filter((w) => !allFolderItemIds.has(w.id)).length,
     [filtered, allFolderItemIds]
   )
+
+  const resolutionCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const w of allWallpapers) {
+      for (const r of w.resolutions ?? []) counts.set(r, (counts.get(r) ?? 0) + 1)
+    }
+    return counts
+  }, [allWallpapers])
 
   const { data: availableTags = [] } = useQuery({
     queryKey: ['library-tags'],
@@ -1129,6 +1229,12 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
           onChange={(tags) => setFilterState((prev) => ({ ...prev, genres: tags }))}
         />
 
+        <ResolutionDropdown
+          counts={resolutionCounts}
+          selected={filterState.resolutions}
+          onChange={(resolutions) => setFilterState((prev) => ({ ...prev, resolutions }))}
+        />
+
         {activeCount > 0 && (
           <button
             onClick={() => setFilterState(DEFAULT_STATE)}
@@ -1470,7 +1576,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
             id={detailId}
             fallbackTitle={detailWallpaper.title}
             fallbackPreviewUrl={getPreviewSrc(detailWallpaper)}
-            fallbackTags={detailWallpaper.tags}
+            fallbackTags={[...detailWallpaper.tags, ...(detailWallpaper.resolutions ?? [])]}
             fallbackAuthorSteamId={detailWallpaper.authorSteamId}
             localFileSize={detailWallpaper.fileSize}
             isSubscribed={detailWallpaper.subscribed}

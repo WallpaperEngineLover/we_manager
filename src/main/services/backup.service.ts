@@ -165,6 +165,7 @@ function buildBackupMeta(
     appliedCount: existing?.appliedCount ?? 0,
     source: 'backup',
     tags: pj?.tags ?? existing?.tags ?? [],
+    resolutions: existing?.resolutions,
     categories: existing?.categories ?? [],
     backedUp: true
   }

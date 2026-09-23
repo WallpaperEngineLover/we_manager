@@ -11,6 +11,7 @@ import {
   SkipForward,
   SkipBack,
   Shuffle,
+  Film,
   ArrowDownWideNarrow,
   ExternalLink,
   FolderOpen,
@@ -594,6 +595,28 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                   sec
                 </label>
 
+                <label
+                  className="flex items-center gap-2 text-xs text-gray-400"
+                  title="Videos longer than the duration play to the end once before switching. Shorter videos loop until the duration is up."
+                >
+                  <button
+                    onClick={() => updateSettings({ finishVideos: !activePlaylist.settings.finishVideos })}
+                    className={clsx(
+                      'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+                      activePlaylist.settings.finishVideos ? 'bg-indigo-600' : 'bg-white/10'
+                    )}
+                  >
+                    <span
+                      className={clsx(
+                        'inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform',
+                        activePlaylist.settings.finishVideos ? 'translate-x-4' : 'translate-x-0.5'
+                      )}
+                    />
+                  </button>
+                  <Film size={12} />
+                  Finish videos
+                </label>
+
                 <label className="flex items-center gap-2 text-xs text-gray-400">
                   Default volume
                   <input
@@ -659,7 +682,10 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
           id={detailId}
           fallbackTitle={wallpaperById.get(detailId)!.title}
           fallbackPreviewUrl={getPreviewSrc(wallpaperById.get(detailId))}
-          fallbackTags={wallpaperById.get(detailId)!.tags}
+          fallbackTags={[
+            ...wallpaperById.get(detailId)!.tags,
+            ...(wallpaperById.get(detailId)!.resolutions ?? [])
+          ]}
           fallbackAuthorSteamId={wallpaperById.get(detailId)!.authorSteamId}
           localFileSize={wallpaperById.get(detailId)!.fileSize}
           isSubscribed={wallpaperById.get(detailId)!.subscribed}

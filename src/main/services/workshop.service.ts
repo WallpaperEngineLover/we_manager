@@ -126,16 +126,31 @@ export async function queryWorkshopByCreator(
   }
 }
 
+// A details query only fetches its first result page, and Steam pages those at 50 items -
+// anything past that in a single getItems() call silently comes back missing.
+const DETAILS_QUERY_BATCH = 50
+
+async function getItemsBatched(publishedFileIds: string[]) {
+  const client = getClient()
+  const items = []
+  for (let i = 0; i < publishedFileIds.length; i += DETAILS_QUERY_BATCH) {
+    const batch = publishedFileIds.slice(i, i + DETAILS_QUERY_BATCH)
+    const result = await client.workshop.getItems(batch.map((id) => BigInt(id)))
+    for (const item of result.items) {
+      if (item) items.push(item)
+    }
+  }
+  return items
+}
+
 export async function getWorkshopTimesUpdated(
   publishedFileIds: string[]
 ): Promise<Map<string, number>> {
   const map = new Map<string, number>()
   if (publishedFileIds.length === 0) return map
 
-  const client = getClient()
-  const result = await client.workshop.getItems(publishedFileIds.map((id) => BigInt(id)))
-  for (const item of result.items) {
-    if (item) map.set(item.publishedFileId.toString(), item.timeUpdated)
+  for (const item of await getItemsBatched(publishedFileIds)) {
+    map.set(item.publishedFileId.toString(), item.timeUpdated)
   }
   return map
 }
@@ -147,10 +162,8 @@ export async function getWorkshopTags(publishedFileIds: string[]): Promise<Map<s
   const map = new Map<string, string[]>()
   if (publishedFileIds.length === 0) return map
 
-  const client = getClient()
-  const result = await client.workshop.getItems(publishedFileIds.map((id) => BigInt(id)))
-  for (const item of result.items) {
-    if (item) map.set(item.publishedFileId.toString(), item.tags ?? [])
+  for (const item of await getItemsBatched(publishedFileIds)) {
+    map.set(item.publishedFileId.toString(), item.tags ?? [])
   }
   return map
 }
@@ -161,10 +174,8 @@ export async function getWorkshopAuthors(publishedFileIds: string[]): Promise<Ma
   const map = new Map<string, string>()
   if (publishedFileIds.length === 0) return map
 
-  const client = getClient()
-  const result = await client.workshop.getItems(publishedFileIds.map((id) => BigInt(id)))
-  for (const item of result.items) {
-    if (item) map.set(item.publishedFileId.toString(), item.owner.steamId64.toString())
+  for (const item of await getItemsBatched(publishedFileIds)) {
+    map.set(item.publishedFileId.toString(), item.owner.steamId64.toString())
   }
   return map
 }
@@ -178,10 +189,8 @@ export async function getUnavailableWorkshopItems(publishedFileIds: string[]): P
   const unavailable = new Set(publishedFileIds)
   if (publishedFileIds.length === 0) return unavailable
 
-  const client = getClient()
-  const result = await client.workshop.getItems(publishedFileIds.map((id) => BigInt(id)))
-  for (const item of result.items) {
-    if (item) unavailable.delete(item.publishedFileId.toString())
+  for (const item of await getItemsBatched(publishedFileIds)) {
+    unavailable.delete(item.publishedFileId.toString())
   }
   return unavailable
 }

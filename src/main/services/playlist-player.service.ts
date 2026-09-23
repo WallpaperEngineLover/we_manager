@@ -8,6 +8,7 @@ import { applyWallpaperMeta } from './wallpaper.service'
 import { setActiveWallpaperId } from './wallpaper-state.service'
 import { getLweStatus } from './lwe.service'
 import { getAutostartPlaylistId } from './config.service'
+import { findWallpaperVideoFile, getVideoDurationSec } from '../utils/video'
 
 interface PlaybackStore {
   activePlaylistId: string | null
@@ -22,6 +23,7 @@ const store = new Store<PlaybackStore>({
 let win: BrowserWindow | null = null
 let timer: NodeJS.Timeout | null = null
 let applying = false
+let scheduleToken = 0
 const listeners = new Set<() => void>()
 
 /** Subscribe to playback state changes (used by the tray to keep its menu labels accurate). */
@@ -75,6 +77,7 @@ function buildOrder(playlist: Playlist): string[] {
 }
 
 function clearTimer(): void {
+  scheduleToken++
   if (timer) {
     clearTimeout(timer)
     timer = null
@@ -118,6 +121,16 @@ async function applyCurrent(playlist: Playlist): Promise<void> {
   }
 }
 
+// Small margin so the last frames aren't cut off by engine startup/hotswap time
+const VIDEO_END_GRACE_SEC = 2
+
+async function getVideoLengthSec(wallpaperId: string): Promise<number | undefined> {
+  const wallpaper = getWallpaper(wallpaperId)
+  if (wallpaper?.type !== 'video' || !wallpaper.localPath) return undefined
+  const videoFile = findWallpaperVideoFile(wallpaper.localPath, wallpaper.file)
+  return videoFile ? getVideoDurationSec(videoFile) : undefined
+}
+
 function scheduleNext(playlist: Playlist): void {
   clearTimer()
   if (!state.isPlaying) return
@@ -125,10 +138,27 @@ function scheduleNext(playlist: Playlist): void {
   const wallpaperId = state.order[state.currentIndex]
   const item = wallpaperId ? findItem(playlist, wallpaperId) : undefined
   const durationSec = item?.durationSec ?? playlist.settings.defaultDurationSec
+  const token = scheduleToken
 
-  timer = setTimeout(() => {
-    void advance()
-  }, durationSec * 1000)
+  const arm = (sec: number): void => {
+    timer = setTimeout(() => {
+      void advance()
+    }, sec * 1000)
+  }
+
+  if (!playlist.settings.finishVideos || !wallpaperId) {
+    arm(durationSec)
+    return
+  }
+
+  void getVideoLengthSec(wallpaperId).then((videoSec) => {
+    if (token !== scheduleToken) return
+    if (videoSec !== undefined && videoSec > durationSec) {
+      arm(videoSec + VIDEO_END_GRACE_SEC)
+    } else {
+      arm(durationSec)
+    }
+  })
 }
 
 async function advance(): Promise<void> {

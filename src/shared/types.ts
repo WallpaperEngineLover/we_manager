@@ -47,6 +47,8 @@ export interface WallpaperMeta {
   authorName?: string
   source: 'workshop' | 'local' | 'backup'
   tags: string[]
+  /** Steam Workshop resolution tags ("1920 x 1080", "Ultrawide 3440 x 1440", ...), from the live item */
+  resolutions?: string[]
   categories: string[]
   downloading?: boolean
   downloadFailed?: boolean
@@ -63,6 +65,11 @@ export interface WallpaperMeta {
   offsetY?: number
   /** Force-disables the scene's mouse parallax effect via linux-wallpaperengine --disable-parallax */
   disableParallax?: boolean
+  /**
+   * Grows the scene's render canvas so layers that stick out past the camera (a tall picture only
+   * meant to be revealed by parallax) show in full, via linux-wallpaperengine --expand-canvas
+   */
+  expandCanvas?: boolean
   /**
    * Color shown outside the wallpaper's bounds (Center/Fit letterboxing, zoomed-out scaling) as a
    * "RRGGBB"/"RRGGBBAA" hex string, applied via linux-wallpaperengine --corner-color. Default: black.
@@ -268,6 +275,8 @@ export interface PlaylistSettings {
   sortBy: 'manual' | 'title' | 'createdAt'
   /** How long each wallpaper plays before advancing, in seconds */
   defaultDurationSec: number
+  /** Video wallpapers longer than their duration play to the end once before advancing */
+  finishVideos?: boolean
   /** 0-100, used for items without a per-item volume override */
   defaultVolume: number
 }

@@ -3,7 +3,7 @@ import path from 'path'
 import { pathToFileURL } from 'url'
 import { IpcChannels } from '@shared/ipc-channels'
 import { initSteam, isSteamRunning, startVotedItemsSync } from './services/steam.service'
-import { initLibrary, checkUnavailableWallpapers } from './services/library.service'
+import { initLibrary, checkUnavailableWallpapers, backfillResolutions } from './services/library.service'
 import { startWatcher } from './services/watcher.service'
 import { registerAllHandlers } from './ipc'
 import { initDesktopIcons, cleanupDesktopIcons } from './services/desktop-icons.service'
@@ -26,6 +26,13 @@ function startBackgroundSync(win: BrowserWindow): void {
     if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_VOTED_IDS_CHANGED, ids)
   })
 
+  const syncResolutions = async (): Promise<void> => {
+    if (await backfillResolutions() && !win.isDestroyed()) {
+      win.webContents.send(IpcChannels.EVENT_LIBRARY_CHANGED)
+    }
+  }
+  win.webContents.once('did-finish-load', () => void syncResolutions())
+
   setInterval(async () => {
     if (win.isDestroyed()) return
     const running = isSteamRunning()
@@ -35,6 +42,7 @@ function startBackgroundSync(win: BrowserWindow): void {
     try {
       const { changed } = await checkUnavailableWallpapers()
       if (changed && !win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_LIBRARY_CHANGED)
+      await syncResolutions()
     } catch {
       // transient Steam hiccup - try again next tick
     }

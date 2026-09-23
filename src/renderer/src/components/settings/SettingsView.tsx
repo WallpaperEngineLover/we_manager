@@ -17,7 +17,7 @@ export default function SettingsView() {
   const [defaultFps, setDefaultFps] = useState<string>('')
   const [fpsSaved, setFpsSaved] = useState(false)
   const [recommendedFpsEnabled, setRecommendedFpsEnabled] = useState(false)
-  const [recommendedWebFpsEnabled, setRecommendedWebFpsEnabled] = useState(false)
+  const [recommendedWebFpsEnabled, setRecommendedWebFpsEnabled] = useState(true)
   const [resetFpsConfirm, setResetFpsConfirm] = useState(false)
   const [resetFpsMsg, setResetFpsMsg] = useState<string | null>(null)
 
@@ -526,9 +526,10 @@ export default function SettingsView() {
               </label>
               <p className="mt-2 text-xs text-gray-600">
                 Launches web (CEF-based) wallpapers at 60 FPS instead of the default limit.
-                The engine renders web content internally at 60 FPS regardless, so a lower
-                default just throttles how often that gets displayed, making HTML/Live2D
-                wallpapers feel choppy. Wallpapers with a manual FPS override are unaffected.
+                The page produces a new frame each time the engine presents one (up to
+                about 60 per second), so a lower default makes HTML/Live2D wallpapers
+                animate at that lower rate. Wallpapers with a manual FPS override are
+                unaffected.
               </p>
             </div>
             <div>

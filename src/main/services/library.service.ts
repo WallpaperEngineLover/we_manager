@@ -12,6 +12,7 @@ import {
   getUnavailableWorkshopItems
 } from './workshop.service'
 import { findAndMutate } from '../utils/collections'
+import { RESOLUTION_TAGS } from '@shared/resolutions'
 import {
   isSteamRunning,
   getItemDownloadStatus,
@@ -224,6 +225,15 @@ function deriveRatingFromTags(tags: string[]): ContentRating | undefined {
   return match ? normalizeRating(match) : undefined
 }
 
+function sameTags(a: string[] | undefined, b: string[] | undefined): boolean {
+  if (!a || !b) return a === b
+  return a.length === b.length && a.every((t) => b.includes(t))
+}
+
+function deriveResolutionsFromTags(tags: string[]): string[] {
+  return tags.filter((t) => RESOLUTION_TAGS.has(t))
+}
+
 const RATING_RESTRICTIVENESS: Record<ContentRating, number> = {
   uncategorized: 0,
   everyone: 1,
@@ -317,6 +327,7 @@ function buildMeta(
     subscribed: true,
     source: 'workshop',
     tags: pj?.tags ?? existing?.tags ?? [],
+    resolutions: liveWorkshopTags ? deriveResolutionsFromTags(liveWorkshopTags) : existing?.resolutions,
     authorSteamId: authorSteamId ?? existing?.authorSteamId
   }
 }
@@ -348,6 +359,7 @@ function buildIncompleteMeta(
     appliedCount: existing?.appliedCount ?? 0,
     source: 'workshop',
     tags,
+    resolutions: workshopTags ? deriveResolutionsFromTags(workshopTags) : existing?.resolutions,
     categories: existing?.categories ?? [],
     downloading,
     downloadFailed: failed,
@@ -371,7 +383,16 @@ export async function importWallpaperById(workshopId: string): Promise<Wallpaper
   }
 
   const timesUpdated = await safeGetWorkshopTimesUpdated([workshopId])
-  const meta = buildMeta(workshopId, localPath, pj, existing, timesUpdated.get(workshopId), authorSteamId)
+  const liveTags = await safeGetWorkshopTags([workshopId])
+  const meta = buildMeta(
+    workshopId,
+    localPath,
+    pj,
+    existing,
+    timesUpdated.get(workshopId),
+    authorSteamId,
+    liveTags.get(workshopId)
+  )
   upsertWallpaper(meta)
   return meta
 }
@@ -389,6 +410,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   let imported = 0
   let skipped = 0
   let removed = 0
+  let resynced = false
 
   // Remove workshop wallpapers whose directories no longer exist on disk, unless Steam
   // still has them subscribed (those get tracked below instead, so a failed
@@ -458,7 +480,8 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
       existing.downloadFailed !== meta.downloadFailed ||
       existing.type !== meta.type ||
       existing.contentRating !== meta.contentRating ||
-      existing.authorSteamId !== meta.authorSteamId
+      existing.authorSteamId !== meta.authorSteamId ||
+      !sameTags(existing.resolutions, meta.resolutions)
     ) {
       wallpapers[id] = {
         ...existing,
@@ -467,8 +490,10 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
         type: meta.type,
         contentRating: meta.contentRating,
         tags: meta.tags,
+        resolutions: meta.resolutions,
         authorSteamId: meta.authorSteamId
       }
+      resynced = true
       skipped++
     } else {
       skipped++
@@ -497,7 +522,6 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     imported++
   }
 
-  let resynced = false
   for (const id of cacheHits) {
     const seconds = timesUpdated.get(id)
     const authorId = authors.get(id)
@@ -538,6 +562,12 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
       const stricter = stricterRating(wallpapers[id].contentRating ?? 'uncategorized', liveRating)
       if (stricter !== wallpapers[id].contentRating) {
         patch.contentRating = stricter
+      }
+    }
+    if (live) {
+      const resolutions = deriveResolutionsFromTags(live)
+      if (!sameTags(wallpapers[id].resolutions, resolutions)) {
+        patch.resolutions = resolutions
       }
     }
     if (Object.keys(patch).length > 0) {
@@ -596,6 +626,30 @@ export async function checkUnavailableWallpapers(): Promise<{
   if (changed) store.set('wallpapers', wallpapers)
 
   return { checked: candidates.length, unavailable: unavailableIds.size, changed }
+}
+
+// Resolution only comes from the live Workshop tags (project.json never has it), so items
+// imported before that was stored, or while Steam was offline, need a separate pass.
+export async function backfillResolutions(): Promise<boolean> {
+  if (!isSteamRunning()) return false
+
+  const wallpapers = store.get('wallpapers')
+  const missing = Object.values(wallpapers).filter(
+    (w) => w.source === 'workshop' && w.resolutions === undefined
+  )
+  if (missing.length === 0) return false
+
+  const tags = await safeGetWorkshopTags(missing.map((w) => w.id))
+  let changed = false
+  for (const w of missing) {
+    const live = tags.get(w.id)
+    if (!live) continue
+    wallpapers[w.id] = { ...w, resolutions: deriveResolutionsFromTags(live) }
+    changed = true
+  }
+  console.log(`[Library] Resolution tags fetched for ${tags.size} of ${missing.length} items`)
+  if (changed) store.set('wallpapers', wallpapers)
+  return changed
 }
 
 export function getAllFolders(): WallpaperFolder[] {

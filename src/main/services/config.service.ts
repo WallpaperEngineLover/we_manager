@@ -39,7 +39,7 @@ const store = new Store<AppConfig>({
     workshopPath: null,
     defaultFps: null,
     recommendedFpsEnabled: false,
-    recommendedWebFpsEnabled: false,
+    recommendedWebFpsEnabled: true,
     lweRepoUrl: null,
     lweRepoBranch: null,
     lweCmakeArgs: null,
@@ -172,8 +172,8 @@ export function setRecommendedFpsEnabled(enabled: boolean): void {
 }
 
 /** When enabled, web wallpapers without a manual FPS override launch at RECOMMENDED_WEB_FPS
- *  instead of the default limit - CEF paints internally at that rate regardless, so a lower
- *  default just throttles how often the engine displays what CEF already rendered. */
+ *  instead of the default limit - the page only produces a frame when the engine presents one,
+ *  so a lower default makes the animation itself choppy. */
 export function getRecommendedWebFpsEnabled(): boolean {
   return store.get('recommendedWebFpsEnabled')
 }

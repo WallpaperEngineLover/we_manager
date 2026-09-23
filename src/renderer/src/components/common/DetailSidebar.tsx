@@ -29,6 +29,7 @@ import {
   ZoomOut,
   Move,
   Move3d,
+  Expand,
   Palette,
   Gauge,
   Zap,
@@ -534,6 +535,7 @@ export default function DetailSidebar({
             offsetX: patch.offsetX,
             offsetY: patch.offsetY,
             disableParallax: patch.disableParallax,
+            expandCanvas: patch.expandCanvas,
             cornerColor: patch.cornerColor,
             speed: patch.playbackSpeed,
             propertyOverrides: patch.propertyOverrides,
@@ -781,6 +783,19 @@ export default function DetailSidebar({
       await persistAndMaybeRelaunch({ disableParallax: !disableParallax })
     } finally {
       setIsCommittingParallax(false)
+    }
+  }
+
+  const [isCommittingExpandCanvas, setIsCommittingExpandCanvas] = useState(false)
+  const expandCanvas = libraryMeta?.expandCanvas ?? false
+
+  async function toggleExpandCanvas() {
+    if (isCommittingExpandCanvas) return
+    setIsCommittingExpandCanvas(true)
+    try {
+      await persistAndMaybeRelaunch({ expandCanvas: !expandCanvas })
+    } finally {
+      setIsCommittingExpandCanvas(false)
     }
   }
 
@@ -1319,6 +1334,27 @@ export default function DetailSidebar({
               {isCommittingParallax ? (
                 <Loader2 size={14} className="animate-spin text-gray-500" />
               ) : disableParallax ? (
+                <ToggleRight size={14} className="text-indigo-400" />
+              ) : (
+                <ToggleLeft size={14} className="text-gray-600" />
+              )}
+            </button>
+            <button
+              onClick={toggleExpandCanvas}
+              disabled={isCommittingExpandCanvas}
+              title="Grow the scene's canvas so layers taller or wider than the camera show in full instead of cropped. Pair with Disable parallax and Fit scaling to see the whole picture"
+              className="mt-1.5 flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
+            >
+              <Expand size={12} />
+              <span className="flex-1 text-left">Show full image</span>
+              {isActive && (
+                <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
+                  live
+                </span>
+              )}
+              {isCommittingExpandCanvas ? (
+                <Loader2 size={14} className="animate-spin text-gray-500" />
+              ) : expandCanvas ? (
                 <ToggleRight size={14} className="text-indigo-400" />
               ) : (
                 <ToggleLeft size={14} className="text-gray-600" />

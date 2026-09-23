@@ -267,6 +267,7 @@ const api = {
       offsetX?: number
       offsetY?: number
       disableParallax?: boolean
+      expandCanvas?: boolean
       cornerColor?: string
       speed?: number
       propertyOverrides?: Record<string, string>

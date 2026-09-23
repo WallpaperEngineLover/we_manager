@@ -58,3 +58,28 @@ export async function getVideoFps(filePath: string): Promise<number | undefined>
     return undefined
   }
 }
+
+const durationCache = new Map<string, number | undefined>()
+
+/** Read a video's length in seconds via ffprobe. Returns undefined if ffprobe is missing or fails. */
+export async function getVideoDurationSec(filePath: string): Promise<number | undefined> {
+  if (durationCache.has(filePath)) return durationCache.get(filePath)
+  if (!isCommandAvailable('ffprobe')) return undefined
+
+  try {
+    const { stdout } = await execFileAsync('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'csv=p=0',
+      filePath
+    ], { timeout: 10_000, encoding: 'utf8' })
+
+    const duration = Number(stdout.trim())
+    const result = isFinite(duration) && duration > 0 ? duration : undefined
+    durationCache.set(filePath, result)
+    return result
+  } catch {
+    durationCache.set(filePath, undefined)
+    return undefined
+  }
+}
