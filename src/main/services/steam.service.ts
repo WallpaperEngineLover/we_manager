@@ -442,6 +442,32 @@ export async function getVotedUpItemIds(): Promise<string[]> {
   return [...votedUpCache]
 }
 
+// a vote this fresh may not have reached Steam's per-item lookup yet
+const VOTE_SETTLE_MS = 10_000
+
+export async function refreshItemVote(itemId: bigint): Promise<boolean | null> {
+  if (!isSteamRunning() || !isSteamOnline()) return null
+  const idStr = itemId.toString()
+  const result = await withTimeout(checkUserVote(itemId), PAGE_FETCH_TIMEOUT_MS, 'getUserVote').catch((err) => {
+    console.warn('[Steam] Per-item vote check failed:', err?.message ?? err)
+    return null
+  })
+  if (!result) return null
+
+  const pending = pendingVotes.get(idStr)
+  if (pending && Date.now() - pending.at < VOTE_SETTLE_MS) return pending.up
+  pendingVotes.delete(idStr)
+  missingLastCycle.delete(idStr)
+
+  if (votedUpCache.has(idStr) !== result.votedUp) {
+    if (result.votedUp) votedUpCache.add(idStr)
+    else votedUpCache.delete(idStr)
+    persistVoteCache()
+    notifyVotedIds()
+  }
+  return result.votedUp
+}
+
 let voteSyncTimer: ReturnType<typeof setInterval> | null = null
 
 export function startVotedItemsSync(onChange: (ids: string[]) => void): void {

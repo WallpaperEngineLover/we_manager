@@ -52,3 +52,7 @@ export function getPreviewCachePath(): string {
 export function getLweManifestPath(): string {
   return path.join(getDataPath(), 'lwe-install-manifest.json')
 }
+
+export function getThumbnailsPath(): string {
+  return path.join(getDataPath(), 'thumbnails')
+}

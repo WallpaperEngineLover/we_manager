@@ -7,6 +7,8 @@ import PlaylistsView from './components/playlist/PlaylistsView'
 import SettingsView from './components/settings/SettingsView'
 import SetupScreen from './components/setup/SetupScreen'
 import StatusBar from './components/layout/StatusBar'
+import { useToast } from './components/common/Toast'
+import { screenLabel } from './utils/screens'
 
 type View = 'workshop' | 'library' | 'playlists' | 'settings'
 
@@ -36,6 +38,7 @@ export default function App() {
   const [defaultPath, setDefaultPath] = useState('')
   const [creatorFilter, setCreatorFilter] = useState<string | null>(null)
   const queryClient = useQueryClient()
+  const { showToast } = useToast()
 
   function browseCreator(steamId: string) {
     setCreatorFilter(steamId)
@@ -71,6 +74,17 @@ export default function App() {
       queryClient.invalidateQueries({ queryKey: ['library'] })
     })
   }, [queryClient])
+
+  useEffect(() => {
+    return window.electronAPI.on.wallpaperCrashed((event) => {
+      const where = event.screen === '*' ? '' : ` on ${screenLabel(event.screen)}`
+      showToast(`${event.title}${where}: ${event.outcome}`, { warning: true, durationMs: 8000 })
+    })
+  }, [showToast])
+
+  useEffect(() => {
+    return window.electronAPI.on.scheduleFired((name) => showToast(`Schedule: ${name}`))
+  }, [showToast])
 
   if (setupDone === null) return null // loading
 

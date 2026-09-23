@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { app } from 'electron'
 import { WE_APP_ID } from '@shared/constants'
-import type { SteamIdentity } from '@shared/types'
+import type { DisplayMode, EngineFlagPreset, EngineFlags, SteamIdentity } from '@shared/types'
 
 interface AppConfig {
   workshopPath: string | null
@@ -31,6 +31,10 @@ interface AppConfig {
   steamIdentity: SteamIdentity
   /** steamId64 of creators whose workshop items are hidden from browsing by default */
   ignoredCreators: string[]
+  /** Launch-only engine flags for every wallpaper; disableAnimations lives in its own key above */
+  engineFlags: EngineFlags
+  engineFlagPresets: EngineFlagPreset[]
+  displayMode: DisplayMode
 }
 
 const store = new Store<AppConfig>({
@@ -56,7 +60,10 @@ const store = new Store<AppConfig>({
     disablePuppetAnimation: false,
     disableAnimations: false,
     steamIdentity: 'wallpaper-engine',
-    ignoredCreators: []
+    ignoredCreators: [],
+    engineFlags: {},
+    engineFlagPresets: [],
+    displayMode: 'shared'
   }
 })
 
@@ -213,8 +220,31 @@ export function getDisableAnimations(): boolean {
   return store.get('disableAnimations')
 }
 
-export function setDisableAnimations(disabled: boolean): void {
-  store.set('disableAnimations', disabled)
+export function getGlobalEngineFlags(): EngineFlags {
+  return { ...store.get('engineFlags'), disableAnimations: store.get('disableAnimations') }
+}
+
+export function setGlobalEngineFlags(flags: EngineFlags): void {
+  const { disableAnimations, ...rest } = flags
+  store.set('engineFlags', rest)
+  store.set('disableAnimations', !!disableAnimations)
+}
+
+export function getEngineFlagPresets(): EngineFlagPreset[] {
+  return store.get('engineFlagPresets')
+}
+
+export function setEngineFlagPresets(presets: EngineFlagPreset[]): void {
+  store.set('engineFlagPresets', presets.filter((p) => !p.builtIn))
+}
+
+/** 'shared' runs one engine across every screen, 'per-screen' one engine (and playlist) per screen */
+export function getDisplayMode(): DisplayMode {
+  return store.get('displayMode')
+}
+
+export function setDisplayMode(mode: DisplayMode): void {
+  store.set('displayMode', mode)
 }
 
 /** Default --audio-sensitivity multiplier for audio-reactive objects with no per-wallpaper override. */

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Play, Loader2, Check, X, ThumbsUp, Trash2, ExternalLink, Download, Archive, AlertTriangle, RotateCw, Plus, FolderOpen, WifiOff } from 'lucide-react'
 import type { WallpaperMeta } from '@shared/types'
 import clsx from 'clsx'
+import CompatBadge from '../common/CompatBadge'
 import { getPreviewSrc } from '../../utils/preview'
 import { openWorkshopPage } from '../../utils/steam'
 import { useToast } from '../common/Toast'
@@ -270,6 +271,10 @@ export default function WallpaperCard({
             <WifiOff size={12} />
           </div>
         )}
+        <CompatBadge
+          compat={wallpaper.compat}
+          className={clsx('absolute bottom-2', wallpaper.unavailable ? 'left-8' : 'left-2')}
+        />
       </div>
 
       <div className="p-3">

@@ -1,6 +1,7 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
-import type { SteamIdentity } from '@shared/types'
+import type { DisplayMode, EngineFlagPreset, EngineFlags, SteamIdentity } from '@shared/types'
+import { BUILT_IN_PRESETS } from '@shared/engineFlags'
 import {
   getConfiguredWorkshopPath,
   setConfiguredWorkshopPath,
@@ -41,13 +42,20 @@ import {
   getDisablePuppetAnimation,
   setDisablePuppetAnimation,
   getDisableAnimations,
-  setDisableAnimations,
   getSteamIdentity,
   setSteamIdentity,
   getIgnoredCreators,
   ignoreCreator,
-  unignoreCreator
+  unignoreCreator,
+  getGlobalEngineFlags,
+  setGlobalEngineFlags,
+  getEngineFlagPresets,
+  setEngineFlagPresets,
+  getDisplayMode,
+  setDisplayMode
 } from '../services/config.service'
+import { resetDisplays } from '../services/display.service'
+import { stopPlaylist } from '../services/playlist-player.service'
 import { getDefaultWorkshopPath } from '../utils/paths'
 import { DEFAULT_LWE_REPO } from '@shared/constants'
 import { restartWatcher } from '../services/watcher.service'
@@ -82,7 +90,10 @@ export function registerConfigHandlers(): void {
     disablePuppetAnimation: getDisablePuppetAnimation(),
     disableAnimations: getDisableAnimations(),
     steamIdentity: getSteamIdentity(),
-    ignoredCreators: getIgnoredCreators()
+    ignoredCreators: getIgnoredCreators(),
+    engineFlags: getGlobalEngineFlags(),
+    engineFlagPresets: [...BUILT_IN_PRESETS, ...getEngineFlagPresets()],
+    displayMode: getDisplayMode()
   }))
 
   ipcMain.handle(IpcChannels.CONFIG_GET_AUTOSTART_SUPPORTED, () => isAutostartSupported())
@@ -173,8 +184,22 @@ export function registerConfigHandlers(): void {
     return { ok: true }
   })
 
-  ipcMain.handle(IpcChannels.CONFIG_SET_DISABLE_ANIMATIONS, (_e, disabled: boolean) => {
-    setDisableAnimations(disabled)
+  ipcMain.handle(IpcChannels.CONFIG_SET_ENGINE_FLAGS, (_e, flags: EngineFlags) => {
+    setGlobalEngineFlags(flags)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_ENGINE_PRESETS, (_e, presets: EngineFlagPreset[]) => {
+    setEngineFlagPresets(presets)
+    return { ok: true }
+  })
+
+  // what was on which screen means nothing in the other mode, so everything starts over
+  ipcMain.handle(IpcChannels.CONFIG_SET_DISPLAY_MODE, async (_e, mode: DisplayMode) => {
+    if (mode === getDisplayMode()) return { ok: true }
+    stopPlaylist()
+    await resetDisplays()
+    setDisplayMode(mode)
     return { ok: true }
   })
 

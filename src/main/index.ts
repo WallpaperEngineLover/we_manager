@@ -11,6 +11,8 @@ import { getTrayEnabled, getAutostartPlaylistId, getKillLweOnQuit } from './serv
 import { createTray } from './services/tray.service'
 import { initPlaylistPlayer, startPlaylist } from './services/playlist-player.service'
 import { killAllLweProcesses, getLweStatus } from './services/lwe.service'
+import { initDisplay } from './services/display.service'
+import { initSchedule } from './services/schedule.service'
 
 const startMinimized = process.argv.includes('--minimized')
 let isQuitting = false
@@ -113,6 +115,7 @@ app.whenReady().then(() => {
   startWatcher(win)
   startBackgroundSync(win)
   initDesktopIcons()
+  initDisplay(win)
   const resumed = initPlaylistPlayer(win)
 
   if (getTrayEnabled()) createTray(win)
@@ -125,6 +128,7 @@ app.whenReady().then(() => {
       console.error('[App] Failed to autostart playlist:', err)
     }
   }
+  initSchedule(win)
 })
 
 app.on('before-quit', (event) => {

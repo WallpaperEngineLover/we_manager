@@ -23,7 +23,14 @@ import type {
   Playlist,
   PlaylistSettings,
   PlaylistPlaybackState,
-  SteamIdentity
+  SteamIdentity,
+  EngineFlags,
+  EngineFlagPreset,
+  DisplayMode,
+  ScreenTarget,
+  ScreenAssignment,
+  ScheduleRule,
+  CrashEvent
 } from '../shared/types'
 
 const api = {
@@ -59,6 +66,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.STEAM_OPEN_WORKSHOP, itemId),
     getVotedIds: (): Promise<string[]> =>
       ipcRenderer.invoke(IpcChannels.STEAM_GET_VOTED_IDS),
+    checkVote: (itemId: string): Promise<boolean | null> =>
+      ipcRenderer.invoke(IpcChannels.STEAM_CHECK_VOTE, itemId),
     getAuthorInfo: (steamId: string): Promise<WorkshopAuthorInfo | null> =>
       ipcRenderer.invoke(IpcChannels.STEAM_GET_AUTHOR_INFO, steamId)
   },
@@ -117,7 +126,16 @@ const api = {
       disableAnimations: boolean
       steamIdentity: SteamIdentity
       ignoredCreators: string[]
+      engineFlags: EngineFlags
+      engineFlagPresets: EngineFlagPreset[]
+      displayMode: DisplayMode
     }> => ipcRenderer.invoke(IpcChannels.CONFIG_GET),
+    setEngineFlags: (flags: EngineFlags): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_ENGINE_FLAGS, flags),
+    setEnginePresets: (presets: EngineFlagPreset[]): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_ENGINE_PRESETS, presets),
+    setDisplayMode: (mode: DisplayMode): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_DISPLAY_MODE, mode),
     setWorkshopPath: (p: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_WORKSHOP_PATH, p),
     setDefaultFps: (fps: number | null): Promise<{ ok: boolean }> =>
@@ -162,8 +180,6 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DEFAULT_AUDIO_SENSITIVITY, multiplier),
     setDisablePuppetAnimation: (disabled: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DISABLE_PUPPET_ANIMATION, disabled),
-    setDisableAnimations: (disabled: boolean): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke(IpcChannels.CONFIG_SET_DISABLE_ANIMATIONS, disabled),
     setSteamIdentity: (identity: SteamIdentity): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_STEAM_IDENTITY, identity),
     ignoreCreator: (steamId: string): Promise<{ ok: boolean }> =>
@@ -196,17 +212,21 @@ const api = {
       patch: { volume?: number; durationSec?: number }
     ): Promise<Playlist | null> =>
       ipcRenderer.invoke(IpcChannels.PLAYLIST_UPDATE_ITEM, id, wallpaperId, patch),
-    start: (id: string): Promise<PlaylistPlaybackState> =>
-      ipcRenderer.invoke(IpcChannels.PLAYLIST_START, id),
-    playItem: (id: string, wallpaperId: string): Promise<PlaylistPlaybackState> =>
-      ipcRenderer.invoke(IpcChannels.PLAYLIST_PLAY_ITEM, id, wallpaperId),
-    stop: (): Promise<PlaylistPlaybackState> => ipcRenderer.invoke(IpcChannels.PLAYLIST_STOP),
-    pause: (): Promise<PlaylistPlaybackState> => ipcRenderer.invoke(IpcChannels.PLAYLIST_PAUSE),
-    resume: (): Promise<PlaylistPlaybackState> => ipcRenderer.invoke(IpcChannels.PLAYLIST_RESUME),
-    next: (): Promise<PlaylistPlaybackState> => ipcRenderer.invoke(IpcChannels.PLAYLIST_NEXT),
-    previous: (): Promise<PlaylistPlaybackState> =>
-      ipcRenderer.invoke(IpcChannels.PLAYLIST_PREVIOUS),
-    getState: (): Promise<PlaylistPlaybackState> =>
+    start: (id: string, screen?: ScreenTarget): Promise<PlaylistPlaybackState[]> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_START, id, screen),
+    playItem: (id: string, wallpaperId: string, screen?: ScreenTarget): Promise<PlaylistPlaybackState[]> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_PLAY_ITEM, id, wallpaperId, screen),
+    stop: (screen?: ScreenTarget): Promise<PlaylistPlaybackState[]> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_STOP, screen),
+    pause: (screen?: ScreenTarget): Promise<PlaylistPlaybackState[]> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_PAUSE, screen),
+    resume: (screen?: ScreenTarget): Promise<PlaylistPlaybackState[]> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_RESUME, screen),
+    next: (screen?: ScreenTarget): Promise<PlaylistPlaybackState[]> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_NEXT, screen),
+    previous: (screen?: ScreenTarget): Promise<PlaylistPlaybackState[]> =>
+      ipcRenderer.invoke(IpcChannels.PLAYLIST_PREVIOUS, screen),
+    getState: (): Promise<PlaylistPlaybackState[]> =>
       ipcRenderer.invoke(IpcChannels.PLAYLIST_GET_STATE)
   },
 
@@ -234,6 +254,20 @@ const api = {
       ipcRenderer.invoke(IpcChannels.WALLPAPER_APPLY, options),
     getActive: (): Promise<WallpaperMeta | null> =>
       ipcRenderer.invoke(IpcChannels.WALLPAPER_GET_ACTIVE),
+    getAssignments: (): Promise<ScreenAssignment[]> =>
+      ipcRenderer.invoke(IpcChannels.WALLPAPER_GET_ASSIGNMENTS),
+    getTargets: (): Promise<ScreenTarget[]> =>
+      ipcRenderer.invoke(IpcChannels.WALLPAPER_GET_TARGETS),
+    stop: (screen?: ScreenTarget): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.WALLPAPER_STOP, screen),
+    testLaunch: (wallpaperId: string, screen?: ScreenTarget): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.WALLPAPER_TEST_LAUNCH, wallpaperId, screen),
+    generateThumbnail: (wallpaperId: string): Promise<WallpaperMeta> =>
+      ipcRenderer.invoke(IpcChannels.WALLPAPER_GENERATE_THUMBNAIL, wallpaperId),
+    pickThumbnail: (wallpaperId: string): Promise<WallpaperMeta | null> =>
+      ipcRenderer.invoke(IpcChannels.WALLPAPER_PICK_THUMBNAIL, wallpaperId),
+    deleteThumbnail: (wallpaperId: string): Promise<WallpaperMeta> =>
+      ipcRenderer.invoke(IpcChannels.WALLPAPER_DELETE_THUMBNAIL, wallpaperId),
     detectEnvironment: (): Promise<WallpaperEnvironment> =>
       ipcRenderer.invoke(IpcChannels.WALLPAPER_DETECT_ENV)
   },
@@ -249,7 +283,7 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LWE_INSTALL),
     uninstall: (): Promise<{ ok: boolean; message: string }> =>
       ipcRenderer.invoke(IpcChannels.LWE_UNINSTALL),
-    launch: (wallpaperPath: string, options?: { screenRoot?: string; fps?: number }): Promise<{ ok: boolean; running: boolean }> =>
+    launch: (wallpaperPath: string, options?: { screen?: ScreenTarget; fps?: number }): Promise<{ ok: boolean; running: boolean }> =>
       ipcRenderer.invoke(IpcChannels.LWE_LAUNCH, wallpaperPath, options),
     stop: (): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.LWE_STOP),
@@ -275,8 +309,8 @@ const api = {
       ambientVolume?: number
       audioSensitivity?: Record<string, number>
       soundVolume?: Record<string, number>
-    }): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke(IpcChannels.LWE_HOTSWAP_SETTINGS, options),
+    }, wallpaperPath?: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.LWE_HOTSWAP_SETTINGS, options, wallpaperPath),
     listProperties: (wallpaperPath: string): Promise<LweProperty[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_PROPERTIES, wallpaperPath),
     listScreens: (): Promise<string[]> =>
@@ -285,6 +319,14 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LWE_LIST_AUDIO_OBJECTS, wallpaperPath),
     listEffects: (wallpaperPath: string): Promise<LweSceneEffect[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_EFFECTS, wallpaperPath)
+  },
+
+  schedule: {
+    getAll: (): Promise<ScheduleRule[]> => ipcRenderer.invoke(IpcChannels.SCHEDULE_GET_ALL),
+    save: (rule: Omit<ScheduleRule, 'id'> & { id?: string }): Promise<ScheduleRule> =>
+      ipcRenderer.invoke(IpcChannels.SCHEDULE_SAVE, rule),
+    delete: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke(IpcChannels.SCHEDULE_DELETE, id),
+    run: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke(IpcChannels.SCHEDULE_RUN, id)
   },
 
   backup: {
@@ -342,8 +384,8 @@ const api = {
       ipcRenderer.on(IpcChannels.EVENT_BACKUP_PROGRESS, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_BACKUP_PROGRESS, listener)
     },
-    playlistStateChanged: (cb: (state: PlaylistPlaybackState) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, state: PlaylistPlaybackState) => cb(state)
+    playlistStateChanged: (cb: (states: PlaylistPlaybackState[]) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, states: PlaylistPlaybackState[]) => cb(states)
       ipcRenderer.on(IpcChannels.EVENT_PLAYLIST_STATE_CHANGED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_PLAYLIST_STATE_CHANGED, listener)
     },
@@ -356,6 +398,21 @@ const api = {
       const listener = () => cb()
       ipcRenderer.on(IpcChannels.EVENT_LIBRARY_CHANGED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_LIBRARY_CHANGED, listener)
+    },
+    displayChanged: (cb: () => void): (() => void) => {
+      const listener = () => cb()
+      ipcRenderer.on(IpcChannels.EVENT_DISPLAY_CHANGED, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_DISPLAY_CHANGED, listener)
+    },
+    wallpaperCrashed: (cb: (event: CrashEvent) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, event: CrashEvent) => cb(event)
+      ipcRenderer.on(IpcChannels.EVENT_WALLPAPER_CRASHED, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_WALLPAPER_CRASHED, listener)
+    },
+    scheduleFired: (cb: (ruleName: string) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, ruleName: string) => cb(ruleName)
+      ipcRenderer.on(IpcChannels.EVENT_SCHEDULE_FIRED, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_SCHEDULE_FIRED, listener)
     }
   }
 }

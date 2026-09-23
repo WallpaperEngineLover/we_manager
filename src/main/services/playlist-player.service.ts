@@ -1,29 +1,41 @@
 import Store from 'electron-store'
 import type { BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
-import type { Playlist, PlaylistItem, PlaylistPlaybackState } from '@shared/types'
+import type { Playlist, PlaylistItem, PlaylistPlaybackState, ScreenTarget } from '@shared/types'
+import { compatStatus } from '@shared/compat'
 import { getPlaylist } from './playlist.service'
 import { getWallpaper, updateWallpaper } from './library.service'
-import { applyWallpaperMeta } from './wallpaper.service'
-import { setActiveWallpaperId } from './wallpaper-state.service'
-import { getLweStatus } from './lwe.service'
+import { getLweStatus, ALL_SCREENS } from './lwe.service'
 import { getAutostartPlaylistId } from './config.service'
+import { expandScreen, getDisplayTargets, setPlaylistRecovery, showWallpaper } from './display.service'
 import { findWallpaperVideoFile, getVideoDurationSec } from '../utils/video'
 
+interface SavedPlayer {
+  playlistId: string
+  isPlaying: boolean
+}
+
 interface PlaybackStore {
+  /** Written by older versions, which only had the one player */
   activePlaylistId: string | null
   isPlaying: boolean
+  players: Record<ScreenTarget, SavedPlayer> | null
 }
 
 const store = new Store<PlaybackStore>({
   name: 'playlist-playback',
-  defaults: { activePlaylistId: null, isPlaying: false }
+  defaults: { activePlaylistId: null, isPlaying: false, players: null }
 })
 
+interface Player {
+  state: PlaylistPlaybackState
+  timer: NodeJS.Timeout | null
+  scheduleToken: number
+  applying: boolean
+}
+
 let win: BrowserWindow | null = null
-let timer: NodeJS.Timeout | null = null
-let applying = false
-let scheduleToken = 0
+const players = new Map<ScreenTarget, Player>()
 const listeners = new Set<() => void>()
 
 /** Subscribe to playback state changes (used by the tray to keep its menu labels accurate). */
@@ -32,12 +44,8 @@ export function onPlaybackStateChanged(cb: () => void): () => void {
   return () => listeners.delete(cb)
 }
 
-let state: PlaylistPlaybackState = {
-  playlistId: null,
-  currentItemId: null,
-  currentIndex: -1,
-  isPlaying: false,
-  order: []
+function idleState(screen: ScreenTarget): PlaylistPlaybackState {
+  return { screen, playlistId: null, currentItemId: null, currentIndex: -1, isPlaying: false, order: [] }
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -76,17 +84,25 @@ function buildOrder(playlist: Playlist): string[] {
   return items.map((i) => i.wallpaperId)
 }
 
-function clearTimer(): void {
-  scheduleToken++
-  if (timer) {
-    clearTimeout(timer)
-    timer = null
+function persist(): void {
+  const saved: Record<ScreenTarget, SavedPlayer> = {}
+  for (const [screen, p] of players) {
+    if (p.state.playlistId) saved[screen] = { playlistId: p.state.playlistId, isPlaying: p.state.isPlaying }
+  }
+  store.set('players', saved)
+}
+
+function clearTimer(player: Player): void {
+  player.scheduleToken++
+  if (player.timer) {
+    clearTimeout(player.timer)
+    player.timer = null
   }
 }
 
 function emitState(): void {
   if (win && !win.isDestroyed()) {
-    win.webContents.send(IpcChannels.EVENT_PLAYLIST_STATE_CHANGED, state)
+    win.webContents.send(IpcChannels.EVENT_PLAYLIST_STATE_CHANGED, getPlaybackStates())
   }
   for (const cb of listeners) cb()
 }
@@ -95,29 +111,41 @@ function findItem(playlist: Playlist, wallpaperId: string): PlaylistItem | undef
   return playlist.items.find((i) => i.wallpaperId === wallpaperId)
 }
 
-async function applyCurrent(playlist: Playlist): Promise<void> {
-  const wallpaperId = state.order[state.currentIndex]
-  if (!wallpaperId) return
+/**
+ * Shows the current item, moving on to the next one when it can't be shown. Wallpapers known to
+ * crash on launch are passed over without trying, as long as something else is left to play.
+ */
+async function applyCurrent(player: Player, playlist: Playlist): Promise<void> {
+  const { state } = player
+  const count = state.order.length
+  const known = (id: string) => compatStatus(getWallpaper(id)?.compat) !== 'crashes'
+  const anyPlayable = state.order.some(known)
 
-  const wallpaper = getWallpaper(wallpaperId)
-  if (!wallpaper) return
-
-  const item = findItem(playlist, wallpaperId)
-  const volume = item?.volume ?? playlist.settings.defaultVolume
-
-  applying = true
+  player.applying = true
   try {
-    await applyWallpaperMeta(wallpaper, { volume, dependencyPrompt: 'once' })
-    setActiveWallpaperId(wallpaperId)
-    updateWallpaper(wallpaperId, {
-      appliedCount: (wallpaper.appliedCount ?? 0) + 1,
-      lastAppliedAt: Date.now()
-    })
-    state.currentItemId = wallpaperId
-  } catch (err) {
-    console.error('[PlaylistPlayer] Failed to apply wallpaper:', err)
+    for (let tries = 0; tries < count; tries++, state.currentIndex = (state.currentIndex + 1) % count) {
+      const wallpaper = getWallpaper(state.order[state.currentIndex])
+      if (!wallpaper || (anyPlayable && !known(wallpaper.id))) continue
+
+      const item = findItem(playlist, wallpaper.id)
+      try {
+        await showWallpaper(wallpaper, state.screen, {
+          volume: item?.volume ?? playlist.settings.defaultVolume,
+          dependencyPrompt: 'once'
+        })
+      } catch (err) {
+        console.error('[PlaylistPlayer] Failed to apply wallpaper:', err)
+        continue
+      }
+      updateWallpaper(wallpaper.id, {
+        appliedCount: (wallpaper.appliedCount ?? 0) + 1,
+        lastAppliedAt: Date.now()
+      })
+      state.currentItemId = wallpaper.id
+      return
+    }
   } finally {
-    applying = false
+    player.applying = false
   }
 }
 
@@ -131,18 +159,18 @@ async function getVideoLengthSec(wallpaperId: string): Promise<number | undefine
   return videoFile ? getVideoDurationSec(videoFile) : undefined
 }
 
-function scheduleNext(playlist: Playlist): void {
-  clearTimer()
-  if (!state.isPlaying) return
+function scheduleNext(player: Player, playlist: Playlist): void {
+  clearTimer(player)
+  if (!player.state.isPlaying) return
 
-  const wallpaperId = state.order[state.currentIndex]
+  const wallpaperId = player.state.order[player.state.currentIndex]
   const item = wallpaperId ? findItem(playlist, wallpaperId) : undefined
   const durationSec = item?.durationSec ?? playlist.settings.defaultDurationSec
-  const token = scheduleToken
+  const token = player.scheduleToken
 
   const arm = (sec: number): void => {
-    timer = setTimeout(() => {
-      void advance()
+    player.timer = setTimeout(() => {
+      void advance(player)
     }, sec * 1000)
   }
 
@@ -152,7 +180,7 @@ function scheduleNext(playlist: Playlist): void {
   }
 
   void getVideoLengthSec(wallpaperId).then((videoSec) => {
-    if (token !== scheduleToken) return
+    if (token !== player.scheduleToken) return
     if (videoSec !== undefined && videoSec > durationSec) {
       arm(videoSec + VIDEO_END_GRACE_SEC)
     } else {
@@ -161,155 +189,220 @@ function scheduleNext(playlist: Playlist): void {
   })
 }
 
-async function advance(): Promise<void> {
-  if (!state.playlistId) return
-  const playlist = getPlaylist(state.playlistId)
+async function advance(player: Player): Promise<void> {
+  if (!player.state.playlistId) return
+  const playlist = getPlaylist(player.state.playlistId)
   if (!playlist || playlist.items.length === 0) {
-    stopPlaylist()
+    stopPlaylist(player.state.screen)
     return
   }
 
-  state.currentIndex++
-  if (state.currentIndex >= state.order.length) {
+  player.state.currentIndex++
+  if (player.state.currentIndex >= player.state.order.length) {
     // Loop: rebuild order (reshuffles if randomize is on)
-    state.order = buildOrder(playlist)
-    state.currentIndex = 0
+    player.state.order = buildOrder(playlist)
+    player.state.currentIndex = 0
   }
 
-  await applyCurrent(playlist)
+  await applyCurrent(player, playlist)
   emitState()
-  scheduleNext(playlist)
+  scheduleNext(player, playlist)
 }
 
-export function startPlaylist(id: string): PlaylistPlaybackState {
-  const playlist = getPlaylist(id)
-  if (!playlist) throw new Error(`Playlist ${id} not found`)
-  if (playlist.items.length === 0) throw new Error('Playlist has no wallpapers')
+function playerFor(screen: ScreenTarget): Player {
+  let player = players.get(screen)
+  if (!player) {
+    player = { state: idleState(screen), timer: null, scheduleToken: 0, applying: false }
+    players.set(screen, player)
+  }
+  return player
+}
 
-  clearTimer()
-  state = {
+/** Players the given screen selection refers to; nothing given means every screen */
+function selectPlayers(screen?: ScreenTarget): Player[] {
+  if (screen === undefined || screen === ALL_SCREENS) return [...players.values()]
+  const player = players.get(screen)
+  return player ? [player] : []
+}
+
+function startOn(screen: ScreenTarget, playlist: Playlist): PlaylistPlaybackState {
+  const player = playerFor(screen)
+  clearTimer(player)
+  player.state = {
+    screen,
     playlistId: playlist.id,
     currentItemId: null,
     currentIndex: 0,
     isPlaying: true,
     order: buildOrder(playlist)
   }
-  store.set('activePlaylistId', playlist.id)
-  store.set('isPlaying', true)
 
-  void applyCurrent(playlist).then(() => {
+  void applyCurrent(player, playlist).then(() => {
     emitState()
-    scheduleNext(playlist)
+    scheduleNext(player, playlist)
   })
-  emitState()
-
-  return state
+  return player.state
 }
 
-export async function playItem(playlistId: string, wallpaperId: string): Promise<PlaylistPlaybackState> {
+export function startPlaylist(id: string, screen?: ScreenTarget): PlaylistPlaybackState[] {
+  const playlist = getPlaylist(id)
+  if (!playlist) throw new Error(`Playlist ${id} not found`)
+  if (playlist.items.length === 0) throw new Error('Playlist has no wallpapers')
+
+  const targets = expandScreen(screen)
+  if (targets.length === 0) throw new Error(`Screen ${screen} is not connected`)
+  // players on screens that no longer exist in this mode would fight over the same engine
+  for (const s of players.keys()) {
+    if (!getDisplayTargets().includes(s)) stopPlaylist(s)
+  }
+
+  const states = targets.map((s) => startOn(s, playlist))
+  persist()
+  emitState()
+  return states
+}
+
+export async function playItem(playlistId: string, wallpaperId: string, screen?: ScreenTarget): Promise<PlaylistPlaybackState[]> {
   const playlist = getPlaylist(playlistId)
   if (!playlist) throw new Error(`Playlist ${playlistId} not found`)
   if (!findItem(playlist, wallpaperId)) throw new Error(`Wallpaper ${wallpaperId} is not in this playlist`)
 
-  clearTimer()
-  if (state.playlistId !== playlistId) {
-    state = {
-      playlistId: playlist.id,
-      currentItemId: null,
-      currentIndex: -1,
-      isPlaying: true,
-      order: buildOrder(playlist)
+  // without a screen, play it wherever this playlist is already playing, or on every screen
+  let targets = screen === undefined
+    ? [...players.values()].filter((p) => p.state.playlistId === playlistId).map((p) => p.state.screen)
+    : expandScreen(screen)
+  if (targets.length === 0) targets = expandScreen()
+
+  for (const target of targets) {
+    const player = playerFor(target)
+    clearTimer(player)
+    if (player.state.playlistId !== playlistId) {
+      player.state = { ...idleState(target), playlistId: playlist.id, isPlaying: true, order: buildOrder(playlist) }
     }
+
+    let index = player.state.order.indexOf(wallpaperId)
+    if (index === -1) {
+      player.state.order = buildOrder(playlist)
+      index = player.state.order.indexOf(wallpaperId)
+    }
+    player.state.currentIndex = index
+    player.state.isPlaying = true
+
+    await applyCurrent(player, playlist)
+    scheduleNext(player, playlist)
   }
+  persist()
+  emitState()
+  return getPlaybackStates()
+}
 
-  let index = state.order.indexOf(wallpaperId)
-  if (index === -1) {
-    state.order = buildOrder(playlist)
-    index = state.order.indexOf(wallpaperId)
+export function stopPlaylist(screen?: ScreenTarget): PlaylistPlaybackState[] {
+  for (const player of selectPlayers(screen)) {
+    clearTimer(player)
+    players.delete(player.state.screen)
   }
-  state.currentIndex = index
-  state.isPlaying = true
-  store.set('activePlaylistId', playlist.id)
-  store.set('isPlaying', true)
-
-  await applyCurrent(playlist)
+  persist()
   emitState()
-  scheduleNext(playlist)
-  return state
+  return getPlaybackStates()
 }
 
-export function stopPlaylist(): PlaylistPlaybackState {
-  clearTimer()
-  state = { playlistId: null, currentItemId: null, currentIndex: -1, isPlaying: false, order: [] }
-  store.set('activePlaylistId', null)
-  store.set('isPlaying', false)
+export function pausePlaylist(screen?: ScreenTarget): PlaylistPlaybackState[] {
+  for (const player of selectPlayers(screen)) {
+    if (!player.state.playlistId) continue
+    clearTimer(player)
+    player.state.isPlaying = false
+  }
+  persist()
   emitState()
-  return state
+  return getPlaybackStates()
 }
 
-export function pausePlaylist(): PlaylistPlaybackState {
-  if (!state.playlistId) return state
-  clearTimer()
-  state.isPlaying = false
-  store.set('isPlaying', false)
+export function resumePlaylist(screen?: ScreenTarget): PlaylistPlaybackState[] {
+  for (const player of selectPlayers(screen)) {
+    const playlist = player.state.playlistId ? getPlaylist(player.state.playlistId) : null
+    if (!playlist) continue
+    player.state.isPlaying = true
+    scheduleNext(player, playlist)
+  }
+  persist()
   emitState()
-  return state
+  return getPlaybackStates()
 }
 
-export function resumePlaylist(): PlaylistPlaybackState {
-  if (!state.playlistId) return state
-  const playlist = getPlaylist(state.playlistId)
-  if (!playlist) return state
-  state.isPlaying = true
-  store.set('isPlaying', true)
-  scheduleNext(playlist)
+export async function nextItem(screen?: ScreenTarget): Promise<PlaylistPlaybackState[]> {
+  for (const player of selectPlayers(screen)) {
+    if (!player.state.playlistId || player.applying) continue
+    await advance(player)
+  }
+  return getPlaybackStates()
+}
+
+export async function previousItem(screen?: ScreenTarget): Promise<PlaylistPlaybackState[]> {
+  for (const player of selectPlayers(screen)) {
+    if (!player.state.playlistId || player.applying) continue
+    const playlist = getPlaylist(player.state.playlistId)
+    if (!playlist || playlist.items.length === 0) continue
+
+    player.state.currentIndex--
+    if (player.state.currentIndex < 0) player.state.currentIndex = player.state.order.length - 1
+
+    await applyCurrent(player, playlist)
+    scheduleNext(player, playlist)
+  }
   emitState()
-  return state
+  return getPlaybackStates()
 }
 
-export async function nextItem(): Promise<PlaylistPlaybackState> {
-  if (!state.playlistId || applying) return state
-  const playlist = getPlaylist(state.playlistId)
-  if (!playlist) return state
-  await advance()
-  return state
+export function getPlaybackStates(): PlaylistPlaybackState[] {
+  return [...players.values()].map((p) => p.state)
 }
 
-export async function previousItem(): Promise<PlaylistPlaybackState> {
-  if (!state.playlistId || applying) return state
-  const playlist = getPlaylist(state.playlistId)
-  if (!playlist || playlist.items.length === 0) return state
-
-  state.currentIndex--
-  if (state.currentIndex < 0) state.currentIndex = state.order.length - 1
-
-  await applyCurrent(playlist)
-  emitState()
-  scheduleNext(playlist)
-  return state
-}
-
+/** The one state that matters most, for places with room for only one (the tray) */
 export function getPlaybackState(): PlaylistPlaybackState {
-  return state
+  const states = getPlaybackStates()
+  return states.find((s) => s.isPlaying) ?? states[0] ?? idleState(ALL_SCREENS)
+}
+
+export function isPlayingOn(screen: ScreenTarget): boolean {
+  return selectPlayers(screen).some((p) => p.state.isPlaying)
+}
+
+function savedPlayers(): Record<ScreenTarget, SavedPlayer> {
+  const saved = store.get('players')
+  if (saved) return saved
+  const legacyId = store.get('activePlaylistId')
+  return legacyId ? { [ALL_SCREENS]: { playlistId: legacyId, isPlaying: store.get('isPlaying') } } : {}
 }
 
 /**
- * Call once on app startup. Resumes whichever playlist was active when the app last
- * closed. Returns true if a playlist was resumed, so the caller can skip the
- * "autostart playlist" config setting to avoid starting two playlists at once.
- * Does nothing if linux-wallpaperengine isn't installed.
+ * Call once on app startup. Resumes the playlists that were active when the app last closed.
+ * Returns true if any was resumed, so the caller can skip the "autostart playlist" config setting
+ * to avoid starting two playlists at once. Does nothing if linux-wallpaperengine isn't installed.
  */
 export function initPlaylistPlayer(window: BrowserWindow): boolean {
   win = window
-  const activeId = store.get('activePlaylistId')
-  if (!activeId) return false
-  const playlist = getPlaylist(activeId)
-  if (!playlist || playlist.items.length === 0) return false
+  setPlaylistRecovery((screen) => {
+    const player = players.get(screen)
+    if (!player?.state.isPlaying || player.applying) return false
+    void advance(player)
+    return true
+  })
+
   if (!getLweStatus().installed) return false
 
-  const wasPlaying = store.get('isPlaying')
-  const isConfiguredAutostart = activeId === getAutostartPlaylistId()
-  startPlaylist(activeId)
-  if (!wasPlaying && !isConfiguredAutostart) pausePlaylist()
-  return true
+  let resumed = false
+  const targets = getDisplayTargets()
+  for (const [screen, saved] of Object.entries(savedPlayers())) {
+    const playlist = getPlaylist(saved.playlistId)
+    if (!playlist || playlist.items.length === 0 || !targets.includes(screen)) continue
+
+    startOn(screen, playlist)
+    resumed = true
+    const isConfiguredAutostart = saved.playlistId === getAutostartPlaylistId()
+    if (!saved.isPlaying && !isConfiguredAutostart) pausePlaylist(screen)
+  }
+  store.set('activePlaylistId', null)
+  persist()
+  emitState()
+  return resumed
 }

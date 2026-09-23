@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { GripVertical, Trash2, Volume2, Clock, ChevronDown, ChevronUp, Play, Pause } from 'lucide-react'
 import clsx from 'clsx'
+import CompatBadge from '../common/CompatBadge'
 import type { PlaylistItem, WallpaperMeta } from '@shared/types'
 import { getPreviewSrc } from '../../utils/preview'
 
@@ -72,6 +73,7 @@ export default function PlaylistItemRow({
           {previewSrc && (
             <img src={previewSrc} alt="" className="h-full w-full object-cover" loading="lazy" />
           )}
+          <CompatBadge compat={wallpaper?.compat} className="absolute bottom-0.5 left-0.5 z-10" />
           <div
             className={clsx(
               'absolute inset-0 flex items-center justify-center bg-black/50 transition-opacity',

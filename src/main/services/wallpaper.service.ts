@@ -4,12 +4,19 @@ import * as os from 'os'
 import * as fs from 'fs'
 import * as path from 'path'
 import { detectDisplayServer, detectDesktopEnv, isCommandAvailable } from '../utils/platform'
-import type { WallpaperBackend, WallpaperEnvironment, WallpaperMeta } from '@shared/types'
-import { getLweStatus, launchLweAsync } from './lwe.service'
+import type { ScreenTarget, WallpaperBackend, WallpaperEnvironment, WallpaperMeta } from '@shared/types'
+import { getLweStatus, launchLweAsync, type LweLaunchOptions } from './lwe.service'
 import { ensureDependencyInstalled } from './dependency.service'
-import { getDefaultFps, getRecommendedFpsEnabled, getRecommendedWebFpsEnabled } from './config.service'
+import {
+  getDefaultFps,
+  getGlobalEngineFlags,
+  getRecommendedFpsEnabled,
+  getRecommendedWebFpsEnabled
+} from './config.service'
 import { findWallpaperVideoFile, getVideoFps } from '../utils/video'
 import { RECOMMENDED_WEB_FPS } from '@shared/constants'
+import { resolveEngineFlags } from '@shared/engineFlags'
+import { needsFreshLaunch } from '@shared/compat'
 
 const execFileAsync = promisify(execFile)
 
@@ -196,6 +203,52 @@ function findWallpaperImage(dirPath: string): string {
   throw new Error(`No image found in ${dirPath}`)
 }
 
+export async function lweOptionsFor(
+  wallpaper: WallpaperMeta,
+  options: { fps?: number; volume?: number } = {}
+): Promise<LweLaunchOptions> {
+  let fps = options.fps ?? wallpaper.fpsOverride
+  if (fps === undefined && wallpaper.type === 'video' && wallpaper.localPath && getRecommendedFpsEnabled()) {
+    const videoFile = findWallpaperVideoFile(wallpaper.localPath, wallpaper.file)
+    if (videoFile) fps = await getVideoFps(videoFile)
+  }
+  if (fps === undefined && wallpaper.type === 'web' && getRecommendedWebFpsEnabled()) {
+    fps = RECOMMENDED_WEB_FPS
+  }
+  fps = fps ?? getDefaultFps() ?? undefined
+
+  return {
+    engineFlags: resolveEngineFlags(getGlobalEngineFlags(), wallpaper.engineFlags),
+    fps,
+    volume: options.volume ?? wallpaper.volumeOverride,
+    disabledObjects: wallpaper.disabledObjects,
+    enabledObjects: wallpaper.enabledObjects,
+    disabledEffects: wallpaper.disabledEffects,
+    enabledEffects: wallpaper.enabledEffects,
+    propertyOverrides: wallpaper.propertyOverrides,
+    // Explicit even when off: xray state lives on the running LWE process, not per-wallpaper,
+    // so a hot-reload into a wallpaper with xray off must actively clear a previous wallpaper's "on".
+    xrayFullReveal: wallpaper.xrayFullReveal ?? false,
+    scalingMode: wallpaper.scalingMode,
+    zoom: wallpaper.zoom,
+    offsetX: wallpaper.offsetX,
+    offsetY: wallpaper.offsetY,
+    // Explicit even when off, same reasoning as xrayFullReveal above.
+    disableParallax: wallpaper.disableParallax ?? false,
+    // Explicit even when off, same reasoning as xrayFullReveal above.
+    expandCanvas: wallpaper.expandCanvas ?? false,
+    cornerColor: wallpaper.cornerColor,
+    speed: wallpaper.playbackSpeed,
+    audioSensitivity: wallpaper.audioSensitivity,
+    soundVolume: wallpaper.soundVolume,
+    customArgs: wallpaper.customArgs
+  }
+}
+
+export function isAnimatedWallpaper(wallpaper: WallpaperMeta): boolean {
+  return wallpaper.type === 'scene' || wallpaper.type === 'web' || wallpaper.type === 'video'
+}
+
 /**
  * Apply a library wallpaper: renders animated/scene/web/video wallpapers via
  * linux-wallpaperengine when available, otherwise falls back to a static image.
@@ -208,50 +261,19 @@ export async function applyWallpaperMeta(
     volume?: number
     backend?: WallpaperBackend
     dependencyPrompt?: 'always' | 'once'
+    screen?: ScreenTarget
+    forceFresh?: boolean
   } = {}
 ): Promise<string> {
   if (!wallpaper.localPath) throw new Error(`Wallpaper ${wallpaper.id} has no local path`)
 
   await ensureDependencyInstalled(wallpaper, options.dependencyPrompt)
 
-  const isAnimated = wallpaper.type === 'scene' || wallpaper.type === 'web' || wallpaper.type === 'video'
-  const lwe = getLweStatus()
-
-  if (isAnimated && os.platform() === 'linux' && lwe.installed) {
-    let fps = options.fps ?? wallpaper.fpsOverride
-    if (fps === undefined && wallpaper.type === 'video' && getRecommendedFpsEnabled()) {
-      const videoFile = findWallpaperVideoFile(wallpaper.localPath, wallpaper.file)
-      if (videoFile) fps = await getVideoFps(videoFile)
-    }
-    if (fps === undefined && wallpaper.type === 'web' && getRecommendedWebFpsEnabled()) {
-      fps = RECOMMENDED_WEB_FPS
-    }
-    fps = fps ?? getDefaultFps() ?? undefined
-    const volume = options.volume ?? wallpaper.volumeOverride
+  if (isAnimatedWallpaper(wallpaper) && os.platform() === 'linux' && getLweStatus().installed) {
     await launchLweAsync(wallpaper.localPath, {
-      fps,
-      volume,
-      disabledObjects: wallpaper.disabledObjects,
-      enabledObjects: wallpaper.enabledObjects,
-      disabledEffects: wallpaper.disabledEffects,
-      enabledEffects: wallpaper.enabledEffects,
-      propertyOverrides: wallpaper.propertyOverrides,
-      // Explicit even when off: xray state lives on the running LWE process, not per-wallpaper,
-      // so a hot-reload into a wallpaper with xray off must actively clear a previous wallpaper's "on".
-      xrayFullReveal: wallpaper.xrayFullReveal ?? false,
-      scalingMode: wallpaper.scalingMode,
-      zoom: wallpaper.zoom,
-      offsetX: wallpaper.offsetX,
-      offsetY: wallpaper.offsetY,
-      // Explicit even when off, same reasoning as xrayFullReveal above.
-      disableParallax: wallpaper.disableParallax ?? false,
-      // Explicit even when off, same reasoning as xrayFullReveal above.
-      expandCanvas: wallpaper.expandCanvas ?? false,
-      cornerColor: wallpaper.cornerColor,
-      speed: wallpaper.playbackSpeed,
-      audioSensitivity: wallpaper.audioSensitivity,
-      soundVolume: wallpaper.soundVolume,
-      customArgs: wallpaper.customArgs
+      ...(await lweOptionsFor(wallpaper, options)),
+      screen: options.screen,
+      forceFresh: options.forceFresh || needsFreshLaunch(wallpaper.compat)
     })
     return wallpaper.localPath
   }

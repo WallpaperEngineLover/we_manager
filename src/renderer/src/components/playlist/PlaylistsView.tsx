@@ -25,7 +25,7 @@ import {
   User
 } from 'lucide-react'
 import clsx from 'clsx'
-import type { Playlist, PlaylistPlaybackState, PlaylistSettings } from '@shared/types'
+import type { Playlist, PlaylistPlaybackState, PlaylistSettings, ScreenTarget } from '@shared/types'
 import PlaylistItemRow from './PlaylistItemRow'
 import WallpaperPickerModal from './WallpaperPickerModal'
 import DetailSidebar from '../common/DetailSidebar'
@@ -34,6 +34,9 @@ import { useClampedPosition, useFlipSide } from '../../hooks/useContextMenuPosit
 import { openWorkshopPage, isWorkshopId } from '../../utils/steam'
 import { useToast } from '../common/Toast'
 import { getPreviewSrc } from '../../utils/preview'
+import ScreenSelect from '../common/ScreenSelect'
+import { useDisplayTargets } from '../../hooks/useDisplayTargets'
+import { screenLabel } from '../../utils/screens'
 
 const SORT_OPTIONS: { value: PlaylistSettings['sortBy']; label: string }[] = [
   { value: 'manual', label: 'Manual order' },
@@ -100,10 +103,12 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
   })
   const isBackupConfigured = config?.isBackupConfigured ?? false
 
-  const { data: playbackState } = useQuery({
+  const { data: playbackStates = [] } = useQuery({
     queryKey: ['playlist-playback-state'],
     queryFn: () => window.electronAPI.playlist.getState()
   })
+  const { targets, perScreen } = useDisplayTargets()
+  const [screen, setScreen] = useState<ScreenTarget>('*')
 
   const { data: lweStatus } = useQuery({
     queryKey: ['lwe-status'],
@@ -118,8 +123,8 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
   const votedSet = useMemo(() => new Set(votedIds ?? []), [votedIds])
 
   useEffect(() => {
-    return window.electronAPI.on.playlistStateChanged((state: PlaylistPlaybackState) => {
-      queryClient.setQueryData(['playlist-playback-state'], state)
+    return window.electronAPI.on.playlistStateChanged((states: PlaylistPlaybackState[]) => {
+      queryClient.setQueryData(['playlist-playback-state'], states)
     })
   }, [queryClient])
 
@@ -215,9 +220,9 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
     refetchFolders()
   }
 
-  async function handleApplyDetail(wallpaperId: string) {
+  async function handleApplyDetail(wallpaperId: string, target?: ScreenTarget) {
     try {
-      await window.electronAPI.wallpaper.apply({ wallpaperId })
+      await window.electronAPI.wallpaper.apply({ wallpaperId, screen: target })
       queryClient.invalidateQueries({ queryKey: ['library-all'] })
     } catch (err) {
       showToast((err as Error).message)
@@ -330,7 +335,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
     if (!activePlaylist) return
     setError(null)
     try {
-      await window.electronAPI.playlist.start(activePlaylist.id)
+      await window.electronAPI.playlist.start(activePlaylist.id, screen)
       queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
     } catch (err) {
       setError((err as Error).message)
@@ -339,45 +344,39 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
 
   async function handlePlayItem(wallpaperId: string) {
     if (!activePlaylist) return
-    if (isThisPlaylistActive && playbackState?.isPlaying && playbackState?.currentItemId === wallpaperId) {
-      await window.electronAPI.playlist.pause()
+    const playingIt = thisStates.filter((s) => s.isPlaying && s.currentItemId === wallpaperId)
+    if (playingIt.length > 0) {
+      for (const s of playingIt) await window.electronAPI.playlist.pause(s.screen)
       queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
       return
     }
     setError(null)
     try {
-      await window.electronAPI.playlist.playItem(activePlaylist.id, wallpaperId)
+      await window.electronAPI.playlist.playItem(activePlaylist.id, wallpaperId, isThisPlaylistActive ? undefined : screen)
       queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
     } catch (err) {
       setError((err as Error).message)
     }
   }
 
-  async function handlePauseResume() {
-    if (isThisPlaylistActive && playbackState?.isPlaying) {
-      await window.electronAPI.playlist.pause()
-    } else {
-      await window.electronAPI.playlist.resume()
-    }
+  // controls act on every screen this playlist plays on, narrowed down by the screen picker
+  async function forEachScreen(action: (screen: ScreenTarget) => Promise<unknown>) {
+    for (const s of thisStates) await action(s.screen)
     queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
   }
 
-  async function handleStop() {
-    await window.electronAPI.playlist.stop()
-    queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
-  }
+  const handlePauseResume = () =>
+    forEachScreen((s) => (isPlaying ? window.electronAPI.playlist.pause(s) : window.electronAPI.playlist.resume(s)))
+  const handleStop = () => forEachScreen((s) => window.electronAPI.playlist.stop(s))
+  const handleNext = () => forEachScreen((s) => window.electronAPI.playlist.next(s))
+  const handlePrevious = () => forEachScreen((s) => window.electronAPI.playlist.previous(s))
 
-  async function handleNext() {
-    await window.electronAPI.playlist.next()
-    queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
-  }
-
-  async function handlePrevious() {
-    await window.electronAPI.playlist.previous()
-    queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
-  }
-
-  const isThisPlaylistActive = playbackState?.playlistId === activePlaylist?.id
+  const thisStates = playbackStates.filter(
+    (s) => s.playlistId === activePlaylist?.id && (screen === '*' || s.screen === screen)
+  )
+  const isThisPlaylistActive = thisStates.length > 0
+  const isPlaying = thisStates.some((s) => s.isPlaying)
+  const currentItemIds = new Set(thisStates.map((s) => s.currentItemId))
   const existingIds = useMemo(
     () => new Set(activePlaylist?.items.map((i) => i.wallpaperId) ?? []),
     [activePlaylist]
@@ -441,7 +440,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
               size={14}
               className={clsx(
                 'shrink-0',
-                playbackState?.playlistId === p.id ? 'text-indigo-400' : 'text-gray-600'
+                playbackStates.some((s) => s.playlistId === p.id) ? 'text-indigo-400' : 'text-gray-600'
               )}
             />
             {renamingId === p.id ? (
@@ -496,6 +495,9 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-gray-100">{activePlaylist.title}</h2>
                 <div className="flex items-center gap-2">
+                  {perScreen && (
+                    <ScreenSelect targets={targets} value={screen} onChange={setScreen} title="Which screen to play on" />
+                  )}
                   {isThisPlaylistActive ? (
                     <>
                       <button
@@ -507,10 +509,10 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                       </button>
                       <button
                         onClick={handlePauseResume}
-                        title={playbackState?.isPlaying ? 'Pause' : 'Resume'}
+                        title={isPlaying ? 'Pause' : 'Resume'}
                         className="rounded-lg bg-indigo-600 p-2 text-white hover:bg-indigo-500"
                       >
-                        {playbackState?.isPlaying ? <Pause size={14} /> : <Play size={14} />}
+                        {isPlaying ? <Pause size={14} /> : <Play size={14} />}
                       </button>
                       <button
                         onClick={handleNext}
@@ -540,6 +542,11 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                 </div>
               </div>
               {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+              {perScreen && isThisPlaylistActive && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Playing on {thisStates.map((s) => screenLabel(s.screen)).join(', ')}
+                </p>
+              )}
 
               <div className="mt-3 flex flex-wrap items-center gap-4">
                 <label className="flex items-center gap-2 text-xs text-gray-400">
@@ -658,8 +665,8 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                   item={item}
                   wallpaper={wallpaperById.get(item.wallpaperId)}
                   index={index}
-                  isPlaying={Boolean(isThisPlaylistActive && playbackState?.isPlaying)}
-                  isCurrent={isThisPlaylistActive && playbackState?.currentItemId === item.wallpaperId}
+                  isPlaying={isPlaying}
+                  isCurrent={currentItemIds.has(item.wallpaperId)}
                   onDragStart={handleDragStart}
                   onDragOver={handleDragOver}
                   onDrop={handleDrop}
@@ -707,7 +714,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
               old ? [...old, detailId] : [detailId]
             )
           }}
-          onPlay={() => handleApplyDetail(detailId)}
+          onPlay={(target) => handleApplyDetail(detailId, target)}
           onBrowseCreator={onBrowseCreator}
         />
       )}

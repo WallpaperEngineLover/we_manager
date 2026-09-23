@@ -31,7 +31,7 @@ import WallpaperCard from './WallpaperCard'
 import PreviewSizeToggle from '../common/PreviewSizeToggle'
 import DetailSidebar from '../common/DetailSidebar'
 import { useToast } from '../common/Toast'
-import type { LibraryFilters, WallpaperFolder, LweStatus } from '@shared/types'
+import type { LibraryFilters, WallpaperFolder, LweStatus, ScreenTarget } from '@shared/types'
 import clsx from 'clsx'
 import { WE_TYPES, WE_LIBRARY_AGE_RATINGS, WE_RESOLUTION_GROUPS } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
@@ -613,7 +613,9 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     queryKey: ['playlist-playback-state'],
     queryFn: () => window.electronAPI.playlist.getState()
   })
-  const currentPlaylistId = playbackState?.playlistId ?? null
+  // the playlist "add to current" goes to, the first one playing when several screens have their own
+  const currentPlaylistId =
+    (playbackState?.find((s) => s.isPlaying) ?? playbackState?.find((s) => s.playlistId))?.playlistId ?? null
 
   useEffect(() => {
     return window.electronAPI.on.playlistStateChanged((state) => {
@@ -867,9 +869,9 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     await unsubscribeIds(ids)
   }
 
-  async function handleApplyDetail(id: string) {
+  async function handleApplyDetail(id: string, screen?: ScreenTarget) {
     try {
-      await window.electronAPI.wallpaper.apply({ wallpaperId: id })
+      await window.electronAPI.wallpaper.apply({ wallpaperId: id, screen })
       queryClient.invalidateQueries({ queryKey: ['library'] })
     } catch (err) {
       showToast((err as Error).message)
@@ -1598,7 +1600,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 old ? [...old, detailId] : [detailId]
               )
             }}
-            onPlay={() => handleApplyDetail(detailId)}
+            onPlay={(screen) => handleApplyDetail(detailId, screen)}
             onBrowseCreator={onBrowseCreator}
           />
         )}

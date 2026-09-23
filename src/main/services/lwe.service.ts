@@ -12,7 +12,10 @@ import type {
   LweSceneObject,
   LweProperty,
   LweAudioObject,
-  LweSceneEffect
+  LweSceneEffect,
+  CrashPhase,
+  EngineFlags,
+  ScreenTarget
 } from '@shared/types'
 import {
   isCommandAvailable,
@@ -30,10 +33,12 @@ import {
   getAudioScreen,
   getAmbientVolume,
   getDefaultAudioSensitivity,
-  getDisablePuppetAnimation,
-  getDisableAnimations
+  getDisablePuppetAnimation
 } from './config.service'
 import { DEFAULT_LWE_FPS, DEFAULT_LWE_REPO } from '@shared/constants'
+import { engineFlagArgs } from '@shared/engineFlags'
+
+export const ALL_SCREENS: ScreenTarget = '*'
 
 const execFileAsync = promisify(execFile)
 
@@ -67,8 +72,6 @@ const LWE_SEARCH_PATHS = [
   path.join(os.homedir(), 'bin', 'linux-wallpaperengine'),
   '/opt/linux-wallpaperengine/linux-wallpaperengine'
 ]
-
-let activeProcess: ChildProcess | null = null
 
 async function removeBuildDir(dir: string): Promise<void> {
   if (!fs.existsSync(dir)) return
@@ -423,6 +426,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     invalidateEffectFlagsSupport()
     invalidateDisableAnimationsSupport()
     invalidateExpandCanvasSupport()
+    invalidateHelpText()
 
     const status = getLweStatus()
     if (status.installed) {
@@ -541,6 +545,7 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
     invalidateEffectFlagsSupport()
     invalidateDisableAnimationsSupport()
     invalidateExpandCanvasSupport()
+    invalidateHelpText()
 
     return { ok: true, message: 'linux-wallpaperengine has been uninstalled.' }
   } catch (err) {
@@ -783,48 +788,98 @@ function supportsExpandCanvas(): boolean {
   return expandCanvasSupported
 }
 
+// shell-like: quotes group whitespace anywhere in a token (foo="bar baz") and are dropped
 export function parseCustomArgs(raw: string): string[] {
   const tokens: string[] = []
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g
-  let match: RegExpExecArray | null
-  while ((match = re.exec(raw)) !== null) {
-    tokens.push(match[1] ?? match[2] ?? match[3])
+  let current = ''
+  let inToken = false
+  let quote: string | null = null
+
+  for (const ch of raw) {
+    if (quote) {
+      if (ch === quote) quote = null
+      else current += ch
+    } else if (ch === '"' || ch === "'") {
+      quote = ch
+      inToken = true
+    } else if (/\s/.test(ch)) {
+      if (inToken) tokens.push(current)
+      current = ''
+      inToken = false
+    } else {
+      current += ch
+      inToken = true
+    }
   }
+  if (inToken) tokens.push(current)
   return tokens
+}
+
+let helpText: string | null = null
+
+function invalidateHelpText(): void {
+  helpText = null
+}
+
+// older builds ignore unknown flags, so a flag the binary doesn't list is left out instead of passed
+function supportsFlag(flag: string): boolean {
+  if (helpText === null) {
+    try {
+      helpText = execFileSync('env', [...buildLweEnvVars(), getLweBinaryPath(), '--help'], {
+        timeout: 5_000,
+        encoding: 'utf8',
+        maxBuffer: 2 * 1024 * 1024
+      })
+    } catch {
+      helpText = ''
+    }
+  }
+  return helpText.includes(flag)
+}
+
+export interface LweLaunchOptions {
+  /** '*' runs one engine for every connected screen */
+  screen?: ScreenTarget
+  fps?: number
+  volume?: number
+  disabledObjects?: string[]
+  enabledObjects?: string[]
+  disabledEffects?: string[]
+  enabledEffects?: string[]
+  propertyOverrides?: Record<string, string>
+  xrayFullReveal?: boolean
+  scalingMode?: string
+  zoom?: number
+  offsetX?: number
+  offsetY?: number
+  disableParallax?: boolean
+  expandCanvas?: boolean
+  cornerColor?: string
+  speed?: number
+  audioSensitivity?: Record<string, number>
+  soundVolume?: Record<string, number>
+  customArgs?: string
+  /** Already merged with the global flags */
+  engineFlags?: EngineFlags
+  /** Restart the engine even when it could have taken a hotswap */
+  forceFresh?: boolean
 }
 
 /** Build the common LWE args (assets dir, screen roots, fps, volume, object overrides). */
 function buildLweArgs(
   wallpaperPath: string,
-  options: {
-    screenRoot?: string
-    fps?: number
-    volume?: number
-    disabledObjects?: string[]
-    enabledObjects?: string[]
-    disabledEffects?: string[]
-    enabledEffects?: string[]
-    propertyOverrides?: Record<string, string>
-    scalingMode?: string
-    zoom?: number
-    offsetX?: number
-    offsetY?: number
-    disableParallax?: boolean
-    expandCanvas?: boolean
-    cornerColor?: string
-    speed?: number
-    audioSensitivity?: Record<string, number>
-    soundVolume?: Record<string, number>
-    customArgs?: string
-  }
+  options: LweLaunchOptions,
+  capture?: { window: string; screenshotPath: string; delayFrames: number }
 ): string[] {
   const args: string[] = []
   const assetsDir = findWeAssetsDir()
   if (assetsDir) args.push('--assets-dir', assetsDir)
 
   // --screen-root uses layer-shell (Wayland) or root-window overlay (X11)
-  if (options.screenRoot) {
-    args.push('--screen-root', options.screenRoot)
+  if (capture) {
+    args.push('--window', capture.window)
+  } else if (options.screen && options.screen !== ALL_SCREENS) {
+    args.push('--screen-root', options.screen)
   } else {
     const screens = getConnectedScreens()
     for (const s of screens) args.push('--screen-root', s)
@@ -838,7 +893,9 @@ function buildLweArgs(
   const ambientVolume = getAmbientVolume()
   if (ambientVolume !== null) args.push('--ambient-volume', String(ambientVolume))
   if (getDisablePuppetAnimation()) args.push('--render-debug', 'no-puppet-animation')
-  if (getDisableAnimations() && supportsDisableAnimations()) args.push('--disable-animations')
+  const flags = options.engineFlags ?? {}
+  if (flags.disableAnimations && supportsDisableAnimations()) args.push('--disable-animations')
+  args.push(...engineFlagArgs(flags).filter(supportsFlag))
   if (options.scalingMode) args.push('--scaling', options.scalingMode)
   if (options.zoom !== undefined) args.push('--zoom', String(options.zoom))
   if (options.offsetX !== undefined || options.offsetY !== undefined) {
@@ -877,6 +934,9 @@ function buildLweArgs(
   if (options.customArgs?.trim()) {
     args.push(...parseCustomArgs(options.customArgs))
   }
+  if (capture) {
+    args.push('--screenshot', capture.screenshotPath, '--screenshot-delay', String(capture.delayFrames))
+  }
   args.push(wallpaperPath)
   return args
 }
@@ -887,27 +947,69 @@ function getControlFilePath(): string {
 }
 
 /**
- * Tracks a still-running LWE process across app restarts. `activeProcess` is an in-memory handle
- * that dies with this Electron process, but the LWE child is spawned detached/unref'd so it
- * survives independently - after the app is closed and reopened, `activeProcess` comes back null
- * even though the OS process is still alive. resolveActivePid() below covers that gap.
+ * The engine processes are spawned detached and outlive this app, so what's running is also written
+ * to the runtime dir. After a restart the app adopts whatever is still alive from there.
  */
-function getPidFilePath(): string {
+function getInstancesFilePath(): string {
+  return path.join(getXdgRuntimeDir(), 'lwe-instances.json')
+}
+
+function getLegacyPidFilePath(): string {
   return path.join(getXdgRuntimeDir(), 'lwe-pid')
 }
 
-function writePidFile(pid: number): void {
-  try {
-    fs.writeFileSync(getPidFilePath(), String(pid))
-  } catch (err) {
-    console.error('[LWE] Failed to write pid file:', err)
-  }
+interface LweInstance {
+  screen: ScreenTarget
+  pid: number
+  /** null for a process adopted from a previous run of the app, only its pid is known then */
+  child: ChildProcess | null
+  wallpaperPath: string
+  launchKey: string
+  startedAt: number
+  swappedAt: number | null
+  stopping: boolean
+  log: string[]
 }
 
-function clearPidFile(): void {
+export interface LweExitInfo {
+  screen: ScreenTarget
+  wallpaperPath: string
+  crashed: boolean
+  phase: CrashPhase
+  description: string
+  log: string[]
+}
+
+const instances = new Map<ScreenTarget, LweInstance>()
+let instancesLoaded = false
+let adoptedPoll: ReturnType<typeof setInterval> | null = null
+const exitListeners = new Set<(info: LweExitInfo) => void>()
+
+const LOG_LINES_KEPT = 60
+// a crash this soon after a launch or hotswap is blamed on it
+const CRASH_WINDOW_MS = 20_000
+const CRASH_SIGNALS = new Set(['SIGSEGV', 'SIGABRT', 'SIGBUS', 'SIGFPE', 'SIGILL', 'SIGTRAP'])
+
+export function onLweExit(cb: (info: LweExitInfo) => void): () => void {
+  exitListeners.add(cb)
+  return () => exitListeners.delete(cb)
+}
+
+function persistInstances(): void {
+  const entries = [...instances.values()].map((i) => ({
+    screen: i.screen,
+    pid: i.pid,
+    wallpaperPath: i.wallpaperPath,
+    launchKey: i.launchKey,
+    startedAt: i.startedAt
+  }))
   try {
-    fs.rmSync(getPidFilePath(), { force: true })
-  } catch { /* best effort */ }
+    if (entries.length === 0) fs.rmSync(getInstancesFilePath(), { force: true })
+    else fs.writeFileSync(getInstancesFilePath(), JSON.stringify(entries))
+    fs.rmSync(getLegacyPidFilePath(), { force: true })
+  } catch (err) {
+    console.error('[LWE] Failed to write instances file:', err)
+  }
 }
 
 /** True if `pid` is alive and actually looks like a linux-wallpaperengine process (not a recycled PID). */
@@ -927,44 +1029,133 @@ function isLweProcess(pid: number): boolean {
   }
 }
 
-/**
- * Resolves the PID to signal for hotswap/stop, preferring the in-memory child handle (cheap,
- * exact) and falling back to the persisted pid file (recovers tracking after an app restart).
- */
-function resolveActivePid(): number | null {
-  if (activeProcess && activeProcess.exitCode === null && activeProcess.pid !== undefined) {
-    return activeProcess.pid
-  }
-
-  let stored: number | null = null
-  try {
-    stored = parseInt(fs.readFileSync(getPidFilePath(), 'utf8').trim(), 10)
-  } catch {
-    return null
-  }
-
-  if (!Number.isInteger(stored) || !isLweProcess(stored)) {
-    clearPidFile()
-    return null
-  }
-
-  return stored
+function adopt(screen: ScreenTarget, pid: number, wallpaperPath: string, key: string, startedAt: number): void {
+  if (!Number.isInteger(pid) || !isLweProcess(pid)) return
+  instances.set(screen, {
+    screen,
+    pid,
+    child: null,
+    wallpaperPath,
+    launchKey: key,
+    startedAt,
+    swappedAt: null,
+    stopping: false,
+    log: []
+  })
 }
 
-/**
- * Pushes a background swap and/or layer/volume/xray/scaling/zoom/offset/parallax changes to an already-
- * running instance via the extended key=value control file. All fields are optional and
- * independent - only the ones provided get written. All fields for one logical change must go
- * through a single call: the engine has only one pending-request slot, so two calls in quick
- * succession can race and silently drop whichever one wrote last. disabledObjects/enabledObjects
- * being present (even as empty arrays) is what tells the engine to replace its override lists -
- * omit both to leave layers untouched. xray is a live-only setting with no launch-time equivalent,
- * so it has to be pushed here even right after a fresh launch. cornerColor is a hex
- * "RRGGBB"/"RRGGBBAA" string, only visible where the engine's clamp mode is border (the default).
- * propertyOverrides sends every key in the map, not just changed ones, since the engine only
- * reapplies whatever's currently in its settings map on reload.
- */
-export function hotswapLweSettings(options: {
+function loadInstances(): void {
+  if (instancesLoaded) return
+  instancesLoaded = true
+
+  try {
+    const entries = JSON.parse(fs.readFileSync(getInstancesFilePath(), 'utf8')) as Array<{
+      screen: string
+      pid: number
+      wallpaperPath: string
+      launchKey: string
+      startedAt: number
+    }>
+    for (const e of entries) adopt(e.screen, e.pid, e.wallpaperPath, e.launchKey, e.startedAt)
+  } catch { /* nothing running, or written by an older version */ }
+
+  try {
+    const legacyPid = parseInt(fs.readFileSync(getLegacyPidFilePath(), 'utf8').trim(), 10)
+    if (!instances.has(ALL_SCREENS)) adopt(ALL_SCREENS, legacyPid, '', '', Date.now())
+  } catch { /* no legacy pid file */ }
+
+  persistInstances()
+  watchAdoptedInstances()
+}
+
+// Node only reports exits of its own children, so a process adopted from an earlier run is polled
+function watchAdoptedInstances(): void {
+  if (adoptedPoll) return
+  adoptedPoll = setInterval(() => {
+    let adopted = 0
+    for (const inst of instances.values()) {
+      if (inst.child) continue
+      adopted++
+      if (isLweProcess(inst.pid)) continue
+      instances.delete(inst.screen)
+      persistInstances()
+      if (!inst.stopping) {
+        // no exit status for a process we didn't spawn, so a crash can't be told from a kill
+        emitExit(inst, false, 'exited while the app was not watching it')
+      }
+    }
+    if (adopted === 0 && adoptedPoll) {
+      clearInterval(adoptedPoll)
+      adoptedPoll = null
+    }
+  }, 3000)
+}
+
+function crashPhase(inst: LweInstance): CrashPhase {
+  const now = Date.now()
+  if (inst.swappedAt !== null && now - inst.swappedAt < CRASH_WINDOW_MS) return 'hotswap'
+  if (now - inst.startedAt < CRASH_WINDOW_MS) return 'launch'
+  return 'runtime'
+}
+
+function emitExit(inst: LweInstance, crashed: boolean, description: string): void {
+  const info: LweExitInfo = {
+    screen: inst.screen,
+    wallpaperPath: inst.wallpaperPath,
+    crashed,
+    phase: crashPhase(inst),
+    description,
+    log: [...inst.log]
+  }
+  for (const cb of exitListeners) cb(info)
+}
+
+function liveInstance(screen: ScreenTarget): LweInstance | undefined {
+  loadInstances()
+  const inst = instances.get(screen)
+  if (!inst) return undefined
+  if (inst.child ? inst.child.exitCode === null && inst.child.signalCode === null : isLweProcess(inst.pid)) return inst
+  instances.delete(screen)
+  persistInstances()
+  return undefined
+}
+
+function liveInstances(): LweInstance[] {
+  loadInstances()
+  return [...instances.keys()].map(liveInstance).filter((i): i is LweInstance => !!i)
+}
+
+export interface RunningInstance {
+  screen: ScreenTarget
+  wallpaperPath: string
+  pid: number
+  startedAt: number
+  swappedAt: number | null
+}
+
+export function getRunningInstances(): RunningInstance[] {
+  return liveInstances().map(({ screen, wallpaperPath, pid, startedAt, swappedAt }) => ({
+    screen,
+    wallpaperPath,
+    pid,
+    startedAt,
+    swappedAt
+  }))
+}
+
+// flags a hotswap can't change, a running engine launched with different ones has to be restarted
+function launchKey(options: LweLaunchOptions): string {
+  const flags = options.engineFlags ?? {}
+  return JSON.stringify({
+    customArgs: options.customArgs?.trim() ?? '',
+    disabledEffects: options.disabledEffects ?? [],
+    enabledEffects: options.enabledEffects ?? [],
+    disableAnimations: !!flags.disableAnimations,
+    flags: engineFlagArgs(flags)
+  })
+}
+
+export interface HotswapOptions {
   path?: string
   disabledObjects?: string[]
   enabledObjects?: string[]
@@ -987,10 +1178,15 @@ export function hotswapLweSettings(options: {
   audioSensitivity?: Record<string, number>
   /** Sound object id -> volume (0-1), applied live without a reload */
   soundVolume?: Record<string, number>
-}): boolean {
-  const pid = resolveActivePid()
-  if (pid === null) return false
+}
 
+/**
+ * Control file lines for a hotswap. disabledObjects/enabledObjects being present (even as empty
+ * arrays) is what tells the engine to replace its override lists - omit both to leave layers
+ * untouched. propertyOverrides sends every key in the map, not just changed ones, since the engine
+ * only reapplies whatever's currently in its settings map on reload.
+ */
+export function buildHotswapLines(options: HotswapOptions): string[] {
   const lines: string[] = []
   if (options.path !== undefined) lines.push(`path=${options.path}`)
   if (options.disabledObjects !== undefined || options.enabledObjects !== undefined) {
@@ -1021,86 +1217,127 @@ export function hotswapLweSettings(options: {
   for (const [id, volume] of Object.entries(options.soundVolume ?? {})) {
     lines.push(`sound-volume=${id}=${volume}`)
   }
+  return lines
+}
+
+// Every engine process reads the same control file once it gets SIGUSR1, so a request for another
+// process must not overwrite it before the previous one had a chance to read it
+const HOTSWAP_SETTLE_MS = 1000
+let lastSignal: { pid: number; at: number } | null = null
+let signalQueue: Promise<unknown> = Promise.resolve()
+
+function signalInstance(inst: LweInstance, lines: string[]): Promise<boolean> {
+  const send = async (): Promise<boolean> => {
+    if (lastSignal && lastSignal.pid !== inst.pid) {
+      const wait = lastSignal.at + HOTSWAP_SETTLE_MS - Date.now()
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
+    }
+    try {
+      fs.writeFileSync(getControlFilePath(), lines.join('\n') + '\n')
+      process.kill(inst.pid, 'SIGUSR1')
+      lastSignal = { pid: inst.pid, at: Date.now() }
+      console.log(`[LWE] Hotswap sent to ${inst.screen}:`, lines.join(' '))
+      return true
+    } catch (err) {
+      console.error('[LWE] Hotswap failed:', err)
+      return false
+    }
+  }
+  const result = signalQueue.then(send, send)
+  signalQueue = result
+  return result
+}
+
+/**
+ * Pushes a background swap and/or live setting changes to running engines. All fields for one
+ * logical change must go through a single call: an engine has only one pending-request slot, so two
+ * calls in quick succession can race and drop whichever one wrote last. Goes to the given screens,
+ * else to every engine showing `wallpaperPath`, else to all of them. xray is a live-only setting
+ * with no launch-time equivalent, so it has to be pushed here even right after a fresh launch.
+ * cornerColor is a hex "RRGGBB"/"RRGGBBAA" string, only visible where the engine's clamp mode is
+ * border (the default).
+ */
+export async function hotswapLweSettings(
+  options: HotswapOptions,
+  target: { screens?: ScreenTarget[]; wallpaperPath?: string } = {}
+): Promise<boolean> {
+  const lines = buildHotswapLines(options)
   if (lines.length === 0) return false
 
-  try {
-    fs.writeFileSync(getControlFilePath(), lines.join('\n') + '\n')
-    process.kill(pid, 'SIGUSR1')
-    console.log('[LWE] Hotswap settings sent:', lines.join(' '))
-    return true
-  } catch (err) {
-    console.error('[LWE] Hotswap settings failed:', err)
-    return false
+  let targets = liveInstances()
+  if (target.screens) targets = targets.filter((i) => target.screens!.includes(i.screen))
+  else if (target.wallpaperPath) targets = targets.filter((i) => i.wallpaperPath === target.wallpaperPath)
+  if (targets.length === 0) return false
+
+  let sent = false
+  for (const inst of targets) {
+    if (!(await signalInstance(inst, lines))) continue
+    sent = true
+    if (options.path !== undefined) {
+      inst.wallpaperPath = options.path
+      inst.swappedAt = Date.now()
+    }
+  }
+  if (sent && options.path !== undefined) persistInstances()
+  return sent
+}
+
+function hotswapOptionsFor(wallpaperPath: string, options: LweLaunchOptions): HotswapOptions {
+  const defaultSensitivity = getDefaultAudioSensitivity()
+  return {
+    path: wallpaperPath,
+    // the engine drops the previous wallpaper's overrides on a path swap, the new one's go with it
+    disabledObjects: options.disabledObjects ?? [],
+    enabledObjects: options.enabledObjects ?? [],
+    // the running engine keeps the previous wallpaper's limit, so a wallpaper without one has to
+    // put it back to what a fresh launch without --fps gets
+    fps: options.fps ?? DEFAULT_LWE_FPS,
+    xray: options.xrayFullReveal,
+    scaling: options.scalingMode ?? 'default',
+    zoom: options.zoom ?? 1,
+    offsetX: options.offsetX ?? 0,
+    offsetY: options.offsetY ?? 0,
+    disableParallax: options.disableParallax ?? false,
+    expandCanvas: options.expandCanvas ?? false,
+    cornerColor: options.cornerColor ?? '000000',
+    speed: options.speed ?? 1,
+    propertyOverrides: options.propertyOverrides ?? {},
+    audioSensitivity: {
+      ...(defaultSensitivity !== 1 ? { '*': defaultSensitivity } : {}),
+      ...options.audioSensitivity
+    },
+    soundVolume: options.soundVolume ?? {}
   }
 }
 
-/** Launch LWE and resolve after 2s if still running; reject if it exits with error (so UI can show message). */
-export async function launchLweAsync(
-  wallpaperPath: string,
-  options: {
-    screenRoot?: string
-    fps?: number
-    volume?: number
-    disabledObjects?: string[]
-    enabledObjects?: string[]
-    disabledEffects?: string[]
-    enabledEffects?: string[]
-    propertyOverrides?: Record<string, string>
-    xrayFullReveal?: boolean
-    scalingMode?: string
-    zoom?: number
-    offsetX?: number
-    offsetY?: number
-    disableParallax?: boolean
-    expandCanvas?: boolean
-    cornerColor?: string
-    speed?: number
-    audioSensitivity?: Record<string, number>
-    soundVolume?: Record<string, number>
-    customArgs?: string
-  } = {}
-): Promise<void> {
-  // Hot-reload if already running. xray has no launch flag and the running instance keeps its own
-  // xray state across a background swap, so it needs an explicit push even when off. Scaling/zoom/
-  // parallax/cornerColor/speed/propertyOverrides do have launch flags, but hot-reload doesn't
-  // restart the process - the running instance keeps whatever the previous wallpaper set, so they
-  // need the same explicit push, defaulting to "no override" when the new wallpaper doesn't set them.
-  // customArgs and effect overrides have no hotswap control-file key, so they always force a restart
-  const defaultSensitivity = getDefaultAudioSensitivity()
-  if (
-    isLweRunning() &&
+/**
+ * Shows a wallpaper on `options.screen` ('*' = one engine for every screen). An engine already
+ * running there gets a hotswap when nothing launch-only differs, otherwise it is restarted.
+ * Resolves after 2s if the new engine is still running, rejects if it exits with an error first.
+ */
+export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOptions = {}): Promise<void> {
+  const screen = options.screen ?? ALL_SCREENS
+  const key = launchKey(options)
+
+  // one engine for every screen and engines for single screens would draw over each other
+  for (const inst of liveInstances()) {
+    if ((screen === ALL_SCREENS) !== (inst.screen === ALL_SCREENS)) await stopLwe(inst.screen)
+  }
+
+  const existing = liveInstance(screen)
+  // with more than one engine a hotswap could be read by the wrong one, see signalInstance
+  const canHotswap =
+    existing &&
+    !options.forceFresh &&
     !options.customArgs?.trim() &&
-    !options.disabledEffects?.length &&
-    !options.enabledEffects?.length &&
-    hotswapLweSettings({
-      path: wallpaperPath,
-      // the engine drops the previous wallpaper's overrides on a path swap, the new one's go with it
-      disabledObjects: options.disabledObjects ?? [],
-      enabledObjects: options.enabledObjects ?? [],
-      // the running engine keeps the previous wallpaper's limit, so a wallpaper without one has to
-      // put it back to what a fresh launch without --fps gets
-      fps: options.fps ?? DEFAULT_LWE_FPS,
-      xray: options.xrayFullReveal,
-      scaling: options.scalingMode ?? 'default',
-      zoom: options.zoom ?? 1,
-      offsetX: options.offsetX ?? 0,
-      offsetY: options.offsetY ?? 0,
-      disableParallax: options.disableParallax ?? false,
-      expandCanvas: options.expandCanvas ?? false,
-      cornerColor: options.cornerColor ?? '000000',
-      speed: options.speed ?? 1,
-      propertyOverrides: options.propertyOverrides ?? {},
-      audioSensitivity: {
-        ...(defaultSensitivity !== 1 ? { '*': defaultSensitivity } : {}),
-        ...options.audioSensitivity
-      },
-      soundVolume: options.soundVolume ?? {}
-    })
-  ) {
+    existing.launchKey === key &&
+    liveInstances().length === 1
+
+  if (canHotswap && (await hotswapLweSettings(hotswapOptionsFor(wallpaperPath, options), { screens: [screen] }))) {
     return
   }
 
-  await stopLwe()
+  await stopLwe(screen)
 
   const binaryPath = getLweBinaryPath()
   const lweArgs = buildLweArgs(wallpaperPath, options)
@@ -1117,52 +1354,64 @@ export async function launchLweAsync(
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true
     })
-    activeProcess = child
-    if (child.pid !== undefined) writePidFile(child.pid)
 
-    const stderrChunks: Buffer[] = []
-    if (child.stdout) {
-      child.stdout.on('data', (chunk: Buffer) => {
-        const msg = chunk.toString('utf8').trim()
-        if (msg) console.log('[LWE stdout]', msg)
-      })
+    const inst: LweInstance = {
+      screen,
+      pid: child.pid ?? -1,
+      child,
+      wallpaperPath,
+      launchKey: key,
+      startedAt: Date.now(),
+      swappedAt: null,
+      stopping: false,
+      log: []
     }
-    if (child.stderr) {
-      child.stderr.on('data', (chunk: Buffer) => {
-        stderrChunks.push(chunk)
-        const msg = chunk.toString('utf8').trim()
-        if (msg) console.log('[LWE stderr]', msg)
-      })
+    if (child.pid !== undefined) {
+      instances.set(screen, inst)
+      persistInstances()
     }
+
+    const collect = (stream: 'stdout' | 'stderr') => (chunk: Buffer) => {
+      const msg = chunk.toString('utf8').trim()
+      if (!msg) return
+      console.log(`[LWE ${stream}]`, msg)
+      inst.log.push(...msg.split('\n'))
+      if (inst.log.length > LOG_LINES_KEPT) inst.log.splice(0, inst.log.length - LOG_LINES_KEPT)
+    }
+    child.stdout?.on('data', collect('stdout'))
+    child.stderr?.on('data', collect('stderr'))
 
     let settled = false
-    // A rapid stop+relaunch can leave the old process still shutting down (CEF/GL
-    // teardown isn't instant) when its exit event finally arrives - only clear
-    // activeProcess if it's still pointing at this child, not a newer one that
-    // superseded it, otherwise the newer launch's own "still running" resolve
-    // check below never passes and its promise hangs forever.
-    const cleanup = () => {
-      if (activeProcess === child) {
-        activeProcess = null
-        clearPidFile()
-      }
-    }
 
-    child.on('exit', (code) => {
-      cleanup()
-      if (settled) return
-      settled = true
-      if (code !== 0 && code !== null) {
-        const stderr = Buffer.concat(stderrChunks).toString('utf8').trim()
-        const msg = stderr ? stderr.split('\n').slice(0, 3).join('\n') : `Exit code ${code}`
-        reject(new Error(`linux-wallpaperengine failed: ${msg}`))
-      } else {
-        resolve()
+    child.on('exit', (code, signal) => {
+      // a rapid stop+relaunch can deliver the old process's exit after its replacement registered
+      const current = instances.get(screen) === inst
+      if (current) {
+        instances.delete(screen)
+        persistInstances()
       }
+
+      const crashed = (signal !== null && CRASH_SIGNALS.has(signal)) || (code !== null && code !== 0)
+      const description = signal ? `killed by ${signal}` : `exit code ${code}`
+
+      if (!settled) {
+        settled = true
+        if (crashed) {
+          const msg = inst.log.length ? inst.log.slice(-3).join('\n') : description
+          reject(new Error(`linux-wallpaperengine failed: ${msg}`))
+        } else {
+          resolve()
+        }
+      }
+
+      if (current && !inst.stopping) emitExit(inst, crashed, description)
     })
 
     child.on('error', (err) => {
-      cleanup()
+      if (instances.get(screen) === inst) {
+        instances.delete(screen)
+        persistInstances()
+      }
       if (!settled) {
         settled = true
         reject(err)
@@ -1171,11 +1420,10 @@ export async function launchLweAsync(
 
     child.unref()
 
-    // If still running after 2s, consider it started successfully
     setTimeout(() => {
-      if (!settled && activeProcess === child && child.exitCode === null) {
+      if (!settled && instances.get(screen) === inst && child.exitCode === null) {
         settled = true
-        if (options.xrayFullReveal) hotswapLweSettings({ xray: true })
+        if (options.xrayFullReveal) void hotswapLweSettings({ xray: true }, { screens: [screen] })
         resolve()
       }
     }, 2000)
@@ -1425,26 +1673,34 @@ async function waitForPidExit(pid: number, timeoutMs = 2000): Promise<void> {
   await pollUntilGone(pid, 500)
 }
 
-export async function stopLwe(): Promise<void> {
-  const pid = resolveActivePid()
-  if (pid !== null) {
-    try {
-      process.kill(pid, 'SIGTERM')
-    } catch { /* already dead */ }
-    await waitForPidExit(pid)
-  }
-  activeProcess = null
-  clearPidFile()
+/** Stops the engine on one screen, or every engine this app started when no screen is given. */
+export async function stopLwe(screen?: ScreenTarget): Promise<void> {
+  loadInstances()
+  const targets = screen === undefined ? [...instances.values()] : [instances.get(screen)].filter((i) => !!i)
+
+  await Promise.all(
+    targets.map(async (inst) => {
+      inst.stopping = true
+      try {
+        process.kill(inst.pid, 'SIGTERM')
+      } catch { /* already dead */ }
+      await waitForPidExit(inst.pid)
+      if (instances.get(inst.screen) === inst) instances.delete(inst.screen)
+    })
+  )
+  persistInstances()
 }
 
-export function isLweRunning(): boolean {
-  return resolveActivePid() !== null
+export function isLweRunning(screen?: ScreenTarget): boolean {
+  return screen === undefined ? liveInstances().length > 0 : !!liveInstance(screen)
 }
 
 /** Force-kill every linux-wallpaperengine process on the system, including ones this app isn't tracking. */
 export async function killAllLweProcesses(): Promise<{ ok: boolean; message: string }> {
-  activeProcess = null
-  clearPidFile()
+  loadInstances()
+  for (const inst of instances.values()) inst.stopping = true
+  instances.clear()
+  persistInstances()
 
   try {
     const { stdout } = await execFileAsync('pkill', ['-9', '-f', '-c', LWE_BINARY])
@@ -1457,5 +1713,57 @@ export async function killAllLweProcesses(): Promise<{ ok: boolean; message: str
       return { ok: true, message: 'No running processes found.' }
     }
     return { ok: false, message: `Failed to kill processes: ${(err as Error).message}` }
+  }
+}
+
+const SCREENSHOT_TIMEOUT_MS = 45_000
+
+/**
+ * Renders the wallpaper into a small window of its own (screen engines can't be asked for a frame)
+ * and saves one frame to `outPath` (.png/.jpg/.bmp) once it had time to settle.
+ */
+export async function captureLweScreenshot(
+  wallpaperPath: string,
+  options: LweLaunchOptions,
+  outPath: string,
+  size = { width: 1280, height: 720 }
+): Promise<void> {
+  if (!getLweStatus().installed) throw new Error('linux-wallpaperengine is not installed.')
+  fs.rmSync(outPath, { force: true })
+
+  const args = buildLweArgs(
+    wallpaperPath,
+    {
+      ...options,
+      fps: 60,
+      volume: 0,
+      engineFlags: { ...options.engineFlags, silent: true, fullscreenPause: 'off', disableMouse: true }
+    },
+    { window: `0x0x${size.width}x${size.height}`, screenshotPath: outPath, delayFrames: 120 }
+  )
+  const child = spawn('env', [...buildLweEnvVars(), getLweBinaryPath(), ...args], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const stderr: string[] = []
+  child.stderr?.on('data', (chunk: Buffer) => {
+    stderr.push(chunk.toString('utf8'))
+  })
+
+  try {
+    const deadline = Date.now() + SCREENSHOT_TIMEOUT_MS
+    let lastSize = -1
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      if (child.exitCode !== null || child.signalCode !== null) {
+        const msg = stderr.join('').trim().split('\n').slice(-3).join('\n')
+        throw new Error(`linux-wallpaperengine exited before taking the screenshot${msg ? `: ${msg}` : ''}`)
+      }
+      // the file is written in one go, but a size that held still for a poll is certainly done
+      const current = fs.existsSync(outPath) ? fs.statSync(outPath).size : -1
+      if (current > 0 && current === lastSize) return
+      lastSize = current
+    }
+    throw new Error('Timed out waiting for the screenshot')
+  } finally {
+    child.kill('SIGTERM')
+    if (child.pid !== undefined) await waitForPidExit(child.pid, 3000)
   }
 }

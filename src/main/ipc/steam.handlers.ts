@@ -116,6 +116,10 @@ export function registerSteamHandlers(win: BrowserWindow): void {
     return steam.getVotedUpItemIds()
   })
 
+  ipcMain.handle(IpcChannels.STEAM_CHECK_VOTE, (_e, itemId: string) => {
+    return steam.refreshItemVote(BigInt(itemId))
+  })
+
   ipcMain.handle(IpcChannels.STEAM_GET_SUBSCRIBED, () => {
     return steam.getSubscribedItems()
   })

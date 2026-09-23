@@ -43,13 +43,20 @@ import { openWorkshopPage, openProfilePage, isWorkshopId } from '../../utils/ste
 import { WE_TYPES, WE_AGE_RATINGS, WE_RESOLUTION_GROUPS } from '../../constants/weFilters'
 import { formatFileSize } from '../../utils/format'
 import { useToast } from './Toast'
+import ScreenSelect from './ScreenSelect'
+import { getPreviewSrc } from '../../utils/preview'
+import EngineFlagsSection from './sidebar/EngineFlagsSection'
+import CompatSection from './sidebar/CompatSection'
+import ThumbnailSection from './sidebar/ThumbnailSection'
+import { useDisplayTargets, useScreenAssignments } from '../../hooks/useDisplayTargets'
 import type {
   LweSceneObject,
   LweSceneEffect,
   LweProperty,
   LweAudioObject,
   WallpaperMeta,
-  ScalingMode
+  ScalingMode,
+  ScreenTarget
 } from '@shared/types'
 
 const SCALING_MODE_OPTIONS: { value: ScalingMode; label: string }[] = [
@@ -378,7 +385,7 @@ interface DetailSidebarProps {
   onSubscribe: () => void
   onUnsubscribe: () => void | Promise<void>
   onLiked: () => void
-  onPlay: () => void | Promise<void>
+  onPlay: (screen?: ScreenTarget) => void | Promise<void>
   onBrowseCreator?: (steamId: string) => void
 }
 
@@ -390,7 +397,7 @@ export default function DetailSidebar({
   fallbackAuthorSteamId,
   localFileSize,
   isSubscribed,
-  isLiked,
+  isLiked: cachedLiked,
   canPlay,
   lweInstalled,
   onClose,
@@ -427,8 +434,16 @@ export default function DetailSidebar({
     staleTime: 60_000
   })
 
+  const { data: steamVote } = useQuery({
+    queryKey: ['steam-vote', id],
+    queryFn: () => window.electronAPI.steam.checkVote(id),
+    enabled: workshopId,
+    staleTime: 60_000,
+    retry: false
+  })
+  const isLiked = typeof steamVote === 'boolean' ? steamVote : cachedLiked
+
   const title = item?.title ?? fallbackTitle
-  const previewUrl = item?.previewUrl ?? fallbackPreviewUrl
   const tags = item?.tags ?? fallbackTags
   const creatorSteamId = item?.creatorSteamId ?? fallbackAuthorSteamId
   const description = item?.description
@@ -445,6 +460,10 @@ export default function DetailSidebar({
     queryFn: () => window.electronAPI.library.getOne(id)
   })
   const localPath = libraryMeta?.localPath
+  const previewUrl =
+    libraryMeta?.customPreview && !libraryMeta.useOriginalPreview
+      ? getPreviewSrc(libraryMeta)
+      : (item?.previewUrl ?? fallbackPreviewUrl)
   const disabledObjects = libraryMeta?.disabledObjects ?? []
   const enabledObjects = libraryMeta?.enabledObjects ?? []
   // item resolves to exactly null (not undefined) once a workshop lookup confirms the id no
@@ -452,12 +471,12 @@ export default function DetailSidebar({
   // "unavailable" flag and grey out the vote buttons below.
   const unavailable = !!libraryMeta?.unavailable || item === null
 
-  const { data: activeWallpaper } = useQuery({
-    queryKey: ['active-wallpaper'],
-    queryFn: () => window.electronAPI.wallpaper.getActive(),
-    staleTime: 5_000
-  })
-  const isActive = activeWallpaper?.id === id
+  const { targets, perScreen } = useDisplayTargets()
+  const [playScreen, setPlayScreen] = useState<ScreenTarget>('*')
+  const activeScreens = useScreenAssignments()
+    .filter((a) => a.wallpaperId === id)
+    .map((a) => a.screen)
+  const isActive = activeScreens.length > 0
 
   const { data: objects = [], isLoading: objectsLoading } = useQuery({
     queryKey: ['lwe-objects', localPath],
@@ -523,7 +542,7 @@ export default function DetailSidebar({
     queryClient.invalidateQueries({ queryKey: ['library'] })
     if (isActive) {
       // customArgs and effect overrides have no hotswap control-file key, so they always force a restart
-      const { ok } = 'customArgs' in patch || 'disabledEffects' in patch || 'enabledEffects' in patch
+      const { ok } = 'customArgs' in patch || 'disabledEffects' in patch || 'enabledEffects' in patch || 'engineFlags' in patch
         ? { ok: false }
         : await window.electronAPI.lwe.hotswapSettings({
             disabledObjects: patch.disabledObjects,
@@ -541,13 +560,20 @@ export default function DetailSidebar({
             propertyOverrides: patch.propertyOverrides,
             audioSensitivity: patch.audioSensitivity,
             soundVolume: patch.soundVolume
-          })
+          }, localPath)
+      // a relaunch restarts the engine by itself when a launch-only setting changed
       if (!ok) {
-        await window.electronAPI.lwe.stop()
-        await window.electronAPI.wallpaper.apply({ wallpaperId: id })
+        for (const screen of activeScreens) await window.electronAPI.wallpaper.apply({ wallpaperId: id, screen })
       }
-      queryClient.invalidateQueries({ queryKey: ['active-wallpaper'] })
+      queryClient.invalidateQueries({ queryKey: ['screen-assignments'] })
     }
+  }
+
+  // for settings that don't touch the running engine
+  async function persistOnly(patch: Partial<WallpaperMeta>) {
+    const updated = await window.electronAPI.library.update(id, patch)
+    queryClient.setQueryData(['library-item', id], updated)
+    queryClient.invalidateQueries({ queryKey: ['library'] })
   }
 
   const livePreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -565,7 +591,7 @@ export default function DetailSidebar({
     if (!isActive) return
     if (livePreviewTimer.current) clearTimeout(livePreviewTimer.current)
     livePreviewTimer.current = setTimeout(() => {
-      window.electronAPI.lwe.hotswapSettings(patch)
+      window.electronAPI.lwe.hotswapSettings(patch, localPath)
     }, 80)
   }
 
@@ -833,6 +859,7 @@ export default function DetailSidebar({
     try {
       const { confirmed } = await window.electronAPI.steam.vote(id, true)
       if (confirmed) {
+        queryClient.setQueryData(['steam-vote', id], true)
         onLiked()
       } else {
         showToast('Could not confirm the like on Steam - try again')
@@ -849,6 +876,7 @@ export default function DetailSidebar({
     setIsDisliking(true)
     try {
       const { confirmed } = await window.electronAPI.steam.vote(id, false)
+      if (confirmed) queryClient.setQueryData(['steam-vote', id], false)
       if (!confirmed) showToast('Could not confirm the dislike on Steam - try again')
     } catch (err) {
       showToast((err as Error).message)
@@ -861,7 +889,7 @@ export default function DetailSidebar({
     if (!canPlay || isApplying) return
     setIsApplying(true)
     try {
-      await onPlay()
+      await onPlay(perScreen ? playScreen : undefined)
     } finally {
       setIsApplying(false)
     }
@@ -1488,6 +1516,32 @@ export default function DetailSidebar({
           </div>
         )}
 
+        {libraryMeta && (
+          <>
+            {lweInstalled && localPath && (
+              <EngineFlagsSection
+                flags={libraryMeta.engineFlags}
+                onChange={persistAndMaybeRelaunch}
+              />
+            )}
+            <CompatSection
+              wallpaper={libraryMeta}
+              canTest={lweInstalled && !!localPath}
+              onChange={(compat) => persistOnly({ compat })}
+              onTest={() => window.electronAPI.wallpaper.testLaunch(id, perScreen ? playScreen : undefined)}
+            />
+            <ThumbnailSection
+              wallpaper={libraryMeta}
+              canGenerate={lweInstalled && !!localPath && libraryMeta.type !== 'application'}
+              onUpdated={(updated) => {
+                queryClient.setQueryData(['library-item', id], updated)
+                queryClient.invalidateQueries({ queryKey: ['library'] })
+                queryClient.invalidateQueries({ queryKey: ['library-all'] })
+              }}
+            />
+          </>
+        )}
+
         <div className="flex flex-col gap-1.5 border-t border-white/5 pt-3">
           <div className="flex gap-1.5">
             <button
@@ -1520,6 +1574,9 @@ export default function DetailSidebar({
             </button>
           </div>
 
+          {canPlay && perScreen && (
+            <ScreenSelect targets={targets} value={playScreen} onChange={setPlayScreen} title="Which screen to play on" />
+          )}
           {canPlay && (
             <button
               onClick={handlePlay}

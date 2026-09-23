@@ -111,6 +111,94 @@ export interface WallpaperMeta {
    * Launch-time only, so changing this always restarts the process.
    */
   customArgs?: string
+  /** Launch-only engine flags, each one unset here falls back to the global setting */
+  engineFlags?: EngineFlags
+  compat?: WallpaperCompat
+  /** Thumbnail made by the app (a screenshot of the running wallpaper, or an image the user picked) */
+  customPreview?: string
+  /** Show the Workshop/project preview even though a custom one exists */
+  useOriginalPreview?: boolean
+}
+
+export type FullscreenPauseMode = 'default' | 'off' | 'active-only'
+
+/** linux-wallpaperengine flags that only take effect on a fresh launch */
+export interface EngineFlags {
+  disableParticles?: boolean
+  disableMouse?: boolean
+  disableAnimations?: boolean
+  noAudioProcessing?: boolean
+  fullscreenPause?: FullscreenPauseMode
+  automute?: boolean
+  silent?: boolean
+}
+
+export interface EngineFlagPreset {
+  id: string
+  name: string
+  flags: EngineFlags
+  /** Applied as the default FPS (globally) or the FPS override (per wallpaper); undefined leaves it alone */
+  fps?: number | null
+  builtIn?: boolean
+}
+
+export type CrashPhase = 'launch' | 'hotswap' | 'runtime'
+
+export interface WallpaperCrash {
+  at: number
+  phase: CrashPhase
+  screen: string
+  log: string[]
+}
+
+export interface WallpaperCompat {
+  /** The engine died right after this wallpaper was hot-swapped in */
+  hotswapCrash?: boolean
+  /** Outcome of the last fresh launch that was watched for a crash */
+  freshLaunch?: 'ok' | 'crash'
+  runtimeCrashes?: number
+  lastCrash?: WallpaperCrash
+  note?: string
+}
+
+export type CompatStatus = 'ok' | 'crashes' | 'hotswap-only' | 'hotswap-untested' | 'unstable'
+
+export interface CrashEvent {
+  wallpaperId: string
+  title: string
+  screen: string
+  phase: CrashPhase
+  /** What the app did about it, for the toast */
+  outcome: string
+}
+
+/** '*' is the one engine process covering every screen */
+export type ScreenTarget = string
+
+export type DisplayMode = 'shared' | 'per-screen'
+
+export interface ScreenAssignment {
+  screen: ScreenTarget
+  wallpaperId: string
+}
+
+export type ScheduleAction =
+  | { type: 'wallpaper'; wallpaperId: string }
+  | { type: 'playlist'; playlistId: string }
+  | { type: 'stop' }
+
+export type ScheduleTrigger =
+  | { type: 'time'; time: string; days: number[] }
+  | { type: 'theme'; theme: 'dark' | 'light' }
+
+export interface ScheduleRule {
+  id: string
+  name: string
+  enabled: boolean
+  trigger: ScheduleTrigger
+  action: ScheduleAction
+  /** Screen name in per-screen mode, '*' for every screen */
+  screen: ScreenTarget
 }
 
 export interface LweSceneObject {
@@ -201,7 +289,8 @@ export interface CreatorWorkshopQueryParams {
 
 export interface ApplyWallpaperOptions {
   wallpaperId: string
-  displayIndex?: number
+  /** Per-screen mode only: a screen name, or '*' for every screen */
+  screen?: ScreenTarget
   backend?: WallpaperBackend
 }
 
@@ -291,6 +380,7 @@ export interface Playlist {
 }
 
 export interface PlaylistPlaybackState {
+  screen: ScreenTarget
   playlistId: string | null
   currentItemId: string | null
   currentIndex: number

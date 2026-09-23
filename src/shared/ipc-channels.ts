@@ -15,6 +15,7 @@ export const IpcChannels = {
   STEAM_VOTE: 'steam:vote',
   STEAM_OPEN_WORKSHOP: 'steam:open-workshop',
   STEAM_GET_VOTED_IDS: 'steam:get-voted-ids',
+  STEAM_CHECK_VOTE: 'steam:check-vote',
   STEAM_REDOWNLOAD: 'steam:redownload',
   STEAM_GET_AUTHOR_INFO: 'steam:get-author-info',
 
@@ -46,6 +47,19 @@ export const IpcChannels = {
   WALLPAPER_APPLY: 'wallpaper:apply',
   WALLPAPER_GET_ACTIVE: 'wallpaper:get-active',
   WALLPAPER_DETECT_ENV: 'wallpaper:detect-env',
+  WALLPAPER_GET_ASSIGNMENTS: 'wallpaper:get-assignments',
+  WALLPAPER_GET_TARGETS: 'wallpaper:get-targets',
+  WALLPAPER_STOP: 'wallpaper:stop',
+  WALLPAPER_TEST_LAUNCH: 'wallpaper:test-launch',
+  WALLPAPER_GENERATE_THUMBNAIL: 'wallpaper:generate-thumbnail',
+  WALLPAPER_PICK_THUMBNAIL: 'wallpaper:pick-thumbnail',
+  WALLPAPER_DELETE_THUMBNAIL: 'wallpaper:delete-thumbnail',
+
+  // Scheduling
+  SCHEDULE_GET_ALL: 'schedule:get-all',
+  SCHEDULE_SAVE: 'schedule:save',
+  SCHEDULE_DELETE: 'schedule:delete',
+  SCHEDULE_RUN: 'schedule:run',
 
   // Configuration
   CONFIG_GET: 'config:get',
@@ -61,7 +75,9 @@ export const IpcChannels = {
   CONFIG_SET_AMBIENT_VOLUME: 'config:set-ambient-volume',
   CONFIG_SET_DEFAULT_AUDIO_SENSITIVITY: 'config:set-default-audio-sensitivity',
   CONFIG_SET_DISABLE_PUPPET_ANIMATION: 'config:set-disable-puppet-animation',
-  CONFIG_SET_DISABLE_ANIMATIONS: 'config:set-disable-animations',
+  CONFIG_SET_ENGINE_FLAGS: 'config:set-engine-flags',
+  CONFIG_SET_ENGINE_PRESETS: 'config:set-engine-presets',
+  CONFIG_SET_DISPLAY_MODE: 'config:set-display-mode',
   CONFIG_SET_STEAM_IDENTITY: 'config:set-steam-identity',
   CONFIG_IGNORE_CREATOR: 'config:ignore-creator',
   CONFIG_UNIGNORE_CREATOR: 'config:unignore-creator',
@@ -136,7 +152,10 @@ export const IpcChannels = {
   EVENT_BACKUP_PROGRESS: 'event:backup-progress',
   EVENT_PLAYLIST_STATE_CHANGED: 'event:playlist-state-changed',
   EVENT_VOTED_IDS_CHANGED: 'event:voted-ids-changed',
-  EVENT_LIBRARY_CHANGED: 'event:library-changed'
+  EVENT_LIBRARY_CHANGED: 'event:library-changed',
+  EVENT_DISPLAY_CHANGED: 'event:display-changed',
+  EVENT_WALLPAPER_CRASHED: 'event:wallpaper-crashed',
+  EVENT_SCHEDULE_FIRED: 'event:schedule-fired'
 } as const
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]

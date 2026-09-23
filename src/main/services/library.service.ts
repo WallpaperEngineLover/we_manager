@@ -1,6 +1,6 @@
 import Store from 'electron-store'
 import type { WallpaperMeta, WallpaperType, ContentRating, LibraryFilters, WallpaperFolder } from '@shared/types'
-import { getWorkshopPath } from '../utils/paths'
+import { getThumbnailsPath, getWorkshopPath } from '../utils/paths'
 import * as path from 'path'
 import * as fs from 'fs'
 import { randomUUID } from 'crypto'
@@ -123,6 +123,8 @@ export function updateWallpaper(id: string, patch: Partial<WallpaperMeta>): void
 
 export function deleteWallpaper(id: string): void {
   const wallpapers = store.get('wallpapers')
+  const thumbnail = wallpapers[id]?.customPreview
+  if (thumbnail && path.dirname(thumbnail) === getThumbnailsPath()) fs.rmSync(thumbnail, { force: true })
   delete wallpapers[id]
   store.set('wallpapers', wallpapers)
 }

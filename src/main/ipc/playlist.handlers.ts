@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
-import type { PlaylistSettings } from '@shared/types'
+import type { PlaylistSettings, ScreenTarget } from '@shared/types'
 import * as playlists from '../services/playlist.service'
 import * as player from '../services/playlist-player.service'
 
@@ -18,7 +18,9 @@ export function registerPlaylistHandlers(): void {
   )
 
   ipcMain.handle(IpcChannels.PLAYLIST_DELETE, (_e, id: string) => {
-    if (player.getPlaybackState().playlistId === id) player.stopPlaylist()
+    for (const state of player.getPlaybackStates()) {
+      if (state.playlistId === id) player.stopPlaylist(state.screen)
+    }
     playlists.deletePlaylist(id)
     return { ok: true }
   })
@@ -49,14 +51,16 @@ export function registerPlaylistHandlers(): void {
       playlists.updatePlaylistItem(id, wallpaperId, patch)
   )
 
-  ipcMain.handle(IpcChannels.PLAYLIST_START, (_e, id: string) => player.startPlaylist(id))
-  ipcMain.handle(IpcChannels.PLAYLIST_PLAY_ITEM, (_e, id: string, wallpaperId: string) =>
-    player.playItem(id, wallpaperId)
+  ipcMain.handle(IpcChannels.PLAYLIST_START, (_e, id: string, screen?: ScreenTarget) =>
+    player.startPlaylist(id, screen)
   )
-  ipcMain.handle(IpcChannels.PLAYLIST_STOP, () => player.stopPlaylist())
-  ipcMain.handle(IpcChannels.PLAYLIST_PAUSE, () => player.pausePlaylist())
-  ipcMain.handle(IpcChannels.PLAYLIST_RESUME, () => player.resumePlaylist())
-  ipcMain.handle(IpcChannels.PLAYLIST_NEXT, () => player.nextItem())
-  ipcMain.handle(IpcChannels.PLAYLIST_PREVIOUS, () => player.previousItem())
-  ipcMain.handle(IpcChannels.PLAYLIST_GET_STATE, () => player.getPlaybackState())
+  ipcMain.handle(IpcChannels.PLAYLIST_PLAY_ITEM, (_e, id: string, wallpaperId: string, screen?: ScreenTarget) =>
+    player.playItem(id, wallpaperId, screen)
+  )
+  ipcMain.handle(IpcChannels.PLAYLIST_STOP, (_e, screen?: ScreenTarget) => player.stopPlaylist(screen))
+  ipcMain.handle(IpcChannels.PLAYLIST_PAUSE, (_e, screen?: ScreenTarget) => player.pausePlaylist(screen))
+  ipcMain.handle(IpcChannels.PLAYLIST_RESUME, (_e, screen?: ScreenTarget) => player.resumePlaylist(screen))
+  ipcMain.handle(IpcChannels.PLAYLIST_NEXT, (_e, screen?: ScreenTarget) => player.nextItem(screen))
+  ipcMain.handle(IpcChannels.PLAYLIST_PREVIOUS, (_e, screen?: ScreenTarget) => player.previousItem(screen))
+  ipcMain.handle(IpcChannels.PLAYLIST_GET_STATE, () => player.getPlaybackStates())
 }

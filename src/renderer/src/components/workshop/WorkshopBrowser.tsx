@@ -21,7 +21,7 @@ import WorkshopCard from './WorkshopCard'
 import PreviewSizeToggle from '../common/PreviewSizeToggle'
 import DetailSidebar from '../common/DetailSidebar'
 import { useToast } from '../common/Toast'
-import type { WorkshopQueryType } from '@shared/types'
+import type { ScreenTarget, WorkshopQueryType } from '@shared/types'
 import clsx from 'clsx'
 import {
   WE_SHOW_ONLY,
@@ -425,9 +425,9 @@ export default function WorkshopBrowser({
   })
   const ignoredCreatorSet = useMemo(() => new Set(ignoredCreators), [ignoredCreators])
 
-  async function handlePlay(id: string) {
+  async function handlePlay(id: string, screen?: ScreenTarget) {
     try {
-      await window.electronAPI.wallpaper.apply({ wallpaperId: id })
+      await window.electronAPI.wallpaper.apply({ wallpaperId: id, screen })
     } catch (err) {
       showToast((err as Error).message)
     }
@@ -1038,7 +1038,7 @@ export default function WorkshopBrowser({
                 old ? [...old, detailId] : [detailId]
               )
             }}
-            onPlay={() => handlePlay(detailId)}
+            onPlay={(screen) => handlePlay(detailId, screen)}
             onBrowseCreator={onBrowseCreator}
           />
         )}

@@ -10,6 +10,7 @@ import { registerLweHandlers } from './lwe.handlers'
 import { registerDesktopIconsHandlers } from './desktop-icons.handlers'
 import { registerBackupHandlers } from './backup.handlers'
 import { registerPlaylistHandlers } from './playlist.handlers'
+import { registerScheduleHandlers } from './schedule.handlers'
 
 export function registerAllHandlers(win: BrowserWindow): void {
   registerSteamHandlers(win)
@@ -23,4 +24,5 @@ export function registerAllHandlers(win: BrowserWindow): void {
   registerDesktopIconsHandlers()
   registerBackupHandlers(win)
   registerPlaylistHandlers()
+  registerScheduleHandlers()
 }

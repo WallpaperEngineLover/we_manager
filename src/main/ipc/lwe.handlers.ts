@@ -1,6 +1,9 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
-import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, stopLwe, isLweRunning, killAllLweProcesses, listLweObjects, hotswapLweSettings, listLweProperties, listLweAudioObjects, listLweEffects } from '../services/lwe.service'
+import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, isLweRunning, killAllLweProcesses, listLweObjects, hotswapLweSettings, listLweProperties, listLweAudioObjects, listLweEffects, type HotswapOptions } from '../services/lwe.service'
+import { stopDisplay } from '../services/display.service'
+import { stopPlaylist } from '../services/playlist-player.service'
+import type { ScreenTarget } from '@shared/types'
 import { invalidateEnvCache } from '../services/wallpaper.service'
 import { getConnectedScreens } from '../utils/platform'
 
@@ -30,13 +33,14 @@ export function registerLweHandlers(win: BrowserWindow): void {
     return result
   })
 
-  ipcMain.handle(IpcChannels.LWE_LAUNCH, async (_e, wallpaperPath: string, options?: { screenRoot?: string; fps?: number }) => {
+  ipcMain.handle(IpcChannels.LWE_LAUNCH, async (_e, wallpaperPath: string, options?: { screen?: ScreenTarget; fps?: number }) => {
     await launchLweAsync(wallpaperPath, options)
     return { ok: true, running: isLweRunning() }
   })
 
   ipcMain.handle(IpcChannels.LWE_STOP, async () => {
-    await stopLwe()
+    stopPlaylist()
+    await stopDisplay()
     return { ok: true }
   })
 
@@ -54,33 +58,10 @@ export function registerLweHandlers(win: BrowserWindow): void {
     }
   })
 
-  ipcMain.handle(
-    IpcChannels.LWE_HOTSWAP_SETTINGS,
-    (
-      _e,
-      options: {
-        disabledObjects?: string[]
-        enabledObjects?: string[]
-        volume?: number
-        xray?: boolean
-        scaling?: string
-        zoom?: number
-        offsetX?: number
-        offsetY?: number
-        disableParallax?: boolean
-        expandCanvas?: boolean
-        cornerColor?: string
-        speed?: number
-        propertyOverrides?: Record<string, string>
-        audioScreen?: string
-        ambientVolume?: number
-        audioSensitivity?: Record<string, number>
-        soundVolume?: Record<string, number>
-      }
-    ) => {
-      return { ok: hotswapLweSettings(options) }
-    }
-  )
+  // live edits go to whichever engines show the wallpaper being edited
+  ipcMain.handle(IpcChannels.LWE_HOTSWAP_SETTINGS, async (_e, options: HotswapOptions, wallpaperPath?: string) => {
+    return { ok: await hotswapLweSettings(options, { wallpaperPath }) }
+  })
 
   ipcMain.handle(IpcChannels.LWE_LIST_SCREENS, () => {
     return getConnectedScreens()
