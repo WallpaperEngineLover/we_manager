@@ -946,6 +946,12 @@ function getControlFilePath(): string {
   return path.join(getXdgRuntimeDir(), 'lwe-control')
 }
 
+/** One hotswap file per engine (--control-file), so engines on different screens can't read each other's */
+function controlFileFor(screen: ScreenTarget): string {
+  const name = screen === ALL_SCREENS ? 'all' : screen.replace(/[^A-Za-z0-9._-]/g, '_')
+  return path.join(getXdgRuntimeDir(), `lwe-control-${name}`)
+}
+
 /**
  * The engine processes are spawned detached and outlive this app, so what's running is also written
  * to the runtime dir. After a restart the app adopts whatever is still alive from there.
@@ -969,6 +975,8 @@ interface LweInstance {
   swappedAt: number | null
   stopping: boolean
   log: string[]
+  /** null for engines without --control-file, they all read the shared getControlFilePath() */
+  controlFile: string | null
 }
 
 export interface LweExitInfo {
@@ -1001,7 +1009,8 @@ function persistInstances(): void {
     pid: i.pid,
     wallpaperPath: i.wallpaperPath,
     launchKey: i.launchKey,
-    startedAt: i.startedAt
+    startedAt: i.startedAt,
+    controlFile: i.controlFile
   }))
   try {
     if (entries.length === 0) fs.rmSync(getInstancesFilePath(), { force: true })
@@ -1029,7 +1038,14 @@ function isLweProcess(pid: number): boolean {
   }
 }
 
-function adopt(screen: ScreenTarget, pid: number, wallpaperPath: string, key: string, startedAt: number): void {
+function adopt(
+  screen: ScreenTarget,
+  pid: number,
+  wallpaperPath: string,
+  key: string,
+  startedAt: number,
+  controlFile: string | null
+): void {
   if (!Number.isInteger(pid) || !isLweProcess(pid)) return
   instances.set(screen, {
     screen,
@@ -1040,7 +1056,8 @@ function adopt(screen: ScreenTarget, pid: number, wallpaperPath: string, key: st
     startedAt,
     swappedAt: null,
     stopping: false,
-    log: []
+    log: [],
+    controlFile
   })
 }
 
@@ -1055,13 +1072,16 @@ function loadInstances(): void {
       wallpaperPath: string
       launchKey: string
       startedAt: number
+      controlFile?: string | null
     }>
-    for (const e of entries) adopt(e.screen, e.pid, e.wallpaperPath, e.launchKey, e.startedAt)
+    for (const e of entries) {
+      adopt(e.screen, e.pid, e.wallpaperPath, e.launchKey, e.startedAt, e.controlFile ?? null)
+    }
   } catch { /* nothing running, or written by an older version */ }
 
   try {
     const legacyPid = parseInt(fs.readFileSync(getLegacyPidFilePath(), 'utf8').trim(), 10)
-    if (!instances.has(ALL_SCREENS)) adopt(ALL_SCREENS, legacyPid, '', '', Date.now())
+    if (!instances.has(ALL_SCREENS)) adopt(ALL_SCREENS, legacyPid, '', '', Date.now(), null)
   } catch { /* no legacy pid file */ }
 
   persistInstances()
@@ -1220,22 +1240,23 @@ export function buildHotswapLines(options: HotswapOptions): string[] {
   return lines
 }
 
-// Every engine process reads the same control file once it gets SIGUSR1, so a request for another
-// process must not overwrite it before the previous one had a chance to read it
+// Engines without their own --control-file read the same shared file once they get SIGUSR1, so a
+// request for another process must not overwrite it before the previous one had a chance to read it
 const HOTSWAP_SETTLE_MS = 1000
-let lastSignal: { pid: number; at: number } | null = null
+let lastSignal: { pid: number; at: number; file: string } | null = null
 let signalQueue: Promise<unknown> = Promise.resolve()
 
 function signalInstance(inst: LweInstance, lines: string[]): Promise<boolean> {
+  const file = inst.controlFile ?? getControlFilePath()
   const send = async (): Promise<boolean> => {
-    if (lastSignal && lastSignal.pid !== inst.pid) {
+    if (lastSignal && lastSignal.pid !== inst.pid && lastSignal.file === file) {
       const wait = lastSignal.at + HOTSWAP_SETTLE_MS - Date.now()
       if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
     }
     try {
-      fs.writeFileSync(getControlFilePath(), lines.join('\n') + '\n')
+      fs.writeFileSync(file, lines.join('\n') + '\n')
       process.kill(inst.pid, 'SIGUSR1')
-      lastSignal = { pid: inst.pid, at: Date.now() }
+      lastSignal = { pid: inst.pid, at: Date.now(), file }
       console.log(`[LWE] Hotswap sent to ${inst.screen}:`, lines.join(' '))
       return true
     } catch (err) {
@@ -1325,13 +1346,13 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
   }
 
   const existing = liveInstance(screen)
-  // with more than one engine a hotswap could be read by the wrong one, see signalInstance
+  // engines sharing the control file could read each other's hotswap, see signalInstance
   const canHotswap =
     existing &&
     !options.forceFresh &&
     !options.customArgs?.trim() &&
     existing.launchKey === key &&
-    liveInstances().length === 1
+    (existing.controlFile !== null || liveInstances().length === 1)
 
   if (canHotswap && (await hotswapLweSettings(hotswapOptionsFor(wallpaperPath, options), { screens: [screen] }))) {
     return
@@ -1340,7 +1361,8 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
   await stopLwe(screen)
 
   const binaryPath = getLweBinaryPath()
-  const lweArgs = buildLweArgs(wallpaperPath, options)
+  const controlFile = supportsFlag('--control-file') ? controlFileFor(screen) : null
+  const lweArgs = [...(controlFile ? ['--control-file', controlFile] : []), ...buildLweArgs(wallpaperPath, options)]
   const envVars = buildLweEnvVars()
 
   // Spawn via `env` to set env vars explicitly, matching how LWE works from the terminal.
@@ -1364,7 +1386,8 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
       startedAt: Date.now(),
       swappedAt: null,
       stopping: false,
-      log: []
+      log: [],
+      controlFile
     }
     if (child.pid !== undefined) {
       instances.set(screen, inst)
@@ -1685,6 +1708,7 @@ export async function stopLwe(screen?: ScreenTarget): Promise<void> {
         process.kill(inst.pid, 'SIGTERM')
       } catch { /* already dead */ }
       await waitForPidExit(inst.pid)
+      if (inst.controlFile) fs.rmSync(inst.controlFile, { force: true })
       if (instances.get(inst.screen) === inst) instances.delete(inst.screen)
     })
   )
