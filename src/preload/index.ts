@@ -19,6 +19,7 @@ import type {
   LweProperty,
   LweAudioObject,
   LweSceneEffect,
+  DesktopApplication,
   BackupProgressEvent,
   Playlist,
   PlaylistSettings,
@@ -323,7 +324,11 @@ const api = {
     listAudioObjects: (wallpaperPath: string): Promise<LweAudioObject[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_AUDIO_OBJECTS, wallpaperPath),
     listEffects: (wallpaperPath: string): Promise<LweSceneEffect[]> =>
-      ipcRenderer.invoke(IpcChannels.LWE_LIST_EFFECTS, wallpaperPath)
+      ipcRenderer.invoke(IpcChannels.LWE_LIST_EFFECTS, wallpaperPath),
+    listApplications: (): Promise<DesktopApplication[]> =>
+      ipcRenderer.invoke(IpcChannels.LWE_LIST_APPLICATIONS),
+    pickShortcutPath: (kind: 'file' | 'directory'): Promise<string | null> =>
+      ipcRenderer.invoke(IpcChannels.LWE_PICK_SHORTCUT_PATH, kind)
   },
 
   schedule: {

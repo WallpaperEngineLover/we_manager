@@ -232,13 +232,28 @@ export interface LweAudioObject {
 
 export interface LweProperty {
   name: string
-  type: 'slider' | 'boolean' | 'color' | 'combo' | 'text' | 'scene-texture' | 'file' | 'textinput' | 'unknown'
+  type:
+    | 'slider'
+    | 'boolean'
+    | 'color'
+    | 'combo'
+    | 'text'
+    | 'scene-texture'
+    | 'file'
+    | 'textinput'
+    | 'usershortcut'
+    | 'unknown'
   text?: string
   value: string
   min?: number
   max?: number
   step?: number
   options?: { value: string; label: string }[]
+}
+
+export interface DesktopApplication {
+  name: string
+  file: string
 }
 
 export interface WorkshopAuthorInfo {

@@ -1602,7 +1602,7 @@ export async function listLweAudioObjects(wallpaperPath: string): Promise<LweAud
 // Combo option values (before " = ") can contain spaces (e.g. font names), so that
 // line can't be split on whitespace - only on the literal " = " separator.
 const PROPERTY_HEADER_RE =
-  /^(\S+) - (slider|boolean|color|combo|text|scene texture|file|textinput)$/
+  /^(\S+) - (slider|boolean|color|combo|text|scene texture|file|textinput|usershortcut)$/
 const PROPERTY_DETAIL_RE = /^\t(Text|Value|Min|Max|Step): (.*)$/
 const PROPERTY_COMBO_OPTION_RE = /^\t\t(.+?) = (.*)$/
 

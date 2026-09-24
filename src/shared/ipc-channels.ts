@@ -141,6 +141,8 @@ export const IpcChannels = {
   LWE_LIST_SCREENS: 'lwe:list-screens',
   LWE_LIST_AUDIO_OBJECTS: 'lwe:list-audio-objects',
   LWE_LIST_EFFECTS: 'lwe:list-effects',
+  LWE_LIST_APPLICATIONS: 'lwe:list-applications',
+  LWE_PICK_SHORTCUT_PATH: 'lwe:pick-shortcut-path',
 
   // Desktop icons overlay
   DESKTOP_ICONS_SET_ENABLED: 'desktop-icons:set-enabled',

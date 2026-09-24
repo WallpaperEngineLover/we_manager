@@ -48,6 +48,7 @@ import { getPreviewSrc } from '../../utils/preview'
 import EngineFlagsSection from './sidebar/EngineFlagsSection'
 import CompatSection from './sidebar/CompatSection'
 import ThumbnailSection from './sidebar/ThumbnailSection'
+import { ShortcutRow } from './ShortcutRow'
 import { useDisplayTargets, useScreenAssignments } from '../../hooks/useDisplayTargets'
 import type {
   LweSceneObject,
@@ -193,7 +194,7 @@ function EffectRow({
   )
 }
 
-// Only booleans/sliders/combos are user-facing toggles in the WE customize UI - color/
+// Only booleans/sliders/combos and user shortcuts are user-facing in the WE customize UI - color/
 // text/file/scene-texture/textinput properties are left out of the sidebar entirely.
 function PropertyRow({
   property,
@@ -208,6 +209,10 @@ function PropertyRow({
 }) {
   const [draft, setDraft] = useState<number | null>(null)
   const label = property.text || property.name
+
+  if (property.type === 'usershortcut') {
+    return <ShortcutRow property={property} value={value} busy={busy} onCommit={onCommit} />
+  }
 
   if (property.type === 'boolean') {
     const on = value === '1' || value === 'true'
@@ -507,7 +512,7 @@ export default function DetailSidebar({
   })
   // Only these types have an actual editable control in the WE customize UI
   const properties = allProperties.filter(
-    (p) => p.type === 'boolean' || p.type === 'slider' || p.type === 'combo'
+    (p) => p.type === 'boolean' || p.type === 'slider' || p.type === 'combo' || p.type === 'usershortcut'
   )
   const propertyOverrides = libraryMeta?.propertyOverrides ?? {}
 
