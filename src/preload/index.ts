@@ -66,6 +66,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.STEAM_OPEN_WORKSHOP, itemId),
     getVotedIds: (): Promise<string[]> =>
       ipcRenderer.invoke(IpcChannels.STEAM_GET_VOTED_IDS),
+    getFailedVotes: (): Promise<Record<string, string>> =>
+      ipcRenderer.invoke(IpcChannels.STEAM_GET_FAILED_VOTES),
     checkVote: (itemId: string): Promise<boolean | null> =>
       ipcRenderer.invoke(IpcChannels.STEAM_CHECK_VOTE, itemId),
     getAuthorInfo: (steamId: string): Promise<WorkshopAuthorInfo | null> =>
@@ -119,6 +121,7 @@ const api = {
       autostartMinimized: boolean
       autostartPlaylistId: string | null
       killLweOnQuit: boolean
+      voteBorders: boolean
       audioScreen: string | null
       ambientVolume: number | null
       defaultAudioSensitivity: number
@@ -164,6 +167,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_TRAY_ENABLED, enabled),
     setKillLweOnQuit: (enabled: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_KILL_LWE_ON_QUIT, enabled),
+    setVoteBorders: (enabled: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_VOTE_BORDERS, enabled),
     setAutostart: (
       enabled: boolean,
       minimized: boolean,
@@ -393,6 +398,11 @@ const api = {
       const listener = (_: Electron.IpcRendererEvent, ids: string[]) => cb(ids)
       ipcRenderer.on(IpcChannels.EVENT_VOTED_IDS_CHANGED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_VOTED_IDS_CHANGED, listener)
+    },
+    failedVotesChanged: (cb: (failed: Record<string, string>) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, failed: Record<string, string>) => cb(failed)
+      ipcRenderer.on(IpcChannels.EVENT_FAILED_VOTES_CHANGED, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_FAILED_VOTES_CHANGED, listener)
     },
     libraryChanged: (cb: () => void): (() => void) => {
       const listener = () => cb()

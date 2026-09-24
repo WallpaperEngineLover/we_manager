@@ -4,6 +4,7 @@ import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Pack
 import type { LweStatus, LweInstallProgress, LinuxDistro, SteamIdentity } from '../../../../shared/types'
 import PerformanceSettings from './PerformanceSettings'
 import DisplaySettings from './DisplaySettings'
+import VoteBorderSettings from './VoteBorderSettings'
 import ScheduleSettings from './ScheduleSettings'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
@@ -565,6 +566,8 @@ export default function SettingsView() {
         </div>
 
         <DisplaySettings screens={screens} />
+
+        <VoteBorderSettings />
 
         <ScheduleSettings />
 

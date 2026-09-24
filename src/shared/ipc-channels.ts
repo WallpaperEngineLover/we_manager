@@ -15,6 +15,7 @@ export const IpcChannels = {
   STEAM_VOTE: 'steam:vote',
   STEAM_OPEN_WORKSHOP: 'steam:open-workshop',
   STEAM_GET_VOTED_IDS: 'steam:get-voted-ids',
+  STEAM_GET_FAILED_VOTES: 'steam:get-failed-votes',
   STEAM_CHECK_VOTE: 'steam:check-vote',
   STEAM_REDOWNLOAD: 'steam:redownload',
   STEAM_GET_AUTHOR_INFO: 'steam:get-author-info',
@@ -114,6 +115,7 @@ export const IpcChannels = {
   // Tray & autostart
   CONFIG_SET_TRAY_ENABLED: 'config:set-tray-enabled',
   CONFIG_SET_KILL_LWE_ON_QUIT: 'config:set-kill-lwe-on-quit',
+  CONFIG_SET_VOTE_BORDERS: 'config:set-vote-borders',
   CONFIG_SET_AUTOSTART: 'config:set-autostart',
   CONFIG_GET_AUTOSTART_SUPPORTED: 'config:get-autostart-supported',
 
@@ -152,6 +154,7 @@ export const IpcChannels = {
   EVENT_BACKUP_PROGRESS: 'event:backup-progress',
   EVENT_PLAYLIST_STATE_CHANGED: 'event:playlist-state-changed',
   EVENT_VOTED_IDS_CHANGED: 'event:voted-ids-changed',
+  EVENT_FAILED_VOTES_CHANGED: 'event:failed-votes-changed',
   EVENT_LIBRARY_CHANGED: 'event:library-changed',
   EVENT_DISPLAY_CHANGED: 'event:display-changed',
   EVENT_WALLPAPER_CRASHED: 'event:wallpaper-crashed',

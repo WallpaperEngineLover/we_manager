@@ -70,6 +70,12 @@ export default function App() {
   }, [queryClient])
 
   useEffect(() => {
+    return window.electronAPI.on.failedVotesChanged((failed) => {
+      queryClient.setQueryData(['steam-failed-votes'], failed)
+    })
+  }, [queryClient])
+
+  useEffect(() => {
     return window.electronAPI.on.libraryChanged(() => {
       queryClient.invalidateQueries({ queryKey: ['library'] })
     })

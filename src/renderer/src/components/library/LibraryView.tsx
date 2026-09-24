@@ -35,6 +35,7 @@ import type { LibraryFilters, WallpaperFolder, LweStatus, ScreenTarget } from '@
 import clsx from 'clsx'
 import { WE_TYPES, WE_LIBRARY_AGE_RATINGS, WE_RESOLUTION_GROUPS } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
+import { useVoteBorders } from '../../hooks/useVoteBorders'
 import { useSelectableGrid } from '../../hooks/useSelectableGrid'
 import { useClickOutside } from '../../hooks/useClickOutside'
 import { useClampedPosition, useFlipSide } from '../../hooks/useContextMenuPosition'
@@ -458,6 +459,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     staleTime: Infinity
   })
   const votedSet = useMemo(() => new Set(votedIds ?? []), [votedIds])
+  const { enabled: voteBordersEnabled, failed: failedVotes } = useVoteBorders()
 
   // Client-side OR filtering for multiple types / ratings / genres
   const filtered = useMemo(() => {
@@ -882,6 +884,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     if (!ctxMenu) return
     const ids = ctxMenu.ids
     closeCtxMenu()
+    if (ids.length > 1) showToast(`${up ? 'Liking' : 'Disliking'} ${ids.length} wallpapers on Steam...`)
 
     const results = await Promise.allSettled(ids.map((id) => window.electronAPI.steam.vote(id, up)))
     const confirmedIds = ids.filter((_, i) => {
@@ -889,10 +892,11 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       return r.status === 'fulfilled' && r.value.confirmed
     })
 
-    if (up && confirmedIds.length > 0) {
-      queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) => [
-        ...new Set([...(old ?? []), ...confirmedIds])
-      ])
+    if (confirmedIds.length > 0) {
+      const confirmedSet = new Set(confirmedIds)
+      queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
+        up ? [...new Set([...(old ?? []), ...confirmedIds])] : (old ?? []).filter((id) => !confirmedSet.has(id))
+      )
     }
 
     const failed = ids.length - confirmedIds.length
@@ -1510,6 +1514,8 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 isDetailOpen={detailId === wallpaper.id}
                 lweInstalled={lweStatus?.installed ?? false}
                 isLiked={votedSet.has(wallpaper.id)}
+                voteError={failedVotes[wallpaper.id]}
+                showVoteBorder={voteBordersEnabled}
                 currentPlaylistId={currentPlaylistId}
                 isInCurrentPlaylist={currentPlaylistItemIds.has(wallpaper.id)}
                 previewSize={previewSize}

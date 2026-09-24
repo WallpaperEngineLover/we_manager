@@ -33,6 +33,8 @@ import {
   setAutostartPlaylistId,
   getKillLweOnQuit,
   setKillLweOnQuit,
+  getVoteBorders,
+  setVoteBorders,
   getAudioScreen,
   setAudioScreen,
   getAmbientVolume,
@@ -84,6 +86,7 @@ export function registerConfigHandlers(): void {
     autostartMinimized: getAutostartMinimized(),
     autostartPlaylistId: getAutostartPlaylistId(),
     killLweOnQuit: getKillLweOnQuit(),
+    voteBorders: getVoteBorders(),
     audioScreen: getAudioScreen(),
     ambientVolume: getAmbientVolume(),
     defaultAudioSensitivity: getDefaultAudioSensitivity(),
@@ -121,6 +124,11 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle(IpcChannels.CONFIG_SET_KILL_LWE_ON_QUIT, (_e, enabled: boolean) => {
     setKillLweOnQuit(enabled)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_VOTE_BORDERS, (_e, enabled: boolean) => {
+    setVoteBorders(enabled)
     return { ok: true }
   })
 

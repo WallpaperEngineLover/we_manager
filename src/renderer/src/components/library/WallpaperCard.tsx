@@ -7,6 +7,7 @@ import { getPreviewSrc } from '../../utils/preview'
 import { openWorkshopPage } from '../../utils/steam'
 import { useToast } from '../common/Toast'
 import type { PreviewSize } from '../../hooks/usePreviewSize'
+import { voteBorderClass } from '../../hooks/useVoteBorders'
 
 interface WallpaperCardProps {
   wallpaper: WallpaperMeta
@@ -14,6 +15,8 @@ interface WallpaperCardProps {
   isDetailOpen?: boolean
   lweInstalled?: boolean
   isLiked?: boolean
+  voteError?: string
+  showVoteBorder?: boolean
   currentPlaylistId?: string | null
   isInCurrentPlaylist?: boolean
   previewSize?: PreviewSize
@@ -33,6 +36,8 @@ export default function WallpaperCard({
   isDetailOpen,
   lweInstalled,
   isLiked = false,
+  voteError,
+  showVoteBorder = false,
   currentPlaylistId = null,
   isInCurrentPlaylist = false,
   previewSize = 'normal',
@@ -177,13 +182,15 @@ export default function WallpaperCard({
       }}
       onClick={onSelect}
       onContextMenu={onContextMenu}
+      title={showVoteBorder ? voteError : undefined}
       className={clsx(
         'group relative overflow-hidden rounded-lg bg-[#1a1a1a] transition-all cursor-pointer select-none',
         isDetailOpen
           ? 'ring-2 ring-sky-400'
           : selected
             ? 'ring-2 ring-indigo-500'
-            : 'hover:ring-1 hover:ring-indigo-500/50'
+            : 'hover:ring-1 hover:ring-indigo-500/50',
+        showVoteBorder && voteBorderClass(voteError, isLiked)
       )}
     >
       <div

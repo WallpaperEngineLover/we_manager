@@ -2,7 +2,7 @@ import { app, BrowserWindow, net, protocol, shell } from 'electron'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { IpcChannels } from '@shared/ipc-channels'
-import { initSteam, isSteamRunning, startVotedItemsSync } from './services/steam.service'
+import { initSteam, isSteamRunning, startVotedItemsSync, onFailedVotesChange } from './services/steam.service'
 import { initLibrary, checkUnavailableWallpapers, backfillResolutions } from './services/library.service'
 import { startWatcher } from './services/watcher.service'
 import { registerAllHandlers } from './ipc'
@@ -26,6 +26,9 @@ const BACKGROUND_SYNC_INTERVAL_MS = 3 * 60 * 1000
 function startBackgroundSync(win: BrowserWindow): void {
   startVotedItemsSync((ids) => {
     if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_VOTED_IDS_CHANGED, ids)
+  })
+  onFailedVotesChange((failed) => {
+    if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_FAILED_VOTES_CHANGED, failed)
   })
 
   const syncResolutions = async (): Promise<void> => {

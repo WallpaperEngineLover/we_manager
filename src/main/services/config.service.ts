@@ -18,6 +18,8 @@ interface AppConfig {
   autostartMinimized: boolean
   autostartPlaylistId: string | null
   killLweOnQuit: boolean
+  /** Green outline on liked wallpapers, red on ones whose like failed */
+  voteBorders: boolean
   recommendedFpsEnabled: boolean
   recommendedWebFpsEnabled: boolean
   audioScreen: string | null
@@ -54,6 +56,7 @@ const store = new Store<AppConfig>({
     autostartMinimized: false,
     autostartPlaylistId: null,
     killLweOnQuit: false,
+    voteBorders: true,
     audioScreen: null,
     ambientVolume: null,
     defaultAudioSensitivity: 1,
@@ -134,6 +137,14 @@ export function getKillLweOnQuit(): boolean {
 
 export function setKillLweOnQuit(enabled: boolean): void {
   store.set('killLweOnQuit', enabled)
+}
+
+export function getVoteBorders(): boolean {
+  return store.get('voteBorders')
+}
+
+export function setVoteBorders(enabled: boolean): void {
+  store.set('voteBorders', enabled)
 }
 
 /** How this process identifies itself to Steam - 'wallpaper-engine' registers under WE's own

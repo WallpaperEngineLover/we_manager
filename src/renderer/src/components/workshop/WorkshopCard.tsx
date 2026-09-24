@@ -6,6 +6,7 @@ import clsx from 'clsx'
 import { openWorkshopPage } from '../../utils/steam'
 import { formatFileSize } from '../../utils/format'
 import { useToast } from '../common/Toast'
+import { voteBorderClass } from '../../hooks/useVoteBorders'
 
 interface WorkshopCardProps {
   item: WorkshopItem
@@ -13,6 +14,8 @@ interface WorkshopCardProps {
   isDetailOpen?: boolean
   ignored?: boolean
   isLiked?: boolean
+  voteError?: string
+  showVoteBorder?: boolean
   canPlay?: boolean
   lweInstalled?: boolean
   subscribeState?: SubscribeState
@@ -30,6 +33,8 @@ export default function WorkshopCard({
   isDetailOpen = false,
   ignored = false,
   isLiked = false,
+  voteError,
+  showVoteBorder = false,
   canPlay = false,
   lweInstalled = false,
   subscribeState,
@@ -90,13 +95,15 @@ export default function WorkshopCard({
   return (
     <div
       data-workshop-id={item.publishedFileId}
+      title={showVoteBorder ? voteError : undefined}
       className={clsx(
         'group relative overflow-hidden rounded-lg bg-[#1a1a1a] transition-all cursor-pointer select-none',
         isDetailOpen
           ? 'ring-2 ring-sky-400'
           : selected
             ? 'ring-2 ring-indigo-500'
-            : 'hover:ring-1 hover:ring-indigo-500/50'
+            : 'hover:ring-1 hover:ring-indigo-500/50',
+        showVoteBorder && voteBorderClass(voteError, isLiked)
       )}
       onContextMenu={onContextMenu}
       onClick={onSelect}

@@ -410,24 +410,80 @@ function recordVote(idStr: string, voteUp: boolean): void {
   persistVoteCache()
 }
 
+const VOTE_ATTEMPTS = 4
+const VOTE_RETRY_BASE_MS = 1500
+// Steam rejects or drops SetUserItemVote calls that overlap, so votes go out one at a time
+const VOTE_GAP_MS = 400
+
+let voteQueue: Promise<unknown> = Promise.resolve()
+
+// kept for this session only, a failure usually means Steam was busy or offline at the time
+const failedVotes = new Map<string, { up: boolean; message: string }>()
+let failedVotesChangeListener: ((failed: Record<string, string>) => void) | null = null
+
+export function getFailedVotes(): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [id, failure] of failedVotes) {
+    // liked elsewhere since, e.g. on the website or picked up by the background sync
+    if (failure.up && votedUpCache.has(id)) failedVotes.delete(id)
+    else out[id] = failure.message
+  }
+  return out
+}
+
+export function onFailedVotesChange(cb: (failed: Record<string, string>) => void): void {
+  failedVotesChangeListener = cb
+}
+
+function setVoteFailure(idStr: string, failure: { up: boolean; message: string } | null): void {
+  if (failure === null) {
+    if (!failedVotes.delete(idStr)) return
+  } else {
+    failedVotes.set(idStr, failure)
+  }
+  failedVotesChangeListener?.(getFailedVotes())
+}
+
+export function voteOnItemAndConfirm(itemId: bigint, voteUp: boolean): Promise<boolean> {
+  const run = voteQueue.then(() => voteWithRetry(itemId, voteUp))
+  voteQueue = run.catch(() => {}).then(() => sleep(VOTE_GAP_MS))
+  return run
+}
+
+async function voteWithRetry(itemId: bigint, voteUp: boolean): Promise<boolean> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt < VOTE_ATTEMPTS; attempt++) {
+    if (attempt > 0) await sleep(VOTE_RETRY_BASE_MS * 2 ** (attempt - 1))
+    if (!isSteamRunning()) throw new Error('Steam is not running - start Steam to like wallpapers')
+    if (!isSteamOnline()) throw new Error('Steam is offline - check your internet connection and try again')
+    try {
+      const ok = await voteOnce(itemId, voteUp)
+      setVoteFailure(itemId.toString(), null)
+      return ok
+    } catch (err) {
+      lastErr = err
+      console.warn(`[Steam] Vote on ${itemId} failed (attempt ${attempt + 1}/${VOTE_ATTEMPTS}):`, (err as Error)?.message ?? err)
+    }
+  }
+  const msg = (lastErr as Error)?.message ?? String(lastErr)
+  setVoteFailure(itemId.toString(), {
+    up: voteUp,
+    message: `${voteUp ? 'Like' : 'Dislike'} failed after ${VOTE_ATTEMPTS} attempts: ${msg}`
+  })
+  throw new Error(`Could not reach Steam to ${voteUp ? 'like' : 'dislike'} this wallpaper: ${msg}`)
+}
+
 // Without the patched steamworks.js, success is reported once SetUserItemVote is enqueued: its result can't be read back,
 // because steamworks.js's manual dispatch loop consumes every call result on the shared Steam pipe first.
-export async function voteOnItemAndConfirm(itemId: bigint, voteUp: boolean): Promise<boolean> {
-  if (!isSteamRunning()) throw new Error('Steam is not running - start Steam to like wallpapers')
-  const client = getClient()
-  if (!isSteamOnline()) throw new Error('Steam is offline - check your internet connection and try again')
+async function voteOnce(itemId: bigint, voteUp: boolean): Promise<boolean> {
   const idStr = itemId.toString()
-  const patched = getPatchedVoteApi(client)
+  const patched = getPatchedVoteApi(getClient())
 
   if (patched) {
-    await withTimeout(patched.voteItem(itemId, voteUp), VOTE_TIMEOUT_MS, 'Vote').catch((err) => {
-      throw new Error(`Could not reach Steam to ${voteUp ? 'like' : 'dislike'} this wallpaper: ${err?.message ?? err}`)
-    })
-    recordVote(idStr, voteUp)
-    return true
+    await withTimeout(patched.voteItem(itemId, voteUp), VOTE_TIMEOUT_MS, 'Vote')
+  } else {
+    voteOnItem(itemId, voteUp)
   }
-
-  voteOnItem(itemId, voteUp)
   recordVote(idStr, voteUp)
   return true
 }
