@@ -8,7 +8,12 @@ export const BOOLEAN_FLAGS: { key: BooleanFlag; label: string; hint: string }[] 
   { key: 'disableMouse', label: 'Ignore the mouse', hint: 'No parallax or cursor effects' },
   { key: 'noAudioProcessing', label: 'No audio visualizer', hint: 'Stops capturing system audio for audio-reactive wallpapers' },
   { key: 'automute', label: 'Mute when other apps play sound', hint: '' },
-  { key: 'silent', label: 'Always muted', hint: '' }
+  { key: 'silent', label: 'Always muted', hint: '' },
+  {
+    key: 'hdr',
+    label: 'HDR output',
+    hint: 'Sends HDR to monitors running in HDR mode (KDE Plasma with HDR enabled); HDR videos keep their highlights'
+  }
 ]
 
 export const FULLSCREEN_PAUSE_OPTIONS: { value: FullscreenPauseMode; label: string }[] = [

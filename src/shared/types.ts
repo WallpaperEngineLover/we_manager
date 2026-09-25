@@ -1,3 +1,7 @@
+import type { ImageAdjustments } from './imageAdjustments'
+
+export type { ImageAdjustments } from './imageAdjustments'
+
 export type WallpaperType = 'scene' | 'video' | 'web' | 'application'
 
 /** Matches linux-wallpaperengine's --scaling choices */
@@ -75,6 +79,8 @@ export interface WallpaperMeta {
    * "RRGGBB"/"RRGGBBAA" hex string, applied via linux-wallpaperengine --corner-color. Default: black.
    */
   cornerColor?: string
+  /** Wallpaper Engine's image filter, color options and flip (scene and video only), applied live */
+  imageAdjustments?: ImageAdjustments
   /**
    * Global playback speed multiplier for animations/particles/effects, applied via
    * linux-wallpaperengine --speed (1 = normal speed, less than 1 = slower)
@@ -131,6 +137,7 @@ export interface EngineFlags {
   fullscreenPause?: FullscreenPauseMode
   automute?: boolean
   silent?: boolean
+  hdr?: boolean
 }
 
 export interface EngineFlagPreset {

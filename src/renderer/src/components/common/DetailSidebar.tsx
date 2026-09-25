@@ -46,6 +46,7 @@ import { useToast } from './Toast'
 import ScreenSelect from './ScreenSelect'
 import { getPreviewSrc } from '../../utils/preview'
 import EngineFlagsSection from './sidebar/EngineFlagsSection'
+import ImageAdjustmentsSection from './sidebar/ImageAdjustmentsSection'
 import CompatSection from './sidebar/CompatSection'
 import ThumbnailSection from './sidebar/ThumbnailSection'
 import { ShortcutRow } from './ShortcutRow'
@@ -57,6 +58,7 @@ import type {
   LweAudioObject,
   WallpaperMeta,
   ScalingMode,
+  ImageAdjustments,
   ScreenTarget
 } from '@shared/types'
 
@@ -561,6 +563,7 @@ export default function DetailSidebar({
             disableParallax: patch.disableParallax,
             expandCanvas: patch.expandCanvas,
             cornerColor: patch.cornerColor,
+            imageAdjustments: patch.imageAdjustments,
             speed: patch.playbackSpeed,
             propertyOverrides: patch.propertyOverrides,
             audioSensitivity: patch.audioSensitivity,
@@ -592,6 +595,7 @@ export default function DetailSidebar({
     offsetX?: number
     offsetY?: number
     speed?: number
+    imageAdjustments?: ImageAdjustments
   }) {
     if (!isActive) return
     if (livePreviewTimer.current) clearTimeout(livePreviewTimer.current)
@@ -1266,6 +1270,15 @@ export default function DetailSidebar({
               className="w-full accent-indigo-500 disabled:opacity-50"
             />
           </div>
+        )}
+
+        {localPath && lweInstalled && (libraryMeta?.type === 'scene' || libraryMeta?.type === 'video') && (
+          <ImageAdjustmentsSection
+            adjustments={libraryMeta.imageAdjustments}
+            live={isActive}
+            onCommit={(imageAdjustments) => persistAndMaybeRelaunch({ imageAdjustments })}
+            onPreview={(imageAdjustments) => previewLive({ imageAdjustments })}
+          />
         )}
 
         {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (

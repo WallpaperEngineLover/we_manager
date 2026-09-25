@@ -18,6 +18,7 @@ describe('engineFlagArgs', () => {
     ).toEqual(['--disable-particles', '--fullscreen-pause-only-active', '--silent'])
     expect(engineFlagArgs({ fullscreenPause: 'off' })).toEqual(['--no-fullscreen-pause'])
     expect(engineFlagArgs({ fullscreenPause: 'default' })).toEqual([])
+    expect(engineFlagArgs({ hdr: true })).toEqual(['--hdr'])
   })
 
   it('leaves disableAnimations to the caller, it needs its own capability probe', () => {

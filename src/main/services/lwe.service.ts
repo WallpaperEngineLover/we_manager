@@ -37,6 +37,7 @@ import {
 } from './config.service'
 import { DEFAULT_LWE_FPS, DEFAULT_LWE_REPO } from '@shared/constants'
 import { engineFlagArgs } from '@shared/engineFlags'
+import { imageAdjustmentArgs, imageAdjustmentLines, type ImageAdjustments } from '@shared/imageAdjustments'
 
 export const ALL_SCREENS: ScreenTarget = '*'
 
@@ -855,6 +856,7 @@ export interface LweLaunchOptions {
   disableParallax?: boolean
   expandCanvas?: boolean
   cornerColor?: string
+  imageAdjustments?: ImageAdjustments
   speed?: number
   audioSensitivity?: Record<string, number>
   soundVolume?: Record<string, number>
@@ -874,6 +876,9 @@ function buildLweArgs(
   const args: string[] = []
   const assetsDir = findWeAssetsDir()
   if (assetsDir) args.push('--assets-dir', assetsDir)
+
+  // given before any --screen-root they are the default of every screen this engine draws
+  if (supportsFlag('--image-filter')) args.push(...imageAdjustmentArgs(options.imageAdjustments))
 
   // --screen-root uses layer-shell (Wayland) or root-window overlay (X11)
   if (capture) {
@@ -1189,6 +1194,7 @@ export interface HotswapOptions {
   disableParallax?: boolean
   expandCanvas?: boolean
   cornerColor?: string
+  imageAdjustments?: ImageAdjustments
   speed?: number
   propertyOverrides?: Record<string, string>
   /** Empty string clears the restriction back to "every screen can produce audio" */
@@ -1225,6 +1231,7 @@ export function buildHotswapLines(options: HotswapOptions): string[] {
   if (options.disableParallax !== undefined) lines.push(`disable-parallax=${options.disableParallax ? 'on' : 'off'}`)
   if (options.expandCanvas !== undefined) lines.push(`expand-canvas=${options.expandCanvas ? 'on' : 'off'}`)
   if (options.cornerColor !== undefined) lines.push(`corner-color=${options.cornerColor}`)
+  lines.push(...imageAdjustmentLines(options.imageAdjustments))
   if (options.speed !== undefined) lines.push(`speed=${options.speed}`)
   if (options.audioScreen !== undefined) lines.push(`audio-screen=${options.audioScreen}`)
   if (options.ambientVolume !== undefined) lines.push(`ambient-volume=${options.ambientVolume}`)
@@ -1321,6 +1328,7 @@ function hotswapOptionsFor(wallpaperPath: string, options: LweLaunchOptions): Ho
     disableParallax: options.disableParallax ?? false,
     expandCanvas: options.expandCanvas ?? false,
     cornerColor: options.cornerColor ?? '000000',
+    imageAdjustments: options.imageAdjustments,
     speed: options.speed ?? 1,
     propertyOverrides: options.propertyOverrides ?? {},
     audioSensitivity: {

@@ -238,6 +238,7 @@ export async function lweOptionsFor(
     // Explicit even when off, same reasoning as xrayFullReveal above.
     expandCanvas: wallpaper.expandCanvas ?? false,
     cornerColor: wallpaper.cornerColor,
+    imageAdjustments: wallpaper.imageAdjustments,
     speed: wallpaper.playbackSpeed,
     audioSensitivity: wallpaper.audioSensitivity,
     soundVolume: wallpaper.soundVolume,

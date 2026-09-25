@@ -26,6 +26,7 @@ import type {
   PlaylistPlaybackState,
   SteamIdentity,
   EngineFlags,
+  ImageAdjustments,
   EngineFlagPreset,
   DisplayMode,
   ScreenTarget,
@@ -309,6 +310,7 @@ const api = {
       disableParallax?: boolean
       expandCanvas?: boolean
       cornerColor?: string
+      imageAdjustments?: ImageAdjustments
       speed?: number
       propertyOverrides?: Record<string, string>
       audioScreen?: string
