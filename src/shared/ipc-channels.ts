@@ -91,6 +91,7 @@ export const IpcChannels = {
   BACKUP_ITEM: 'backup:item',
   BACKUP_SELECTION: 'backup:selection',
   BACKUP_SCAN: 'backup:scan',
+  BACKUP_REMOVE: 'backup:remove',
 
   // Playlists
   PLAYLIST_GET_ALL: 'playlist:get-all',

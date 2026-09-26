@@ -342,12 +342,22 @@ const api = {
   },
 
   backup: {
-    item: (itemId: string): Promise<{ ok: boolean; unsubscribed: boolean }> =>
+    item: (itemId: string): Promise<{ ok: boolean; alreadyBackedUp: boolean; unsubscribed: boolean }> =>
       ipcRenderer.invoke(IpcChannels.BACKUP_ITEM, itemId),
-    selection: (itemIds: string[]): Promise<{ backedUp: number; failed: number; unsubscribed: number }> =>
+    selection: (
+      itemIds: string[]
+    ): Promise<{ backedUp: number; alreadyBackedUp: number; failed: number; unsubscribed: number }> =>
       ipcRenderer.invoke(IpcChannels.BACKUP_SELECTION, itemIds),
-    scan: (): Promise<{ imported: number; skipped: number; linked: number }> =>
-      ipcRenderer.invoke(IpcChannels.BACKUP_SCAN)
+    scan: (): Promise<{
+      imported: number
+      skipped: number
+      linked: number
+      removed: number
+      unlinked: number
+      corrupted: string[]
+    }> => ipcRenderer.invoke(IpcChannels.BACKUP_SCAN),
+    remove: (itemIds: string[]): Promise<{ removed: number; failed: number; keptDirs: string[] }> =>
+      ipcRenderer.invoke(IpcChannels.BACKUP_REMOVE, itemIds)
   },
 
   desktopIcons: {

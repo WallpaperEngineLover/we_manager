@@ -58,31 +58,28 @@ export function registerSteamHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.STEAM_UNSUBSCRIBE, async (_e, itemId: string) => {
     const wallpaper = library.getWallpaper(itemId)
     await steam.unsubscribeFromItem(BigInt(itemId))
+    // a backup entry's localPath is the backup itself
+    if (wallpaper && wallpaper.source !== 'workshop') {
+      library.updateWallpaper(itemId, { subscribed: false, downloading: false, downloadFailed: false })
+      return { ok: true }
+    }
     if (wallpaper?.localPath) {
       // async: an unresponsive mount here must not block the main process (and every other
       // pending IPC call) while it deletes
       try { await fs.promises.rm(wallpaper.localPath, { recursive: true, force: true }) } catch { /* ignore */ }
     }
-    // Trust the stored flag alone: it's set once, when a backup actually succeeds. Re-checking
-    // the filesystem here (backup.isBackedUp) can disagree with it - e.g. if the configured
-    // backup folder changed since - and must never be allowed to turn "this is backed up" into
-    // "delete the library entry".
-    if (wallpaper?.backedUp) {
-      // getBackupDir() throws if the backup path setting was since cleared entirely - still
-      // must not fall through to deleting a wallpaper we know is backed up.
-      try {
-        library.updateWallpaper(itemId, {
-          source: 'backup',
-          localPath: backup.getBackupDir(itemId),
-          subscribed: false,
-          downloading: false,
-          downloadFailed: false
-        })
-      } catch (err) {
-        library.updateWallpaper(itemId, { subscribed: false, downloading: false, downloadFailed: false })
-        console.error('[Steam] Failed to resolve backup dir on unsubscribe:', err)
-      }
+    const backupDir = wallpaper?.backedUp ? backup.resolveBackupDir(wallpaper) : null
+    if (wallpaper && backupDir && (await backup.hasBackupFiles(backupDir))) {
+      library.updateWallpaper(itemId, {
+        source: 'backup',
+        localPath: backupDir,
+        backupDir,
+        subscribed: false,
+        downloading: false,
+        downloadFailed: false
+      })
     } else {
+      if (wallpaper?.backedUp) console.warn(`[Steam] Backup of ${itemId} not found at ${backupDir}, removing the entry`)
       library.deleteWallpaper(itemId)
     }
     return { ok: true }
@@ -91,7 +88,7 @@ export function registerSteamHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.STEAM_REDOWNLOAD, async (_e, itemId: string) => {
     const wallpaper = library.getWallpaper(itemId)
     await steam.unsubscribeFromItem(BigInt(itemId))
-    if (wallpaper?.localPath) {
+    if (wallpaper?.localPath && wallpaper.source === 'workshop') {
       try { await fs.promises.rm(wallpaper.localPath, { recursive: true, force: true }) } catch { /* ignore */ }
     }
     if (wallpaper) {

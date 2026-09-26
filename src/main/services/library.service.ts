@@ -129,6 +129,25 @@ export function deleteWallpaper(id: string): void {
   store.set('wallpapers', wallpapers)
 }
 
+// reads the store fresh so changes made during a long scan aren't overwritten
+export function applyWallpaperChanges(changes: {
+  upserts?: WallpaperMeta[]
+  patches?: { id: string; patch: Partial<WallpaperMeta> }[]
+  deletes?: string[]
+}): void {
+  const wallpapers = store.get('wallpapers')
+  for (const meta of changes.upserts ?? []) wallpapers[meta.id] = meta
+  for (const { id, patch } of changes.patches ?? []) {
+    if (wallpapers[id]) wallpapers[id] = { ...wallpapers[id], ...patch, updatedAt: wallpapers[id].updatedAt }
+  }
+  for (const id of changes.deletes ?? []) {
+    const thumbnail = wallpapers[id]?.customPreview
+    if (thumbnail && path.dirname(thumbnail) === getThumbnailsPath()) fs.rmSync(thumbnail, { force: true })
+    delete wallpapers[id]
+  }
+  store.set('wallpapers', wallpapers)
+}
+
 export function resetAllFpsOverrides(): { count: number } {
   const wallpapers = store.get('wallpapers')
   let count = 0
@@ -328,6 +347,7 @@ function buildMeta(
     updatedAt: workshopTimeUpdated ? workshopTimeUpdated * 1000 : (existing?.updatedAt ?? now),
     subscribed: true,
     source: 'workshop',
+    backupDir: existing?.backupDir ?? (existing?.source === 'backup' ? existing.localPath : undefined),
     tags: pj?.tags ?? existing?.tags ?? [],
     resolutions: liveWorkshopTags ? deriveResolutionsFromTags(liveWorkshopTags) : existing?.resolutions,
     authorSteamId: authorSteamId ?? existing?.authorSteamId
@@ -365,7 +385,9 @@ function buildIncompleteMeta(
     categories: existing?.categories ?? [],
     downloading,
     downloadFailed: failed,
-    authorSteamId: authorSteamId ?? existing?.authorSteamId
+    authorSteamId: authorSteamId ?? existing?.authorSteamId,
+    backedUp: existing?.backedUp,
+    backupDir: existing?.backupDir ?? (existing?.source === 'backup' ? existing.localPath : undefined)
   }
 }
 

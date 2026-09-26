@@ -87,6 +87,7 @@ export interface WallpaperMeta {
    */
   playbackSpeed?: number
   backedUp?: boolean
+  backupDir?: string
   /** Set by a "check unavailable" scan: true if the item has been removed from the Steam Workshop */
   unavailable?: boolean
   /** Object/layer ids or names to force-hide via linux-wallpaperengine --disable-object */

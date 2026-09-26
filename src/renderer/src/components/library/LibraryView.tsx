@@ -344,6 +344,10 @@ interface LibraryViewProps {
   onBrowseCreator?: (creatorSteamId: string) => void
 }
 
+function backupSummary(result: { backedUp: number; alreadyBackedUp: number; failed: number; unsubscribed: number }) {
+  return `Backed up ${result.backedUp}${result.alreadyBackedUp > 0 ? `, ${result.alreadyBackedUp} already up to date` : ''}${result.unsubscribed > 0 ? ` (${result.unsubscribed} unsubscribed)` : ''}${result.failed > 0 ? `, ${result.failed} failed` : ''}`
+}
+
 export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
@@ -669,16 +673,9 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   async function handleBackupSelection() {
     if (selectedIds.size === 0) return
-    const targets = wallpapers.filter((w) => selectedIds.has(w.id))
-    const alreadyBackedUp = targets.filter((w) => w.backedUp)
-    const toBackUp = targets.filter((w) => !w.backedUp)
-
+    const toBackUp = wallpapers.filter((w) => selectedIds.has(w.id) && w.source === 'workshop')
     if (toBackUp.length === 0) {
-      setBackupStatus(
-        alreadyBackedUp.length === 1
-          ? 'Already backed up.'
-          : `All ${alreadyBackedUp.length} selected wallpapers are already backed up.`
-      )
+      setBackupStatus('No workshop wallpapers selected.')
       return
     }
 
@@ -686,9 +683,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     setBackupStatus(null)
     try {
       const result = await window.electronAPI.backup.selection(toBackUp.map((w) => w.id))
-      setBackupStatus(
-        `Backed up ${result.backedUp}${alreadyBackedUp.length > 0 ? `, ${alreadyBackedUp.length} already were` : ''}${result.unsubscribed > 0 ? ` (${result.unsubscribed} unsubscribed)` : ''}${result.failed > 0 ? `, ${result.failed} failed` : ''}.`
-      )
+      setBackupStatus(`${backupSummary(result)}.`)
     } finally {
       setBackingUpSelection(false)
       queryClient.invalidateQueries({ queryKey: ['library'] })
@@ -700,7 +695,10 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     setBackupStatus(null)
     try {
       const result = await window.electronAPI.backup.scan()
-      setBackupStatus(`Backup scan: ${result.imported} imported, ${result.linked} linked.`)
+      const dropped = result.removed + result.unlinked
+      setBackupStatus(
+        `Backup scan: ${result.imported} imported, ${result.linked} linked${dropped > 0 ? `, ${dropped} broken removed` : ''}${result.corrupted.length > 0 ? `, ${result.corrupted.length} corrupted folder${result.corrupted.length === 1 ? '' : 's'} skipped (${result.corrupted.join(', ')})` : ''}.`
+      )
     } finally {
       setBackupScanning(false)
       queryClient.invalidateQueries({ queryKey: ['library'] })
@@ -732,9 +730,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       const result = await window.electronAPI.backup.selection(
         unavailableNotBackedUp.map((w) => w.id)
       )
-      setBackupStatus(
-        `Backed up ${result.backedUp}${result.unsubscribed > 0 ? ` (${result.unsubscribed} unsubscribed)` : ''}${result.failed > 0 ? `, ${result.failed} failed` : ''}.`
-      )
+      setBackupStatus(`${backupSummary(result)}.`)
     } finally {
       setBackingUpUnavailable(false)
       queryClient.invalidateQueries({ queryKey: ['library'] })
@@ -935,39 +931,44 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   async function ctxBackup() {
     if (!ctxMenu) return
-    const targets = ctxWallpapers
+    const toBackUp = ctxWallpapers.filter((w) => w.source === 'workshop')
     closeCtxMenu()
-
-    const alreadyBackedUp = targets.filter((w) => w.backedUp)
-    const toBackUp = targets.filter((w) => !w.backedUp)
-
-    if (toBackUp.length === 0) {
-      showToast(
-        alreadyBackedUp.length === 1
-          ? 'Already backed up'
-          : `All ${alreadyBackedUp.length} wallpapers are already backed up`
-      )
-      return
-    }
+    if (toBackUp.length === 0) return
 
     try {
       if (toBackUp.length === 1) {
-        await window.electronAPI.backup.item(toBackUp[0].id)
-        showToast(
-          alreadyBackedUp.length > 0
-            ? `Backed up (${alreadyBackedUp.length} already were)`
-            : 'Backed up'
-        )
+        const result = await window.electronAPI.backup.item(toBackUp[0].id)
+        const done = result.alreadyBackedUp ? 'Backup already up to date' : 'Backed up'
+        showToast(result.unsubscribed ? `${done}, unsubscribed` : done)
       } else {
-        const result = await window.electronAPI.backup.selection(toBackUp.map((w) => w.id))
-        showToast(
-          `Backed up ${result.backedUp}${alreadyBackedUp.length > 0 ? `, ${alreadyBackedUp.length} already were` : ''}${result.failed > 0 ? `, ${result.failed} failed` : ''}`
-        )
+        showToast(backupSummary(await window.electronAPI.backup.selection(toBackUp.map((w) => w.id))))
       }
     } catch (err) {
       showToast(`Backup failed: ${(err as Error).message}`)
     }
     queryClient.invalidateQueries({ queryKey: ['library'] })
+  }
+
+  async function ctxRemoveBackup() {
+    if (!ctxMenu) return
+    const targets = ctxWallpapers.filter((w) => w.backedUp || w.source === 'backup')
+    closeCtxMenu()
+    if (targets.length === 0) return
+
+    const backupOnly = targets.filter((w) => w.source === 'backup').length
+    const what = targets.length === 1 ? `the backup of "${targets[0].title}"` : `${targets.length} backups`
+    const note =
+      backupOnly > 0
+        ? `\n\n${backupOnly === 1 && targets.length === 1 ? 'It is' : `${backupOnly} of them are`} not subscribed on Steam anymore and will be removed from the library.`
+        : ''
+    if (!confirm(`Delete ${what} from the backup folder?${note}`)) return
+
+    const result = await window.electronAPI.backup.remove(targets.map((w) => w.id))
+    showToast(
+      `Removed ${result.removed} backup${result.removed === 1 ? '' : 's'}${result.keptDirs.length > 0 ? ` (${result.keptDirs.length} outside the backup folder kept on disk)` : ''}${result.failed > 0 ? `, ${result.failed} failed` : ''}`
+    )
+    queryClient.invalidateQueries({ queryKey: ['library'] })
+    refetchFolders()
   }
 
   async function ctxOpenLocally() {
@@ -1011,6 +1012,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   const ctxHasVideo = ctxWallpapers.some((w) => w.type === 'video' && w.file)
   const ctxHasBackupable = ctxWallpapers.some((w) => w.source === 'workshop')
+  const ctxHasBackup = ctxWallpapers.some((w) => w.backedUp || w.source === 'backup')
   const ctxCanBrowseCreator =
     ctxWallpapers.length === 1 &&
     ctxWallpapers[0]?.source !== 'local' &&
@@ -1644,6 +1646,15 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
               className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
             >
               <Archive size={12} /> Backup
+            </button>
+          )}
+
+          {ctxHasBackup && (
+            <button
+              onClick={ctxRemoveBackup}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
+            >
+              <Trash2 size={12} /> Delete backup
             </button>
           )}
 
