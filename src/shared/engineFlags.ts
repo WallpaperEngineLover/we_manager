@@ -11,7 +11,9 @@ export const BUILT_IN_PRESETS: EngineFlagPreset[] = [
       disableMouse: true,
       noAudioProcessing: true,
       fullscreenPause: 'default',
-      automute: true
+      automute: true,
+      volumetrics: 'disabled',
+      shadows: 'disabled'
     }
   },
   {
@@ -26,7 +28,10 @@ export const BUILT_IN_PRESETS: EngineFlagPreset[] = [
       noAudioProcessing: false,
       fullscreenPause: 'default',
       automute: false,
-      silent: false
+      silent: false,
+      postProcessing: 'ultra',
+      volumetrics: 'ultra',
+      shadows: 'ultra'
     }
   },
   {
@@ -55,7 +60,22 @@ export function engineFlagArgs(flags: EngineFlags): string[] {
   if (flags.automute) args.push('--automute')
   if (flags.silent) args.push('--silent')
   if (flags.hdr) args.push('--hdr')
+  // the engine's defaults are left out so they don't count as a different launch
+  if (flags.postProcessing && flags.postProcessing !== 'enabled') args.push('--post-processing', flags.postProcessing)
+  if (flags.volumetrics && flags.volumetrics !== 'medium') args.push('--volumetrics', flags.volumetrics)
+  if (flags.shadows && flags.shadows !== 'medium') args.push('--shadows', flags.shadows)
   return args
+}
+
+/** Drops options the engine doesn't know, together with their values */
+export function filterSupportedArgs(args: string[], supports: (flag: string) => boolean): string[] {
+  const kept: string[] = []
+  let keep = false
+  for (const arg of args) {
+    if (arg.startsWith('--')) keep = supports(arg)
+    if (keep) kept.push(arg)
+  }
+  return kept
 }
 
 export function hasEngineFlags(flags: EngineFlags | undefined): boolean {

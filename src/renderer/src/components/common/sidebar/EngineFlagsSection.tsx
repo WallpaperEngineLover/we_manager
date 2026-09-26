@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Gauge, Loader2 } from 'lucide-react'
 import type { EngineFlags, FullscreenPauseMode, WallpaperMeta } from '@shared/types'
 import { hasEngineFlags } from '@shared/engineFlags'
-import { BOOLEAN_FLAGS, FULLSCREEN_PAUSE_OPTIONS } from '../../../constants/engineFlags'
+import { BOOLEAN_FLAGS, CHOICE_FLAGS, FULLSCREEN_PAUSE_OPTIONS } from '../../../constants/engineFlags'
 
 interface Props {
   flags?: EngineFlags
@@ -108,6 +108,29 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
                 <option value="inherit">Default ({onOff(global[key])})</option>
                 <option value="on">On</option>
                 <option value="off">Off</option>
+              </select>
+            </label>
+          ))}
+
+          {CHOICE_FLAGS.map(({ key, label, hint, fallback, options }) => (
+            <label key={key} className="flex items-center justify-between gap-2 text-xs text-gray-300" title={hint}>
+              <span>{label}</span>
+              <select
+                value={flags[key] ?? 'inherit'}
+                disabled={busy}
+                onChange={(e) =>
+                  setFlag(key, e.target.value === 'inherit' ? undefined : (e.target.value as EngineFlags[typeof key]))
+                }
+                className={selectClass}
+              >
+                <option value="inherit">
+                  Default ({options.find((o) => o.value === (global[key] ?? fallback))?.label.toLowerCase()})
+                </option>
+                {options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
               </select>
             </label>
           ))}

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Plus, Save, Trash2 } from 'lucide-react'
 import type { EngineFlagPreset, EngineFlags, FullscreenPauseMode } from '@shared/types'
-import { BOOLEAN_FLAGS, FULLSCREEN_PAUSE_OPTIONS } from '../../constants/engineFlags'
+import { BOOLEAN_FLAGS, CHOICE_FLAGS, FULLSCREEN_PAUSE_OPTIONS } from '../../constants/engineFlags'
 
 interface Props {
   defaultFps: number | null
@@ -30,6 +30,12 @@ function describePreset(preset: EngineFlagPreset): string {
   const parts = BOOLEAN_FLAGS.filter((f) => preset.flags[f.key]).map((f) => f.label.toLowerCase())
   const pause = FULLSCREEN_PAUSE_OPTIONS.find((o) => o.value === preset.flags.fullscreenPause)
   if (pause && pause.value !== 'default') parts.push(pause.label.toLowerCase())
+  for (const { key, label, fallback, options } of CHOICE_FLAGS) {
+    const value = preset.flags[key]
+    if (value && value !== fallback) {
+      parts.push(`${label.toLowerCase()} ${options.find((o) => o.value === value)?.label.toLowerCase()}`)
+    }
+  }
   if (preset.fps) parts.push(`${preset.fps} FPS`)
   return parts.length ? parts.join(', ') : 'everything on'
 }
@@ -110,6 +116,22 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
             ))}
           </select>
         </label>
+        {CHOICE_FLAGS.map(({ key, label, hint, fallback, options }) => (
+          <label key={key} className="flex items-center gap-3 text-sm text-gray-300" title={hint}>
+            <span>{label}</span>
+            <select
+              value={flags[key] ?? fallback}
+              onChange={(e) => saveFlags({ ...flags, [key]: e.target.value })}
+              className="rounded-lg bg-white/5 px-2 py-1.5 text-sm text-gray-200 outline-none"
+            >
+              {options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
       </div>
 
       <p className="mt-4 text-xs font-medium text-gray-400">Presets</p>

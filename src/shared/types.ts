@@ -128,6 +128,12 @@ export interface WallpaperMeta {
 
 export type FullscreenPauseMode = 'default' | 'off' | 'active-only'
 
+/** Wallpaper Engine's post processing setting, "ultra" turns on HDR rendering for scenes that ask for it */
+export type PostProcessingQuality = 'enabled' | 'ultra'
+
+/** Wallpaper Engine's volumetrics/shadow quality settings */
+export type LightingQuality = 'disabled' | 'low' | 'medium' | 'high' | 'ultra'
+
 /** linux-wallpaperengine flags that only take effect on a fresh launch */
 export interface EngineFlags {
   disableParticles?: boolean
@@ -138,6 +144,9 @@ export interface EngineFlags {
   automute?: boolean
   silent?: boolean
   hdr?: boolean
+  postProcessing?: PostProcessingQuality
+  volumetrics?: LightingQuality
+  shadows?: LightingQuality
 }
 
 export interface EngineFlagPreset {

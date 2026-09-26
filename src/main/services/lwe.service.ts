@@ -36,7 +36,7 @@ import {
   getDisablePuppetAnimation
 } from './config.service'
 import { DEFAULT_LWE_FPS, DEFAULT_LWE_REPO } from '@shared/constants'
-import { engineFlagArgs } from '@shared/engineFlags'
+import { engineFlagArgs, filterSupportedArgs } from '@shared/engineFlags'
 import { imageAdjustmentArgs, imageAdjustmentLines, type ImageAdjustments } from '@shared/imageAdjustments'
 
 export const ALL_SCREENS: ScreenTarget = '*'
@@ -900,7 +900,7 @@ function buildLweArgs(
   if (getDisablePuppetAnimation()) args.push('--render-debug', 'no-puppet-animation')
   const flags = options.engineFlags ?? {}
   if (flags.disableAnimations && supportsDisableAnimations()) args.push('--disable-animations')
-  args.push(...engineFlagArgs(flags).filter(supportsFlag))
+  args.push(...filterSupportedArgs(engineFlagArgs(flags), supportsFlag))
   if (options.scalingMode) args.push('--scaling', options.scalingMode)
   if (options.zoom !== undefined) args.push('--zoom', String(options.zoom))
   if (options.offsetX !== undefined || options.offsetY !== undefined) {
