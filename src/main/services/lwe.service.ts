@@ -50,12 +50,40 @@ const execFileAsync = promisify(execFile)
  * that into the engine's build lets CMake's library search pick up we_manager's own bundled
  * libEGL.so etc. and cache that dead path in CMakeCache.txt once the mount is gone.
  */
+const APPIMAGE_MOUNT = /^\/tmp\/\.mount_[^/]+(\/|$)/
+
+function isAppImagePath(entry: string, appDir: string | undefined): boolean {
+  if (appDir && (entry === appDir || entry.startsWith(`${appDir}/`))) return true
+  return APPIMAGE_MOUNT.test(entry)
+}
+
 export function buildCleanBuildEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env }
+  const appDir = env.APPDIR
   for (const key of ['LD_LIBRARY_PATH', 'LD_PRELOAD', 'APPDIR', 'APPIMAGE', 'OWD', 'ARGV0']) {
     delete env[key]
   }
+  // AppRun also puts the mount on PATH (and XDG_DATA_DIRS etc.). CMake's find_library searches PATH
+  // entries, so it picked Electron's bundled libEGL.so from /tmp/.mount_*, a path gone after a relaunch
+  for (const [key, value] of Object.entries(env)) {
+    if (!value || !value.includes('/')) continue
+    const entries = value.split(':')
+    if (!entries.some((entry) => isAppImagePath(entry, appDir))) continue
+    const kept = entries.filter((entry) => !isAppImagePath(entry, appDir))
+    if (kept.length > 0) env[key] = kept.join(':')
+    else delete env[key]
+  }
   return env
+}
+
+/** A reused build dir whose CMakeCache.txt points into an AppImage mount has to be configured from scratch. */
+function dropPoisonedCmakeCache(cmakeBuild: string): boolean {
+  const cachePath = path.join(cmakeBuild, 'CMakeCache.txt')
+  let cache: string
+  try { cache = fs.readFileSync(cachePath, 'utf8') } catch { return false }
+  if (!/\/tmp\/\.mount_[^/\s]+/.test(cache)) return false
+  fs.rmSync(cachePath, { force: true })
+  return true
 }
 
 const LWE_BINARY = 'linux-wallpaperengine'
@@ -367,6 +395,9 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
 
     const cmakeBuild = path.join(BUILD_DIR, 'build')
     fs.mkdirSync(cmakeBuild, { recursive: true })
+    if (dropPoisonedCmakeCache(cmakeBuild)) {
+      send({ stage: 'building', message: 'Discarding a CMake cache that referenced an AppImage mount...', percentage: 20 })
+    }
 
     const buildEnv = buildCleanBuildEnv()
 

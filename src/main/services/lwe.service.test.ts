@@ -12,7 +12,7 @@ vi.mock('./config.service', () => ({
   getDisablePuppetAnimation: () => false
 }))
 
-const { buildHotswapLines, parseCustomArgs } = await import('./lwe.service')
+const { buildCleanBuildEnv, buildHotswapLines, parseCustomArgs } = await import('./lwe.service')
 
 describe('parseCustomArgs', () => {
   it('splits on whitespace and keeps quoted values together', () => {
@@ -62,5 +62,26 @@ describe('buildHotswapLines', () => {
       'audio-sensitivity=*=2',
       'sound-volume=7=0.5'
     ])
+  })
+})
+
+describe('buildCleanBuildEnv', () => {
+  it('drops AppImage mount entries from path lists and the AppImage variables', () => {
+    const saved = { ...process.env }
+    process.env.APPDIR = '/tmp/.mount_WE-ManAbc123'
+    process.env.PATH = '/tmp/.mount_WE-ManAbc123:/tmp/.mount_WE-ManAbc123/usr/sbin:/usr/local/bin:/usr/bin'
+    process.env.XDG_DATA_DIRS = '/tmp/.mount_WE-ManAbc123/usr/share'
+    process.env.LD_LIBRARY_PATH = '/tmp/.mount_WE-ManAbc123/usr/lib'
+    process.env.HOME = '/home/user'
+    try {
+      const env = buildCleanBuildEnv()
+      expect(env.PATH).toBe('/usr/local/bin:/usr/bin')
+      expect(env.XDG_DATA_DIRS).toBeUndefined()
+      expect(env.LD_LIBRARY_PATH).toBeUndefined()
+      expect(env.APPDIR).toBeUndefined()
+      expect(env.HOME).toBe('/home/user')
+    } finally {
+      process.env = saved
+    }
   })
 })
