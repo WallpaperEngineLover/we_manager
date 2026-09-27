@@ -1,0 +1,105 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  steamworks-vote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install clang for bindgen
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-dev
+
+      - name: Build patched steamworks.js
+        env:
+          STEAMWORKSJS_BUILD: build
+        run: bash patches/steamworks-vote/build.sh "$RUNNER_TEMP/src"
+
+      - name: Pack
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          cd "$RUNNER_TEMP/src/steamworksjs"
+          npm pack --pack-destination "$RUNNER_TEMP/out"
+          cp dist/linux64/steamworksjs.linux-x64-gnu.node dist/linux64/libsteam_api.so "$RUNNER_TEMP/out/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: steamworks-vote
+          path: ${{ runner.temp }}/out/*
+          if-no-files-found: error
+
+  we-manager:
+    needs: steamworks-vote
+    # still build the app when the patch build breaks, it just falls back to unconfirmed votes then
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/download-artifact@v4
+        if: ${{ needs.steamworks-vote.result == 'success' }}
+        with:
+          name: steamworks-vote
+          path: ${{ runner.temp }}/steamworks-vote
+
+      - name: Use patched steamworks.js
+        if: ${{ needs.steamworks-vote.result == 'success' }}
+        run: npm install --no-save "$RUNNER_TEMP"/steamworks-vote/steamworks.js-*.tgz
+
+      - run: npm run build
+
+      - run: npx electron-builder --linux --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: we-manager
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+          if-no-files-found: error
+
+  release:
+    needs: [steamworks-vote, we-manager]
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.we-manager.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check tag matches package.json version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
+            release/*.AppImage release/*.deb $(ls release/steamworks.js-*.tgz 2>/dev/null)

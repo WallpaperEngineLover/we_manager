@@ -282,7 +282,7 @@ export function setLweRepo(url: string | null, branch: string | null): void {
   store.set('lweRepoBranch', branch?.trim() || null)
 }
 
-/** Extra cmake arguments (e.g. "-DENABLE_KDE_EXPERIMENTAL_FEATURES=ON"), appended to the build. */
+/** Extra cmake arguments (e.g. "-DDISABLE_KDE_FEATURES=ON"), appended to the build. */
 export function getLweCmakeArgs(): string | null {
   return store.get('lweCmakeArgs')
 }

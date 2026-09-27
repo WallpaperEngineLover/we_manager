@@ -4,6 +4,7 @@
 #
 # Usage: ./build.sh [path-to-projects-dir]
 # Defaults to ~/projects/private if no argument is given (matches this project's usual layout).
+# STEAMWORKSJS_BUILD=build makes a release build instead of the default debug one.
 set -euo pipefail
 
 PROJECTS_DIR="${1:-$HOME/projects/private}"
@@ -17,7 +18,7 @@ if ! command -v cargo >/dev/null 2>&1; then
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 fi
 # shellcheck disable=SC1091
-source "$HOME/.cargo/env"
+[ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
 cargo --version
 
 echo "==> Cloning steamworks-rs (skipped if already present)"
@@ -58,7 +59,7 @@ fi
 echo "==> Building steamworks.js (this runs cargo + napi, may take a minute)"
 cd "$STEAMWORKSJS"
 npm install
-npm run build:debug
+npm run "${STEAMWORKSJS_BUILD:-build:debug}"
 
 echo ""
 echo "==> Done. Built artifact:"

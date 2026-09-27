@@ -729,13 +729,13 @@ export default function SettingsView() {
             </div>
             <label className="block text-xs text-gray-400">Extra cmake arguments</label>
             <p className="text-xs text-gray-600">
-              Passed to cmake when configuring the build, e.g. -DENABLE_KDE_EXPERIMENTAL_FEATURES=ON
+              Passed to cmake when configuring the build, e.g. -DDISABLE_KDE_FEATURES=ON
             </p>
             <input
               type="text"
               value={lweCmakeArgs}
               onChange={(e) => { setLweCmakeArgs(e.target.value); setRepoSaved(false) }}
-              placeholder="-DENABLE_KDE_EXPERIMENTAL_FEATURES=ON"
+              placeholder="-DDISABLE_KDE_FEATURES=ON"
               className="w-full rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
             />
           </div>

@@ -166,7 +166,7 @@ const DEPS_DEBIAN = [
   'libgl-dev', 'libglew-dev', 'freeglut3-dev', 'libsdl2-dev',
   'liblz4-dev', 'libavcodec-dev', 'libavformat-dev', 'libavutil-dev', 'libswscale-dev',
   'libxxf86vm-dev', 'libglm-dev', 'libglfw3-dev',
-  'libmpv-dev', 'mpv', 'libpulse-dev', 'libpulse0', 'libfftw3-dev',
+  'libmpv-dev', 'mpv', 'libpulse-dev', 'libpulse0', 'libfftw3-dev', 'libdbus-1-dev',
   'libwayland-dev', 'wayland-protocols', 'libegl1-mesa-dev',
   'libgmp-dev', 'patchelf'
 ]
@@ -178,7 +178,7 @@ const DEPS_FEDORA = [
   'mesa-libGL-devel', 'glew-devel', 'freeglut-devel', 'SDL2-devel',
   'lz4-devel', 'ffmpeg-free-devel',
   'libXxf86vm-devel', 'glm-devel', 'glfw-devel',
-  'mpv-devel', 'pulseaudio-libs-devel', 'fftw-devel',
+  'mpv-devel', 'pulseaudio-libs-devel', 'fftw-devel', 'dbus-devel',
   'wayland-devel', 'wayland-protocols-devel', 'mesa-libEGL-devel',
   'gmp-devel', 'patchelf'
 ]
@@ -186,7 +186,7 @@ const DEPS_FEDORA = [
 const DEPS_ARCH = [
   'base-devel', 'cmake', 'pkg-config',
   'glew', 'freeglut', 'sdl2', 'lz4', 'ffmpeg',
-  'glm', 'glfw', 'mpv', 'libpulse', 'fftw',
+  'glm', 'glfw', 'mpv', 'libpulse', 'fftw', 'dbus',
   'libxrandr', 'libxinerama', 'libxcursor', 'libxi', 'libxxf86vm',
   'wayland', 'wayland-protocols', 'mesa',
   'gmp', 'patchelf'
