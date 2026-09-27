@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull, Film, Globe, Shield, Bug } from 'lucide-react'
-import type { LweStatus, LweInstallProgress, LinuxDistro, SteamIdentity } from '../../../../shared/types'
+import type { LweStatus, LwePrebuiltTarget, LweInstallProgress, LinuxDistro, SteamIdentity } from '../../../../shared/types'
 import PerformanceSettings from './PerformanceSettings'
 import DisplaySettings from './DisplaySettings'
 import VoteBorderSettings from './VoteBorderSettings'
@@ -44,6 +44,9 @@ export default function SettingsView() {
   const lweInstalling = lweProgress !== null && !['done', 'error', 'installing-deps'].includes(lweProgress.stage)
   const depsInstalling = lweProgress?.stage === 'installing-deps'
   const [distro, setDistro] = useState<LinuxDistro | null>(null)
+  const [prebuiltTarget, setPrebuiltTarget] = useState<LwePrebuiltTarget | null>(null)
+  const [showSourceBuild, setShowSourceBuild] = useState(false)
+  const sourceBuildVisible = showSourceBuild || prebuiltTarget?.supported === false
   const [uninstalling, setUninstalling] = useState(false)
   const [uninstallMsg, setUninstallMsg] = useState<string | null>(null)
   const [killingLwe, setKillingLwe] = useState(false)
@@ -100,6 +103,7 @@ export default function SettingsView() {
     })
     window.electronAPI.lwe.status().then(setLweStatus)
     window.electronAPI.lwe.detectDistro().then(setDistro)
+    window.electronAPI.lwe.prebuiltTarget().then(setPrebuiltTarget)
     window.electronAPI.desktopIcons.getEnabled().then(setDesktopIconsEnabled)
     window.electronAPI.playlist.getAll().then((all) => setPlaylists(all.map((p) => ({ id: p.id, title: p.title }))))
     window.electronAPI.lwe.listScreens().then(setScreens)
@@ -174,6 +178,19 @@ export default function SettingsView() {
       await window.electronAPI.config.setLweRepo(lweRepoUrl.trim() || null, lweRepoBranch.trim() || null)
       await window.electronAPI.config.setLweCmakeArgs(lweCmakeArgs.trim() || null)
       await window.electronAPI.lwe.install()
+    } catch (err) {
+      setLweProgress({
+        stage: 'error',
+        message: `Installation failed: ${(err as Error).message}`,
+        percentage: 0
+      })
+    }
+  }
+
+  async function handleInstallPrebuilt() {
+    setLweProgress({ stage: 'downloading', message: 'Starting download...', percentage: 0 })
+    try {
+      await window.electronAPI.lwe.installPrebuilt()
     } catch (err) {
       setLweProgress({
         stage: 'error',
@@ -698,95 +715,128 @@ export default function SettingsView() {
             scenes directly on your desktop.
           </p>
 
-          <div className="mt-3 space-y-2">
-            <label className="block text-xs text-gray-400">Source repository</label>
-            <p className="text-xs text-gray-600">
-              Build from a custom fork instead of the official repo. Accepts a git URL or a
-              local path. Leave empty to use the official repository.
-            </p>
-            <input
-              type="text"
-              value={lweRepoUrl}
-              onChange={(e) => { setLweRepoUrl(e.target.value); setRepoSaved(false) }}
-              placeholder={defaultLweRepo}
-              className="w-full rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-            <div className="flex gap-2 items-center">
-              <input
-                type="text"
-                value={lweRepoBranch}
-                onChange={(e) => { setLweRepoBranch(e.target.value); setRepoSaved(false) }}
-                placeholder="branch (default)"
-                className="w-44 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-              <button
-                onClick={handleSaveRepo}
-                className="flex items-center gap-2 rounded-lg bg-white/5 px-4 py-2 text-sm text-gray-300 hover:bg-white/10"
-              >
-                <Save size={14} />
-                {repoSaved ? 'Saved!' : 'Save'}
-              </button>
-            </div>
-            <label className="block text-xs text-gray-400">Extra cmake arguments</label>
-            <p className="text-xs text-gray-600">
-              Passed to cmake when configuring the build, e.g. -DDISABLE_KDE_FEATURES=ON
-            </p>
-            <input
-              type="text"
-              value={lweCmakeArgs}
-              onChange={(e) => { setLweCmakeArgs(e.target.value); setRepoSaved(false) }}
-              placeholder="-DDISABLE_KDE_FEATURES=ON"
-              className="w-full rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
-            />
-          </div>
-
           {lweStatus === null ? (
             <p className="mt-3 text-xs text-gray-500">Checking...</p>
-          ) : lweStatus.installed ? (
+          ) : (
             <div className="mt-3 space-y-3">
-              <div className="flex items-center gap-2 text-sm text-green-400">
-                <CheckCircle size={16} />
-                Installed
-              </div>
-              {lweStatus.path && (
-                <p className="text-xs text-gray-500">Path: {lweStatus.path}</p>
+              {lweStatus.installed ? (
+                <>
+                  <div className="flex items-center gap-2 text-sm text-green-400">
+                    <CheckCircle size={16} />
+                    Installed{lweStatus.version ? ` (${lweStatus.version})` : ''}
+                  </div>
+                  {lweStatus.path && (
+                    <p className="text-xs text-gray-500">Path: {lweStatus.path}</p>
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-yellow-400">
+                  <XCircle size={16} />
+                  Not installed
+                </div>
               )}
+
+              {prebuiltTarget?.supported ? (
+                <p className="text-xs text-gray-500">Prebuilt build: {prebuiltTarget.label}</p>
+              ) : prebuiltTarget && (
+                <p className="text-xs text-yellow-500/80">{prebuiltTarget.reason}</p>
+              )}
+
               <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={handleInstallLwe}
-                  disabled={isBusy}
-                  className="flex items-center gap-2 rounded-lg bg-white/5 px-4 py-2 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
-                >
-                  {lweInstalling ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Download size={14} />
-                  )}
-                  {lweInstalling ? 'Building...' : 'Rebuild & install'}
-                </button>
-                <button
-                  onClick={handleUninstallLwe}
-                  disabled={isBusy}
-                  className="flex items-center gap-2 rounded-lg bg-red-600/20 px-4 py-2 text-sm text-red-400 hover:bg-red-600/30 disabled:opacity-50"
-                >
-                  {uninstalling ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={14} />
-                  )}
-                  {uninstalling ? 'Uninstalling...' : 'Uninstall'}
-                </button>
+                {prebuiltTarget?.supported && (
+                  <button
+                    onClick={handleInstallPrebuilt}
+                    disabled={isBusy}
+                    className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                  >
+                    {lweInstalling ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Download size={14} />
+                    )}
+                    {lweInstalling
+                      ? 'Installing...'
+                      : !lweStatus.installed
+                        ? 'Download & install'
+                        : lweStatus.version
+                          ? 'Update'
+                          : 'Switch to prebuilt build'}
+                  </button>
+                )}
+                {lweStatus.installed && (
+                  <button
+                    onClick={handleUninstallLwe}
+                    disabled={isBusy}
+                    className="flex items-center gap-2 rounded-lg bg-red-600/20 px-4 py-2 text-sm text-red-400 hover:bg-red-600/30 disabled:opacity-50"
+                  >
+                    {uninstalling ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={14} />
+                    )}
+                    {uninstalling ? 'Uninstalling...' : 'Uninstall'}
+                  </button>
+                )}
               </div>
+              {prebuiltTarget?.supported && !lweStatus.installed && (
+                <p className="text-xs text-gray-600">
+                  Downloads the latest release from GitHub. Missing system libraries are
+                  installed through your package manager, which asks for your password.
+                </p>
+              )}
               {uninstallMsg && (
                 <p className="text-xs text-gray-400">{uninstallMsg}</p>
               )}
             </div>
-          ) : (
-            <div className="mt-3 space-y-3">
-              <div className="flex items-center gap-2 text-sm text-yellow-400">
-                <XCircle size={16} />
-                Not installed
+          )}
+
+          <button
+            onClick={() => setShowSourceBuild(!sourceBuildVisible)}
+            className="mt-4 text-xs text-gray-400 hover:text-gray-200"
+          >
+            {sourceBuildVisible ? '▾' : '▸'} Build from source
+          </button>
+
+          {sourceBuildVisible && (
+            <div className="mt-2 space-y-2 rounded-lg bg-white/[0.02] p-3">
+              <label className="block text-xs text-gray-400">Source repository</label>
+              <p className="text-xs text-gray-600">
+                A git URL or a local path. Leave empty to use the default repository.
+              </p>
+              <input
+                type="text"
+                value={lweRepoUrl}
+                onChange={(e) => { setLweRepoUrl(e.target.value); setRepoSaved(false) }}
+                placeholder={defaultLweRepo}
+                className="w-full rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={lweRepoBranch}
+                  onChange={(e) => { setLweRepoBranch(e.target.value); setRepoSaved(false) }}
+                  placeholder="branch (default)"
+                  className="w-44 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <button
+                  onClick={handleSaveRepo}
+                  className="flex items-center gap-2 rounded-lg bg-white/5 px-4 py-2 text-sm text-gray-300 hover:bg-white/10"
+                >
+                  <Save size={14} />
+                  {repoSaved ? 'Saved!' : 'Save'}
+                </button>
               </div>
+              <label className="block text-xs text-gray-400">Extra cmake arguments</label>
+              <p className="text-xs text-gray-600">
+                Passed to cmake when configuring the build, e.g. -DDISABLE_KDE_FEATURES=ON
+              </p>
+              <input
+                type="text"
+                value={lweCmakeArgs}
+                onChange={(e) => { setLweCmakeArgs(e.target.value); setRepoSaved(false) }}
+                placeholder="-DDISABLE_KDE_FEATURES=ON"
+                className="w-full rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+              />
 
               {distro && distro !== 'unknown' && (
                 <p className="text-xs text-gray-500">
@@ -794,7 +844,7 @@ export default function SettingsView() {
                 </p>
               )}
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 pt-1">
                 <button
                   onClick={handleInstallDeps}
                   disabled={isBusy || !distro || distro === 'unknown'}
@@ -816,26 +866,26 @@ export default function SettingsView() {
                 <button
                   onClick={handleInstallLwe}
                   disabled={isBusy}
-                  className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                  className="flex items-center gap-2 rounded-lg bg-white/5 px-4 py-2 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
                 >
                   {lweInstalling ? (
                     <Loader2 size={14} className="animate-spin" />
                   ) : (
                     <Download size={14} />
                   )}
-                  {lweInstalling ? 'Building...' : 'Build & install'}
+                  {lweInstalling ? 'Building...' : lweStatus?.installed ? 'Rebuild & install' : 'Build & install'}
                 </button>
               </div>
 
               <p className="text-xs text-gray-600">
-                First install build dependencies for your distro, then build & install
-                linux-wallpaperengine from GitHub. Both steps require sudo.
+                Install the build dependencies for your distro first, then build & install.
+                Both steps require sudo. Installing from source replaces a downloaded prebuilt build.
               </p>
 
               {distro === 'unknown' && (
                 <p className="text-xs text-yellow-500/80">
                   Could not detect your distro. Please install build dependencies
-                  manually (cmake, OpenGL, SDL2, FFmpeg, MPV, GLFW, GLEW, FFTW, PulseAudio dev packages).
+                  manually (cmake, OpenGL, SDL2, FFmpeg, MPV, GLFW, GLEW, FFTW, PulseAudio, D-Bus dev packages).
                 </p>
               )}
             </div>

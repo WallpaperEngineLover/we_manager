@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, isLweRunning, killAllLweProcesses, listLweObjects, hotswapLweSettings, listLweProperties, listLweAudioObjects, listLweEffects, type HotswapOptions } from '../services/lwe.service'
+import { getPrebuiltTarget, installLwePrebuilt } from '../services/lwe-prebuilt.service'
 import { stopDisplay } from '../services/display.service'
 import { stopPlaylist } from '../services/playlist-player.service'
 import type { ScreenTarget } from '@shared/types'
@@ -24,6 +25,14 @@ export function registerLweHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(IpcChannels.LWE_INSTALL, async () => {
     await installLwe(win)
+    invalidateEnvCache()
+    return getLweStatus()
+  })
+
+  ipcMain.handle(IpcChannels.LWE_PREBUILT_TARGET, () => getPrebuiltTarget())
+
+  ipcMain.handle(IpcChannels.LWE_INSTALL_PREBUILT, async () => {
+    await installLwePrebuilt(win)
     invalidateEnvCache()
     return getLweStatus()
   })

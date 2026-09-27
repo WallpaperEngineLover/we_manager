@@ -13,6 +13,7 @@ import type {
   DownloadProgressEvent,
   WallpaperEnvironment,
   LweStatus,
+  LwePrebuiltTarget,
   LweInstallProgress,
   LinuxDistro,
   LweSceneObject,
@@ -288,6 +289,10 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LWE_INSTALL_DEPS),
     install: (): Promise<LweStatus> =>
       ipcRenderer.invoke(IpcChannels.LWE_INSTALL),
+    prebuiltTarget: (): Promise<LwePrebuiltTarget> =>
+      ipcRenderer.invoke(IpcChannels.LWE_PREBUILT_TARGET),
+    installPrebuilt: (): Promise<LweStatus> =>
+      ipcRenderer.invoke(IpcChannels.LWE_INSTALL_PREBUILT),
     uninstall: (): Promise<{ ok: boolean; message: string }> =>
       ipcRenderer.invoke(IpcChannels.LWE_UNINSTALL),
     launch: (wallpaperPath: string, options?: { screen?: ScreenTarget; fps?: number }): Promise<{ ok: boolean; running: boolean }> =>

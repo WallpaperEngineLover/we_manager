@@ -20,10 +20,12 @@ npm run dist     # package with electron-builder
 
 ## Notes
 
-- Settings can build and install linux-wallpaperengine from source (needs
-  sudo for the package manager and `make install`). A custom repository (git
-  URL or local path) and branch can be set there to build from a fork instead
-  of the official repo.
+- Settings downloads a prebuilt linux-wallpaperengine from the
+  [linux-wallpaperengine-kde releases](https://github.com/WallpaperEngineLover/linux-wallpaperengine-kde/releases)
+  on Ubuntu 24.04, Fedora 44 and Arch, into `~/.local/share/linux-wallpaperengine-kde`
+  (sudo only to install missing system libraries). Elsewhere it builds and
+  installs from source (needs sudo for the package manager and `make install`),
+  from a configurable repository (git URL or local path) and branch.
 - The optional desktop icons overlay
   (`src/main/services/desktop-icons-overlay.py`) draws KDE Folder View icons
   on a transparent layer-shell surface above the wallpaper. It needs python3,

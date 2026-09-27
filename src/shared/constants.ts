@@ -5,7 +5,9 @@ export const WE_APP_ID = 431960
 // that needs to be closed on logout, unlike WE_APP_ID above.
 export const STANDALONE_APP_ID = 480
 
-export const DEFAULT_LWE_REPO = 'https://github.com/Almamu/linux-wallpaperengine.git'
+export const DEFAULT_LWE_REPO = 'https://github.com/WallpaperEngineLover/linux-wallpaperengine-kde.git'
+/** GitHub owner/repo whose releases carry the prebuilt engine archives */
+export const LWE_RELEASE_REPO = 'WallpaperEngineLover/linux-wallpaperengine-kde'
 
 export const RECOMMENDED_WEB_FPS = 60
 

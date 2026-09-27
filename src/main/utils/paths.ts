@@ -49,6 +49,12 @@ export function getPreviewCachePath(): string {
   return path.join(getDataPath(), 'preview-cache')
 }
 
+/** Where a downloaded prebuilt engine lives, outside the app's own data so the AppImage and .deb share it */
+export function getLwePrebuiltDir(): string {
+  const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share')
+  return path.join(dataHome, 'linux-wallpaperengine-kde')
+}
+
 export function getLweManifestPath(): string {
   return path.join(getDataPath(), 'lwe-install-manifest.json')
 }

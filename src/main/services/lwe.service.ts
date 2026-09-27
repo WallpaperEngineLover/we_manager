@@ -25,7 +25,7 @@ import {
   getWaylandDisplay,
   getXdgRuntimeDir
 } from '../utils/platform'
-import { getWorkshopPath, getLweManifestPath } from '../utils/paths'
+import { getWorkshopPath, getLweManifestPath, getLwePrebuiltDir } from '../utils/paths'
 import {
   getLweRepoUrl,
   getLweRepoBranch,
@@ -50,7 +50,7 @@ const execFileAsync = promisify(execFile)
  * that into the engine's build lets CMake's library search pick up we_manager's own bundled
  * libEGL.so etc. and cache that dead path in CMakeCache.txt once the mount is gone.
  */
-function buildCleanBuildEnv(): NodeJS.ProcessEnv {
+export function buildCleanBuildEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env }
   for (const key of ['LD_LIBRARY_PATH', 'LD_PRELOAD', 'APPDIR', 'APPIMAGE', 'OWD', 'ARGV0']) {
     delete env[key]
@@ -66,6 +66,8 @@ const LWE_SEARCH_PATHS = [
   // local fork builds take precedence over system installs
   path.join(os.homedir(), 'projects', 'private', 'linux-wallpaperengine', 'build', 'output', 'linux-wallpaperengine'),
   path.join(os.homedir(), 'projects', 'linux-wallpaperengine', 'build', 'output', 'linux-wallpaperengine'),
+  // a downloaded release wins over a source install, installing from source removes it again
+  path.join(getLwePrebuiltDir(), 'linux-wallpaperengine'),
   '/usr/local/bin/linux-wallpaperengine',
   '/usr/local/linux-wallpaperengine',
   '/usr/bin/linux-wallpaperengine',
@@ -144,9 +146,36 @@ function findLweBinary(): string | undefined {
   return whichCommand(LWE_BINARY)
 }
 
+/** Tag of the downloaded release, written next to it by the prebuilt install */
+export function readPrebuiltRelease(): { tag: string; asset: string } | undefined {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(getLwePrebuiltDir(), '.release'), 'utf8'))
+  } catch {
+    return undefined
+  }
+}
+
+function isPrebuiltPath(p: string): boolean {
+  return p.startsWith(getLwePrebuiltDir() + path.sep)
+}
+
 export function getLweStatus(): LweStatus {
   const found = findLweBinary()
-  return found ? { installed: true, path: found } : { installed: false }
+  if (!found) return { installed: false }
+  const version = isPrebuiltPath(found) ? readPrebuiltRelease()?.tag : undefined
+  return version ? { installed: true, path: found, version } : { installed: true, path: found }
+}
+
+/** Forget everything detected about the previous binary after it was installed, replaced or removed */
+export function resetLweDetection(): void {
+  invalidateCommandCache(LWE_BINARY)
+  invalidateObjectFlagsSupport()
+  invalidateAudioSensitivitySupport()
+  invalidateSoundVolumeSupport()
+  invalidateEffectFlagsSupport()
+  invalidateDisableAnimationsSupport()
+  invalidateExpandCanvasSupport()
+  invalidateHelpText()
 }
 
 export function detectDistro(): LinuxDistro {
@@ -161,32 +190,32 @@ export function detectDistro(): LinuxDistro {
 
 // Aligned with https://github.com/Almamu/linux-wallpaperengine (README + Wayland + FBOProvider gmpxx)
 const DEPS_DEBIAN = [
-  'build-essential', 'cmake', 'pkg-config',
+  'git', 'build-essential', 'cmake', 'pkg-config',
   'libxrandr-dev', 'libxinerama-dev', 'libxcursor-dev', 'libxi-dev',
   'libgl-dev', 'libglew-dev', 'freeglut3-dev', 'libsdl2-dev',
   'liblz4-dev', 'libavcodec-dev', 'libavformat-dev', 'libavutil-dev', 'libswscale-dev',
   'libxxf86vm-dev', 'libglm-dev', 'libglfw3-dev',
-  'libmpv-dev', 'mpv', 'libpulse-dev', 'libpulse0', 'libfftw3-dev', 'libdbus-1-dev',
+  'libmpv-dev', 'mpv', 'libpulse-dev', 'libpulse0', 'libfftw3-dev', 'libfreetype-dev', 'libharfbuzz-dev', 'libdbus-1-dev',
   'libwayland-dev', 'wayland-protocols', 'libegl1-mesa-dev',
   'libgmp-dev', 'patchelf'
 ]
 
 // Fedora/Nobara: 'ffmpeg' conflicts with ffmpeg-free, so only ffmpeg-free-devel is listed
 const DEPS_FEDORA = [
-  'gcc', 'g++', 'cmake', 'pkg-config',
+  'git', 'gcc', 'g++', 'cmake', 'pkg-config',
   'libXrandr-devel', 'libXinerama-devel', 'libXcursor-devel', 'libXi-devel',
   'mesa-libGL-devel', 'glew-devel', 'freeglut-devel', 'SDL2-devel',
   'lz4-devel', 'ffmpeg-free-devel',
   'libXxf86vm-devel', 'glm-devel', 'glfw-devel',
-  'mpv-devel', 'pulseaudio-libs-devel', 'fftw-devel', 'dbus-devel',
+  'mpv-devel', 'pulseaudio-libs-devel', 'fftw-devel', 'freetype-devel', 'harfbuzz-devel', 'dbus-devel',
   'wayland-devel', 'wayland-protocols-devel', 'mesa-libEGL-devel',
   'gmp-devel', 'patchelf'
 ]
 
 const DEPS_ARCH = [
-  'base-devel', 'cmake', 'pkg-config',
+  'git', 'base-devel', 'cmake', 'pkg-config',
   'glew', 'freeglut', 'sdl2', 'lz4', 'ffmpeg',
-  'glm', 'glfw', 'mpv', 'libpulse', 'fftw', 'dbus',
+  'glm', 'glfw', 'mpv', 'libpulse', 'fftw', 'freetype2', 'harfbuzz', 'dbus',
   'libxrandr', 'libxinerama', 'libxcursor', 'libxi', 'libxxf86vm',
   'wayland', 'wayland-protocols', 'mesa',
   'gmp', 'patchelf'
@@ -419,15 +448,9 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       }
     }
 
-    // Invalidate cache so next status check re-detects
-    invalidateCommandCache(LWE_BINARY)
-    invalidateObjectFlagsSupport()
-    invalidateAudioSensitivitySupport()
-    invalidateSoundVolumeSupport()
-    invalidateEffectFlagsSupport()
-    invalidateDisableAnimationsSupport()
-    invalidateExpandCanvasSupport()
-    invalidateHelpText()
+    // a downloaded release would otherwise keep shadowing what was just built
+    fs.rmSync(getLwePrebuiltDir(), { recursive: true, force: true })
+    resetLweDetection()
 
     const status = getLweStatus()
     if (status.installed) {
@@ -492,6 +515,16 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
 
   await stopLwe()
 
+  if (isPrebuiltPath(status.path)) {
+    try {
+      fs.rmSync(getLwePrebuiltDir(), { recursive: true, force: true })
+    } catch (err) {
+      return { ok: false, message: `Uninstall failed: ${(err as Error).message}` }
+    }
+    resetLweDetection()
+    return { ok: true, message: 'linux-wallpaperengine has been uninstalled.' }
+  }
+
   const elevate = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
 
   const manifest = readLweManifest()
@@ -539,14 +572,7 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
 
     try { fs.rmSync(getLweManifestPath(), { force: true }) } catch { /* ignore */ }
 
-    invalidateCommandCache(LWE_BINARY)
-    invalidateObjectFlagsSupport()
-    invalidateAudioSensitivitySupport()
-    invalidateSoundVolumeSupport()
-    invalidateEffectFlagsSupport()
-    invalidateDisableAnimationsSupport()
-    invalidateExpandCanvasSupport()
-    invalidateHelpText()
+    resetLweDetection()
 
     return { ok: true, message: 'linux-wallpaperengine has been uninstalled.' }
   } catch (err) {

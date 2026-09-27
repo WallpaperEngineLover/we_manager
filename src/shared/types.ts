@@ -366,8 +366,17 @@ export interface LweStatus {
 
 export type LinuxDistro = 'fedora' | 'arch' | 'debian' | 'unknown'
 
+/** Which prebuilt release archive fits this machine, or why none does */
+export interface LwePrebuiltTarget {
+  supported: boolean
+  /** Release asset name, e.g. linux-wallpaperengine-kde-fedora-44-x86_64.tar.gz */
+  asset?: string
+  label?: string
+  reason?: string
+}
+
 export interface LweInstallProgress {
-  stage: 'installing-deps' | 'cloning' | 'building' | 'installing' | 'done' | 'error'
+  stage: 'installing-deps' | 'downloading' | 'cloning' | 'building' | 'installing' | 'done' | 'error'
   message: string
   percentage: number
 }
