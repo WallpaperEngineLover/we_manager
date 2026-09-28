@@ -29,7 +29,10 @@ import {
   WE_ASSET_TYPES,
   WE_AGE_RATINGS,
   WE_RESOLUTION_GROUPS,
-  WE_GENRES
+  WE_GENRES,
+  ALL_RESOLUTION_TAGS,
+  setGroupSelected,
+  migrateResolutionSelection
 } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
 import { useVoteBorders } from '../../hooks/useVoteBorders'
@@ -58,7 +61,6 @@ interface WorkshopFilterState {
   sizeFilterMb: number
 }
 
-const ALL_RESOLUTIONS = WE_RESOLUTION_GROUPS.flatMap((g) => g.items.map((i) => i.tag))
 const ALL_AGE_RATINGS = WE_AGE_RATINGS.map((i) => i.tag)
 const ALL_GENRES = WE_GENRES.map((i) => i.tag)
 const ALL_TYPES = WE_TYPES.map((i) => i.tag)
@@ -70,7 +72,7 @@ const DEFAULT_STATE: WorkshopFilterState = {
   types: ['Scene', 'Video', 'Web'],
   assetTypes: [],
   ageRatings: ALL_AGE_RATINGS,
-  resolutions: ALL_RESOLUTIONS,
+  resolutions: ALL_RESOLUTION_TAGS,
   genres: ALL_GENRES,
   notDownloaded: false,
   notLiked: false,
@@ -84,7 +86,9 @@ function loadFilters(): WorkshopFilterState {
     if (!raw) return DEFAULT_STATE
     const parsed = JSON.parse(raw)
     if (parsed._v !== STORAGE_VERSION) return DEFAULT_STATE
-    return { ...DEFAULT_STATE, ...parsed }
+    const state = { ...DEFAULT_STATE, ...parsed }
+    if ('resolutions' in parsed) state.resolutions = migrateResolutionSelection(parsed.resolutions)
+    return state
   } catch {
     return DEFAULT_STATE
   }
@@ -247,7 +251,7 @@ export default function WorkshopBrowser({
   const effectiveTypes = filters.types.length === ALL_TYPES.length ? [] : filters.types
   const effectiveAssetTypes = filters.assetTypes.length === ALL_ASSET_TYPES.length ? [] : filters.assetTypes
   const effectiveAgeRatings = filters.ageRatings.length === ALL_AGE_RATINGS.length ? [] : filters.ageRatings
-  const effectiveResolutions = filters.resolutions.length === ALL_RESOLUTIONS.length ? [] : filters.resolutions
+  const effectiveResolutions = filters.resolutions.length === ALL_RESOLUTION_TAGS.length ? [] : filters.resolutions
   const effectiveGenres = filters.genres.length === ALL_GENRES.length ? [] : filters.genres
 
   // AND mode: all selected tags passed to Steam as requiredTags (every tag must match)
@@ -835,11 +839,10 @@ export default function WorkshopBrowser({
               title="Resolution"
               defaultOpen={false}
               activeCount={effectiveResolutions.length}
-              onAll={() => setFilters((p) => ({ ...p, resolutions: ALL_RESOLUTIONS }))}
+              onAll={() => setFilters((p) => ({ ...p, resolutions: ALL_RESOLUTION_TAGS }))}
               onNone={() => setFilters((p) => ({ ...p, resolutions: [] }))}
             >
               {WE_RESOLUTION_GROUPS.map((group) => {
-                const groupTags = group.items.map((i) => i.tag)
                 return (
                   <div key={group.label} className="mt-2">
                     <div className="flex items-center justify-between mb-0.5 pl-0.5">
@@ -847,10 +850,7 @@ export default function WorkshopBrowser({
                       <div className="flex gap-1.5">
                         <button
                           onClick={() =>
-                            setFilters((p) => ({
-                              ...p,
-                              resolutions: [...new Set([...p.resolutions, ...groupTags])]
-                            }))
+                            setFilters((p) => ({ ...p, resolutions: setGroupSelected(p.resolutions, group, true) }))
                           }
                           className="text-[10px] text-gray-600 hover:text-gray-400"
                         >
@@ -858,10 +858,7 @@ export default function WorkshopBrowser({
                         </button>
                         <button
                           onClick={() =>
-                            setFilters((p) => ({
-                              ...p,
-                              resolutions: p.resolutions.filter((r) => !groupTags.includes(r))
-                            }))
+                            setFilters((p) => ({ ...p, resolutions: setGroupSelected(p.resolutions, group, false) }))
                           }
                           className="text-[10px] text-gray-600 hover:text-gray-400"
                         >

@@ -40,7 +40,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { openWorkshopPage, openProfilePage, isWorkshopId } from '../../utils/steam'
-import { WE_TYPES, WE_AGE_RATINGS, WE_RESOLUTION_GROUPS } from '../../constants/weFilters'
+import { WE_TYPES, WE_AGE_RATINGS, canonicalResolutionTag, resolutionsFromTags } from '../../constants/weFilters'
 import { formatFileSize } from '../../utils/format'
 import { useToast } from './Toast'
 import ScreenSelect from './ScreenSelect'
@@ -72,7 +72,6 @@ const SCALING_MODE_OPTIONS: { value: ScalingMode; label: string }[] = [
 
 const TYPE_TAGS = new Set(WE_TYPES.map((i) => i.tag))
 const AGE_TAGS = new Set(WE_AGE_RATINGS.map((i) => i.tag))
-const RESOLUTION_TAGS = new Set(WE_RESOLUTION_GROUPS.flatMap((g) => g.items.map((i) => i.tag)))
 
 function StarRating({ upvotes, downvotes }: { upvotes: number; downvotes: number }) {
   const total = upvotes + downvotes
@@ -854,9 +853,9 @@ export default function DetailSidebar({
 
   const typeTag = tags.find((t) => TYPE_TAGS.has(t))
   const ageTag = tags.find((t) => AGE_TAGS.has(t))
-  const resolutionTags = tags.filter((t) => RESOLUTION_TAGS.has(t))
+  const resolutionTags = resolutionsFromTags(tags)
   const genreTags = tags.filter(
-    (t) => t !== typeTag && t !== ageTag && !resolutionTags.includes(t)
+    (t) => t !== typeTag && t !== ageTag && !canonicalResolutionTag(t)
   )
   // Prefer the real on-disk size for an already-downloaded item over Steam's reported upload
   // size (item.fileSize) - they can differ once extracted, and the local number is exact.

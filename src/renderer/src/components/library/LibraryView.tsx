@@ -33,7 +33,14 @@ import DetailSidebar from '../common/DetailSidebar'
 import { useToast } from '../common/Toast'
 import type { LibraryFilters, WallpaperFolder, LweStatus, ScreenTarget } from '@shared/types'
 import clsx from 'clsx'
-import { WE_TYPES, WE_LIBRARY_AGE_RATINGS, WE_RESOLUTION_GROUPS } from '../../constants/weFilters'
+import {
+  WE_TYPES,
+  WE_LIBRARY_AGE_RATINGS,
+  WE_RESOLUTION_GROUPS,
+  isGroupSelected,
+  setGroupSelected,
+  migrateResolutionSelection
+} from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
 import { useVoteBorders } from '../../hooks/useVoteBorders'
 import { useSelectableGrid } from '../../hooks/useSelectableGrid'
@@ -88,7 +95,9 @@ const SOURCE_MAP: Record<string, string> = {
 function loadFilters(): LibraryFilterState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? { ...DEFAULT_STATE, ...JSON.parse(raw) } : DEFAULT_STATE
+    if (!raw) return DEFAULT_STATE
+    const parsed = JSON.parse(raw)
+    return { ...DEFAULT_STATE, ...parsed, resolutions: migrateResolutionSelection(parsed.resolutions) }
   } catch {
     return DEFAULT_STATE
   }
@@ -249,21 +258,14 @@ function ResolutionDropdown({
         <div className="absolute right-0 top-full z-50 mt-1 w-60 rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl">
           <div className="max-h-80 overflow-y-auto">
             {WE_RESOLUTION_GROUPS.map((group) => {
-              const groupTags = group.items.map((i) => i.tag)
-              const allChecked = groupTags.every((t) => selected.includes(t))
+              const allChecked = isGroupSelected(selected, group)
               return (
                 <div key={group.label}>
                   <label className="flex cursor-pointer items-center gap-2 px-3 pb-1 pt-2 hover:bg-white/5">
                     <input
                       type="checkbox"
                       checked={allChecked}
-                      onChange={() =>
-                        onChange(
-                          allChecked
-                            ? selected.filter((t) => !groupTags.includes(t))
-                            : [...new Set([...selected, ...groupTags])]
-                        )
-                      }
+                      onChange={() => onChange(setGroupSelected(selected, group, !allChecked))}
                       className="accent-indigo-500"
                     />
                     <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">

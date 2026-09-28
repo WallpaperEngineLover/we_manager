@@ -8,17 +8,24 @@ import { setDependencyInstaller } from '../services/dependency.service'
 
 function startDownloadPoll(win: BrowserWindow, itemId: string): void {
   const idBig = BigInt(itemId)
-  const pollInterval = setInterval(() => {
+  let polling = false
+  const pollInterval = setInterval(async () => {
     if (win.isDestroyed()) {
       clearInterval(pollInterval)
       return
     }
-    const info = steam.getDownloadInfo(idBig)
-    if (info) {
-      win.webContents.send(IpcChannels.EVENT_DOWNLOAD_PROGRESS, info)
-      return
+    if (polling || !steam.isSteamAllowed()) return
+    polling = true
+    try {
+      const info = await steam.getDownloadInfo(idBig)
+      if (info) {
+        if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_DOWNLOAD_PROGRESS, info)
+        return
+      }
+      if (await steam.isItemDownloading(idBig)) return // queued/pending, no progress numbers yet
+    } finally {
+      polling = false
     }
-    if (steam.isItemDownloading(idBig)) return // queued/pending, no progress numbers yet
 
     clearInterval(pollInterval)
     library.importWallpaperById(itemId).then((meta) => {
@@ -38,7 +45,7 @@ function startDownloadPoll(win: BrowserWindow, itemId: string): void {
 export function registerSteamHandlers(win: BrowserWindow): void {
   setDependencyInstaller(async (itemId) => {
     await steam.subscribeToItem(BigInt(itemId))
-    steam.downloadItem(BigInt(itemId))
+    await steam.downloadItem(BigInt(itemId))
     startDownloadPoll(win, itemId)
   })
 
@@ -50,7 +57,7 @@ export function registerSteamHandlers(win: BrowserWindow): void {
     await steam.subscribeToItem(BigInt(itemId))
     // Steam doesn't always actually start fetching content just because we subscribed - see
     // downloadItem()'s comment. This is the reliable kick.
-    steam.downloadItem(BigInt(itemId))
+    await steam.downloadItem(BigInt(itemId))
     startDownloadPoll(win, itemId)
     return { ok: true }
   })
@@ -104,8 +111,8 @@ export function registerSteamHandlers(win: BrowserWindow): void {
     return { ok: true, confirmed }
   })
 
-  ipcMain.handle(IpcChannels.STEAM_OPEN_WORKSHOP, (_e, itemId: string) => {
-    steam.openWorkshopItemOverlay(BigInt(itemId))
+  ipcMain.handle(IpcChannels.STEAM_OPEN_WORKSHOP, async (_e, itemId: string) => {
+    await steam.openWorkshopItemOverlay(BigInt(itemId))
     return { ok: true }
   })
 

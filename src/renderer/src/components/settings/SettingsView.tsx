@@ -1115,7 +1115,10 @@ export default function SettingsView() {
             Steam Integration
           </label>
           <p className="mt-1 text-xs text-gray-600">
-            How WE Manager identifies itself to Steam. Takes effect after restarting WE Manager.
+            How WE Manager identifies itself to Steam. Like Wallpaper Engine itself, it is only
+            connected while its window is open: hiding it to the tray or minimizing it
+            disconnects, so it no longer shows up as a running game or blocks Steam game
+            recording. Takes effect the next time the window is opened.
           </p>
 
           <div className="mt-3 flex rounded-lg overflow-hidden text-sm w-fit">
@@ -1143,21 +1146,18 @@ export default function SettingsView() {
             </button>
           </div>
           {steamIdentitySaved && (
-            <p className="mt-2 text-xs text-green-400">Saved - restart WE Manager for this to take effect.</p>
+            <p className="mt-2 text-xs text-green-400">Saved - used the next time the window is opened.</p>
           )}
           <p className="mt-2 text-xs text-gray-600">
             {steamIdentity === 'wallpaper-engine' ? (
               <>
-                Registers this process with Steam under Wallpaper Engine's own app id. Steam
-                considers WE Manager to be Wallpaper Engine itself, so it will offer to close it
-                when you log out or shut down Steam - the same as the official Windows app would
-                if you ran it standalone.
+                Connects to Steam under Wallpaper Engine's own app id. While connected, Steam
+                considers WE Manager to be Wallpaper Engine itself and shows you as playing it.
               </>
             ) : (
               <>
-                Registers this process under a neutral, unrelated Steam app id instead, so Steam
-                doesn't associate WE Manager with Wallpaper Engine and won't try to close it on
-                logout. Workshop browsing, subscribing and voting still target Wallpaper Engine's
+                Connects under a neutral, unrelated Steam app id instead, so Steam doesn't
+                associate WE Manager with Wallpaper Engine. Workshop browsing, subscribing and voting still target Wallpaper Engine's
                 own workshop either way. This mode is less tested than the default - if
                 subscribing or voting misbehaves, switch back.
               </>

@@ -147,10 +147,7 @@ export function setVoteBorders(enabled: boolean): void {
   store.set('voteBorders', enabled)
 }
 
-/** How this process identifies itself to Steam - 'wallpaper-engine' registers under WE's own
- *  app id (full workshop compatibility, but Steam treats this process as WE and closes it on
- *  logout); 'standalone' registers under a neutral test app id so Steam leaves it running.
- *  Only read once at startup (steam.service.ts initSteam()) - changing it takes effect on relaunch. */
+/** 'wallpaper-engine' connects under WE's app id, 'standalone' under a neutral test app id. Read on every connect. */
 export function getSteamIdentity(): SteamIdentity {
   return store.get('steamIdentity')
 }

@@ -1,4 +1,13 @@
-export { WE_RESOLUTION_GROUPS, type ResolutionGroup } from '@shared/resolutions'
+export {
+  WE_RESOLUTION_GROUPS,
+  ALL_RESOLUTION_TAGS,
+  canonicalResolutionTag,
+  resolutionsFromTags,
+  isGroupSelected,
+  setGroupSelected,
+  migrateResolutionSelection,
+  type ResolutionGroup
+} from '@shared/resolutions'
 
 export interface FilterItem {
   tag: string

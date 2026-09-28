@@ -12,7 +12,7 @@ import {
   getUnavailableWorkshopItems
 } from './workshop.service'
 import { findAndMutate } from '../utils/collections'
-import { RESOLUTION_TAGS } from '@shared/resolutions'
+import { resolutionsFromTags } from '@shared/resolutions'
 import {
   isSteamRunning,
   getItemDownloadStatus,
@@ -25,6 +25,7 @@ interface LibraryStore {
   wallpapers: Record<string, WallpaperMeta>
   tags: string[]
   folders: WallpaperFolder[]
+  resolutionsVersion: number
 }
 
 const store = new Store<LibraryStore>({
@@ -32,7 +33,8 @@ const store = new Store<LibraryStore>({
   defaults: {
     wallpapers: {},
     tags: [],
-    folders: []
+    folders: [],
+    resolutionsVersion: 0
   }
 })
 
@@ -251,10 +253,6 @@ function sameTags(a: string[] | undefined, b: string[] | undefined): boolean {
   return a.length === b.length && a.every((t) => b.includes(t))
 }
 
-function deriveResolutionsFromTags(tags: string[]): string[] {
-  return tags.filter((t) => RESOLUTION_TAGS.has(t))
-}
-
 const RATING_RESTRICTIVENESS: Record<ContentRating, number> = {
   uncategorized: 0,
   everyone: 1,
@@ -349,21 +347,21 @@ function buildMeta(
     source: 'workshop',
     backupDir: existing?.backupDir ?? (existing?.source === 'backup' ? existing.localPath : undefined),
     tags: pj?.tags ?? existing?.tags ?? [],
-    resolutions: liveWorkshopTags ? deriveResolutionsFromTags(liveWorkshopTags) : existing?.resolutions,
+    resolutions: liveWorkshopTags ? resolutionsFromTags(liveWorkshopTags) : existing?.resolutions,
     authorSteamId: authorSteamId ?? existing?.authorSteamId
   }
 }
 
-function buildIncompleteMeta(
+async function buildIncompleteMeta(
   workshopId: string,
   localPath: string,
   existing?: WallpaperMeta,
   workshopTags?: string[],
   authorSteamId?: string
-): WallpaperMeta {
+): Promise<WallpaperMeta> {
   const now = Date.now()
   const { downloading, failed } = isSteamRunning()
-    ? getItemDownloadStatus(BigInt(workshopId))
+    ? await getItemDownloadStatus(BigInt(workshopId))
     : { downloading: true, failed: false }
   const tags = workshopTags
     ? [...new Set([...(existing?.tags ?? []), ...workshopTags])]
@@ -381,7 +379,7 @@ function buildIncompleteMeta(
     appliedCount: existing?.appliedCount ?? 0,
     source: 'workshop',
     tags,
-    resolutions: workshopTags ? deriveResolutionsFromTags(workshopTags) : existing?.resolutions,
+    resolutions: workshopTags ? resolutionsFromTags(workshopTags) : existing?.resolutions,
     categories: existing?.categories ?? [],
     downloading,
     downloadFailed: failed,
@@ -401,7 +399,7 @@ export async function importWallpaperById(workshopId: string): Promise<Wallpaper
   const pj = readProjectJson(localPath)
   if (!pj) {
     const tags = await safeGetWorkshopTags([workshopId])
-    const meta = buildIncompleteMeta(workshopId, localPath, existing, tags.get(workshopId), authorSteamId)
+    const meta = await buildIncompleteMeta(workshopId, localPath, existing, tags.get(workshopId), authorSteamId)
     upsertWallpaper(meta)
     return meta
   }
@@ -427,7 +425,9 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
 
   const entries = fs.readdirSync(workshopPath, { withFileTypes: true })
   const onDisk = new Set(entries.filter(e => e.isDirectory()).map(e => e.name))
-  const subscribedIds = isSteamRunning() ? new Set(getSubscribedItems()) : new Set<string>()
+  const subscribedIds = isSteamRunning()
+    ? new Set(await getSubscribedItems().catch(() => []))
+    : new Set<string>()
 
   // Load entire store once, mutate in memory, write once at the end
   const wallpapers = store.get('wallpapers')
@@ -478,8 +478,8 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   // isItemStuckNeverDownloaded, this is more common than it sounds).
   for (const id of subscribedIds) {
     if (onDisk.has(id)) continue
-    if (isSteamRunning() && isItemStuckNeverDownloaded(BigInt(id))) {
-      downloadItem(BigInt(id))
+    if (isSteamRunning() && (await isItemStuckNeverDownloaded(BigInt(id)))) {
+      await downloadItem(BigInt(id))
     }
     incomplete.push({ id, localPath: path.join(workshopPath, id) })
   }
@@ -495,7 +495,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   const incompleteTags = await safeGetWorkshopTags(incomplete.map((i) => i.id))
   for (const { id, localPath } of incomplete) {
     const existing = wallpapers[id]
-    const meta = buildIncompleteMeta(id, localPath, existing, incompleteTags.get(id), authors.get(id))
+    const meta = await buildIncompleteMeta(id, localPath, existing, incompleteTags.get(id), authors.get(id))
     if (!existing) {
       wallpapers[id] = meta
       imported++
@@ -589,7 +589,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
       }
     }
     if (live) {
-      const resolutions = deriveResolutionsFromTags(live)
+      const resolutions = resolutionsFromTags(live)
       if (!sameTags(wallpapers[id].resolutions, resolutions)) {
         patch.resolutions = resolutions
       }
@@ -652,27 +652,46 @@ export async function checkUnavailableWallpapers(): Promise<{
   return { checked: candidates.length, unavailable: unavailableIds.size, changed }
 }
 
+// Bump whenever resolutionsFromTags() changes, stored resolutions then get re-derived once
+const RESOLUTIONS_VERSION = 2
+
 // Resolution only comes from the live Workshop tags (project.json never has it), so items
 // imported before that was stored, or while Steam was offline, need a separate pass.
 export async function backfillResolutions(): Promise<boolean> {
   if (!isSteamRunning()) return false
 
-  const wallpapers = store.get('wallpapers')
-  const missing = Object.values(wallpapers).filter(
-    (w) => w.source === 'workshop' && w.resolutions === undefined
-  )
-  if (missing.length === 0) return false
+  const rederive = store.get('resolutionsVersion') !== RESOLUTIONS_VERSION
+  const ids = Object.values(store.get('wallpapers'))
+    .filter((w) => w.source === 'workshop' && (rederive || w.resolutions === undefined))
+    .map((w) => w.id)
 
-  const tags = await safeGetWorkshopTags(missing.map((w) => w.id))
+  let tags = new Map<string, string[]>()
+  if (ids.length > 0) {
+    try {
+      tags = await getWorkshopTags(ids)
+    } catch {
+      return false
+    }
+  }
+
+  // re-read, the fetch takes a while and other writes may have landed meanwhile
+  const wallpapers = store.get('wallpapers')
   let changed = false
-  for (const w of missing) {
-    const live = tags.get(w.id)
-    if (!live) continue
-    wallpapers[w.id] = { ...w, resolutions: deriveResolutionsFromTags(live) }
+  for (const id of ids) {
+    const w = wallpapers[id]
+    if (!w) continue
+    const live = tags.get(id)
+    // Steam no longer returns removed or private items, record "none" instead of asking every tick
+    const resolutions = live ? resolutionsFromTags(live) : (w.resolutions ?? [])
+    if (sameTags(w.resolutions, resolutions)) continue
+    wallpapers[id] = { ...w, resolutions }
     changed = true
   }
-  console.log(`[Library] Resolution tags fetched for ${tags.size} of ${missing.length} items`)
   if (changed) store.set('wallpapers', wallpapers)
+  store.set('resolutionsVersion', RESOLUTIONS_VERSION)
+  if (ids.length > 0) {
+    console.log(`[Library] Resolution tags fetched for ${tags.size} of ${ids.length} items`)
+  }
   return changed
 }
 

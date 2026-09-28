@@ -2,7 +2,7 @@ import { app, BrowserWindow, net, protocol, shell } from 'electron'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { IpcChannels } from '@shared/ipc-channels'
-import { initSteam, isSteamRunning, startVotedItemsSync, onFailedVotesChange } from './services/steam.service'
+import { isSteamRunning, startVotedItemsSync, onFailedVotesChange, bindSteamToWindow } from './services/steam.service'
 import { initLibrary, checkUnavailableWallpapers, backfillResolutions } from './services/library.service'
 import { startWatcher } from './services/watcher.service'
 import { registerAllHandlers } from './ipc'
@@ -37,6 +37,12 @@ function startBackgroundSync(win: BrowserWindow): void {
     }
   }
   win.webContents.once('did-finish-load', () => void syncResolutions())
+
+  const pushSteamStatus = (): void => {
+    if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_STEAM_STATUS, isSteamRunning())
+  }
+  win.on('show', pushSteamStatus)
+  win.on('restore', pushSteamStatus)
 
   setInterval(async () => {
     if (win.isDestroyed()) return
@@ -106,14 +112,10 @@ app.whenReady().then(() => {
     }
   })
 
-  const steamOk = initSteam()
-  if (!steamOk) {
-    console.warn('[App] Steam unavailable, subscription features disabled')
-  }
-
   initLibrary()
 
   const win = createWindow()
+  bindSteamToWindow(win)
   registerAllHandlers(win)
   startWatcher(win)
   startBackgroundSync(win)

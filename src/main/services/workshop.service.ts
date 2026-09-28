@@ -5,7 +5,11 @@ import type {
   WorkshopItem,
   CreatorWorkshopQueryParams
 } from '@shared/types'
-import { getClient } from './steam.service'
+import type { workshop } from 'steamworks.js/client'
+import { workshopCall, getSubscribedItems } from './steam.service'
+
+type SteamWorkshopItem = workshop.WorkshopItem
+type WorkshopPage = workshop.WorkshopPaginatedResult
 
 // Maps our string names to steamworks.js UGCQueryType enum values
 const QUERY_TYPE_MAP: Record<string, number> = {
@@ -30,12 +34,12 @@ const USER_LIST_ORDER_MAP: Record<string, number> = {
 }
 
 export async function queryWorkshop(params: WorkshopQueryParams): Promise<WorkshopQueryResult> {
-  const client = getClient()
   const appId = params.appId ?? WE_APP_ID
   const page = params.page ?? 1
   const queryType = QUERY_TYPE_MAP[params.queryType ?? 'RankedByPublicationDate'] ?? 1
 
-  const result = await client.workshop.getAllItems(
+  const result = await workshopCall<WorkshopPage>(
+    'getAllItems',
     page,
     queryType,
     13, // UGCType.All, since WE items span multiple subtypes
@@ -49,9 +53,7 @@ export async function queryWorkshop(params: WorkshopQueryParams): Promise<Worksh
     }
   )
 
-  const subscribedSet = new Set(
-    client.workshop.getSubscribedItems().map((id) => id.toString())
-  )
+  const subscribedSet = new Set(await getSubscribedItems())
 
   const items = result.items.filter(Boolean).map((item) => transformItem(item!, subscribedSet))
   await attachFileSizes(items)
@@ -64,10 +66,9 @@ export async function queryWorkshop(params: WorkshopQueryParams): Promise<Worksh
 }
 
 export async function getWorkshopItem(publishedFileId: string): Promise<WorkshopItem | null> {
-  const client = getClient()
-  let item: Awaited<ReturnType<typeof client.workshop.getItem>>
+  let item: SteamWorkshopItem | null
   try {
-    item = await client.workshop.getItem(BigInt(publishedFileId), {
+    item = await workshopCall<SteamWorkshopItem | null>('getItem', BigInt(publishedFileId), {
       includeLongDescription: true
     })
   } catch {
@@ -78,9 +79,7 @@ export async function getWorkshopItem(publishedFileId: string): Promise<Workshop
   }
   if (!item) return null
 
-  const subscribedSet = new Set(
-    client.workshop.getSubscribedItems().map((id) => id.toString())
-  )
+  const subscribedSet = new Set(await getSubscribedItems())
   const transformed = transformItem(item, subscribedSet)
   await attachFileSizes([transformed])
   return transformed
@@ -92,12 +91,12 @@ export async function queryWorkshopByCreator(
   creatorSteamId: string,
   params: CreatorWorkshopQueryParams = {}
 ): Promise<WorkshopQueryResult> {
-  const client = getClient()
   const accountId = Number(BigInt(creatorSteamId) & 0xffffffffn)
   const page = params.page ?? 1
   const sortOrder = USER_LIST_ORDER_MAP[params.queryType ?? 'RankedByPublicationDate'] ?? 1
 
-  const result = await client.workshop.getUserItems(
+  const result = await workshopCall<WorkshopPage>(
+    'getUserItems',
     page,
     accountId,
     0, // UserListType.Published
@@ -112,9 +111,7 @@ export async function queryWorkshopByCreator(
     }
   )
 
-  const subscribedSet = new Set(
-    client.workshop.getSubscribedItems().map((id) => id.toString())
-  )
+  const subscribedSet = new Set(await getSubscribedItems())
 
   const items = result.items.filter(Boolean).map((item) => transformItem(item!, subscribedSet))
   await attachFileSizes(items)
@@ -131,11 +128,10 @@ export async function queryWorkshopByCreator(
 const DETAILS_QUERY_BATCH = 50
 
 async function getItemsBatched(publishedFileIds: string[]) {
-  const client = getClient()
-  const items = []
+  const items: SteamWorkshopItem[] = []
   for (let i = 0; i < publishedFileIds.length; i += DETAILS_QUERY_BATCH) {
     const batch = publishedFileIds.slice(i, i + DETAILS_QUERY_BATCH)
-    const result = await client.workshop.getItems(batch.map((id) => BigInt(id)))
+    const result = await workshopCall<workshop.WorkshopItemsResult>('getItems', batch.map((id) => BigInt(id)))
     for (const item of result.items) {
       if (item) items.push(item)
     }
@@ -239,7 +235,7 @@ async function attachFileSizes(items: WorkshopItem[]): Promise<void> {
 }
 
 function transformItem(
-  item: NonNullable<Awaited<ReturnType<ReturnType<typeof getClient>['workshop']['getItem']>>>,
+  item: SteamWorkshopItem,
   subscribedSet: Set<string>
 ): WorkshopItem {
   return {

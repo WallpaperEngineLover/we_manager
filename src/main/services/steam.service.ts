@@ -1,138 +1,227 @@
+import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import Store from 'electron-store'
-import { app } from 'electron'
+import { app, utilityProcess, type BrowserWindow, type UtilityProcess } from 'electron'
 import { WE_APP_ID, STANDALONE_APP_ID } from '@shared/constants'
 import type { DownloadProgressEvent, WorkshopAuthorInfo } from '@shared/types'
 import { getSteamIdentity } from './config.service'
+import { encodeBigInts, decodeBigInts, type SteamHostResponse } from '../steam-host-protocol'
 
-let client: ReturnType<typeof import('steamworks.js')['init']> | null = null
+// Steam counts a process that called SteamAPI_Init as a running game, which also breaks Steam
+// Game Recording. Like WE's ui32.exe, the connection only lives while the window is shown.
+let windowActive = false
 
 // Steam not running is a normal, common state (this app works as a local library manager
-// without it). Every isSteamRunning()/getClient() call used to retry the native init and log a
-// warning, so anything that polls (react-query refetches, library scans, ...) turned "Steam is
-// closed" into a continuous stream of console warnings. Only actually retry - and only warn -
-// once per cooldown window, and only log the first failure of a run.
+// without it). Only retry a failed connect - and only warn - once per cooldown window, and only
+// log the first failure of a run.
 const RETRY_COOLDOWN_MS = 15000
-let lastInitAttempt = 0
+let lastInitFailure = 0
 let hasWarnedThisOutage = false
 
-export function initSteam(): boolean {
-  lastInitAttempt = Date.now()
-  try {
-    // steamworks.js is a native module and must be required at runtime
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const steamworks: typeof import('steamworks.js') = require('steamworks.js')
-    const appId = getSteamIdentity() === 'standalone' ? STANDALONE_APP_ID : WE_APP_ID
-    client = steamworks.init(appId)
-    hasWarnedThisOutage = false
-    console.log(`[Steam] Initialized (app id ${appId})`)
-    return true
-  } catch (err) {
-    client = null
-    if (!hasWarnedThisOutage) {
-      hasWarnedThisOutage = true
-      console.warn('[Steam] Init failed (Steam may not be running):', err)
+let host: UtilityProcess | null = null
+let hostReady: Promise<void> | null = null
+let nextRequestId = 1
+const pendingRequests = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
+let inFlight = 0
+
+const STEAM_PID_FILES = [
+  path.join(os.homedir(), '.steam', 'steam.pid'),
+  path.join(os.homedir(), '.var', 'app', 'com.valvesoftware.Steam', '.steam', 'steam.pid')
+]
+const PROCESS_CHECK_TTL_MS = 5000
+let processCheck = { at: 0, alive: false }
+
+// Flatpak Steam writes a pid from its own namespace, hence the /proc scan fallback
+function steamProcessAlive(): boolean {
+  if (Date.now() - processCheck.at < PROCESS_CHECK_TTL_MS) return processCheck.alive
+  let alive = false
+  for (const file of STEAM_PID_FILES) {
+    try {
+      const pid = Number(fs.readFileSync(file, 'utf8').trim())
+      if (pid > 0 && fs.readFileSync(`/proc/${pid}/comm`, 'utf8').trim() === 'steam') {
+        alive = true
+        break
+      }
+    } catch {
+      // no pid file or the process is gone
     }
-    return false
+  }
+  if (!alive) {
+    try {
+      alive = fs.readdirSync('/proc').some((entry) => {
+        if (!/^\d+$/.test(entry)) return false
+        try {
+          return fs.readFileSync(`/proc/${entry}/comm`, 'utf8').trim() === 'steam'
+        } catch {
+          return false
+        }
+      })
+    } catch {
+      alive = false
+    }
+  }
+  processCheck = { at: Date.now(), alive }
+  return alive
+}
+
+function stopHost(): void {
+  host?.kill()
+  host = null
+  hostReady = null
+}
+
+app.on('will-quit', stopHost)
+
+export function bindSteamToWindow(win: BrowserWindow): void {
+  const update = (): void => {
+    const active = !win.isDestroyed() && win.isVisible() && !win.isMinimized()
+    if (active === windowActive) return
+    windowActive = active
+    // calls already running get to finish, steamCall() disconnects after the last one
+    if (!active && host && inFlight === 0) {
+      console.log('[Steam] Window hidden, disconnecting')
+      stopHost()
+    }
+  }
+  win.on('show', update)
+  win.on('hide', update)
+  win.on('minimize', update)
+  win.on('restore', update)
+  win.on('closed', update)
+  update()
+}
+
+export function isSteamAllowed(): boolean {
+  return windowActive
+}
+
+// steamworks.js async calls have no timeout of their own, a hung one would otherwise keep the
+// connection open forever
+const REQUEST_TIMEOUT_MS = 60 * 1000
+
+function send(proc: UtilityProcess, method: string, args: unknown[]): Promise<unknown> {
+  const id = nextRequestId++
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingRequests.delete(id)
+      reject(new Error(`Steam ${method} timed out`))
+    }, REQUEST_TIMEOUT_MS)
+    pendingRequests.set(id, {
+      resolve: (v) => {
+        clearTimeout(timer)
+        resolve(v)
+      },
+      reject: (e) => {
+        clearTimeout(timer)
+        reject(e)
+      }
+    })
+    proc.postMessage(encodeBigInts({ id, method, args }))
+  })
+}
+
+function startHost(): Promise<void> {
+  const proc = utilityProcess.fork(path.join(__dirname, 'steam-host.js'), [], {
+    serviceName: 'we-manager-steam',
+    stdio: 'inherit'
+  })
+  host = proc
+  proc.on('message', (data) => {
+    const res = decodeBigInts(data) as SteamHostResponse
+    const pending = pendingRequests.get(res.id)
+    if (!pending) return
+    pendingRequests.delete(res.id)
+    if (res.error !== undefined) pending.reject(new Error(res.error))
+    else pending.resolve(res.result)
+  })
+  proc.on('exit', (code) => {
+    if (host === proc) {
+      host = null
+      hostReady = null
+    }
+    if (pendingRequests.size > 0) {
+      const err = new Error(`Steam host exited (code ${code})`)
+      for (const pending of pendingRequests.values()) pending.reject(err)
+      pendingRequests.clear()
+    }
+  })
+
+  const appId = getSteamIdentity() === 'standalone' ? STANDALONE_APP_ID : WE_APP_ID
+  return send(proc, 'init', [appId]).then(
+    () => {
+      hasWarnedThisOutage = false
+      console.log(`[Steam] Connected (app id ${appId})`)
+    },
+    (err) => {
+      if (host === proc) stopHost()
+      lastInitFailure = Date.now()
+      if (!hasWarnedThisOutage) {
+        hasWarnedThisOutage = true
+        console.warn('[Steam] Init failed (Steam may not be running):', err?.message ?? err)
+      }
+      throw err
+    }
+  )
+}
+
+async function steamCall<T>(method: string, ...args: unknown[]): Promise<T> {
+  if (!windowActive) throw new Error('Steam is only used while the window is open')
+  if (!isSteamRunning()) throw new Error('Steam not running')
+  inFlight++
+  try {
+    if (!hostReady) hostReady = startHost()
+    await hostReady
+    return (await send(host!, method, args)) as T
+  } finally {
+    inFlight--
+    if (inFlight === 0 && host && !windowActive) {
+      console.log('[Steam] Window hidden, disconnecting')
+      stopHost()
+    }
   }
 }
 
-function ensureClient(): void {
-  if (client) return
-  if (Date.now() - lastInitAttempt < RETRY_COOLDOWN_MS) return
-  initSteam()
-}
-
 export function isSteamRunning(): boolean {
-  ensureClient()
-  return client !== null
+  if (!windowActive) return false
+  if (Date.now() - lastInitFailure < RETRY_COOLDOWN_MS) return false
+  return steamProcessAlive()
 }
 
-export function getClient() {
-  ensureClient()
-  if (!client) throw new Error('Steam not initialized')
-  return client
+export async function getLocalAccountId(): Promise<number> {
+  const id = await steamCall<{ accountId: number }>('localplayer.getSteamId')
+  return id.accountId
+}
+
+export function getSubscribedIds(): Promise<bigint[]> {
+  return steamCall<bigint[]>('workshop.getSubscribedItems')
+}
+
+export function workshopCall<T>(method: string, ...args: unknown[]): Promise<T> {
+  return steamCall<T>(`workshop.${method}`, ...args)
 }
 
 export async function subscribeToItem(itemId: bigint): Promise<void> {
-  await getClient().workshop.subscribe(itemId)
+  await steamCall('workshop.subscribe', itemId)
 }
 
 // Steam's subscribe doesn't reliably auto-download (seen with items subscribed via the Workshop
 // website rather than the Steam client) - items can sit at bare "Subscribed" forever. This is the
 // reliable kick; a no-op if already installed or downloading.
-export function downloadItem(itemId: bigint, highPriority = true): boolean {
+export async function downloadItem(itemId: bigint, highPriority = true): Promise<boolean> {
   try {
-    return getClient().workshop.download(itemId, highPriority)
+    return await steamCall<boolean>('workshop.download', itemId, highPriority)
   } catch {
     return false
   }
 }
 
 export async function unsubscribeFromItem(itemId: bigint): Promise<void> {
-  await getClient().workshop.unsubscribe(itemId)
+  await steamCall('workshop.unsubscribe', itemId)
 }
 
-// ISteamUGC::SetUserItemVote is not bound in steamworks.js, so we call the
-// flat C API directly via koffi FFI. libsteam_api.so is already loaded by
-// steamworks.js, so dlopen just returns the existing handle. Set up lazily
-// after SteamAPI_Init so a load failure can't take down the whole app.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-type Koffi = typeof import('koffi')
-
-let steamLibHandle: ReturnType<Koffi['load']> | null = null
-
-function getSteamLib(): ReturnType<Koffi['load']> {
-  if (!steamLibHandle) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const koffi: Koffi = require('koffi')
-    const libPath = path.join(
-      path.dirname(require.resolve('steamworks.js')),
-      'dist', 'linux64', 'libsteam_api.so'
-    ).replace(/app\.asar(?!\.unpacked)/, 'app.asar.unpacked')
-    steamLibHandle = koffi.load(libPath)
-  }
-  return steamLibHandle
-}
-
-interface UgcFfi {
-  setUserItemVote: (ugc: unknown, itemId: bigint, voteUp: boolean) => bigint
-  ugcPtr: unknown
-}
-
-let ugcFfi: UgcFfi | null = null
-
-function getUgcFfi(): UgcFfi {
-  if (!ugcFfi) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const koffi: Koffi = require('koffi')
-    const steamLib = getSteamLib()
-    const ugcPtrType = koffi.pointer(koffi.opaque('ISteamUGC'))
-    const getSteamUGC = steamLib.func('SteamAPI_SteamUGC_v020', ugcPtrType, [])
-    ugcFfi = {
-      setUserItemVote: steamLib.func(
-        'SteamAPI_ISteamUGC_SetUserItemVote', 'uint64', [ugcPtrType, 'uint64', 'bool']
-      ),
-      ugcPtr: getSteamUGC()
-    }
-  }
-  return ugcFfi
-}
-
-let isLoggedOnFn: (() => boolean) | null = null
-
-function isSteamOnline(): boolean {
-  if (!isLoggedOnFn) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const koffi: Koffi = require('koffi')
-    const steamLib = getSteamLib()
-    const userPtrType = koffi.pointer(koffi.opaque('ISteamUser'))
-    const getSteamUser = steamLib.func('SteamAPI_SteamUser_v023', userPtrType, [])
-    const bLoggedOn = steamLib.func('SteamAPI_ISteamUser_BLoggedOn', 'bool', [userPtrType])
-    const userPtr = getSteamUser()
-    isLoggedOnFn = () => bLoggedOn(userPtr)
-  }
-  return isLoggedOnFn()
+function isSteamOnline(): Promise<boolean> {
+  return steamCall<boolean>('isOnline')
 }
 
 function sleep(ms: number): Promise<void> {
@@ -157,41 +246,33 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 // steamworks.js has no vote bindings; this app's fork adds them (patches/steamworks-vote/), feature-detected so unpatched builds still work
-interface PatchedVoteWorkshop {
-  voteItem(itemId: bigint, voteUp: boolean): Promise<void>
-  getUserVote(itemId: bigint): Promise<{ votedUp: boolean; votedDown: boolean; voteSkipped: boolean }>
-}
+let hasPatchedVoteApi: boolean | null = null
 
-function getPatchedVoteApi(client: ReturnType<typeof getClient>): PatchedVoteWorkshop | null {
-  const workshop = client.workshop as unknown as Partial<PatchedVoteWorkshop>
-  if (typeof workshop.voteItem === 'function' && typeof workshop.getUserVote === 'function') {
-    return workshop as PatchedVoteWorkshop
+async function patchedVoteApiAvailable(): Promise<boolean> {
+  if (hasPatchedVoteApi === null) {
+    const [vote, check] = await Promise.all([
+      steamCall<boolean>('hasMethod', 'workshop.voteItem'),
+      steamCall<boolean>('hasMethod', 'workshop.getUserVote')
+    ])
+    hasPatchedVoteApi = vote && check
   }
-  return null
+  return hasPatchedVoteApi
 }
 
 export async function checkUserVote(
   itemId: bigint
 ): Promise<{ votedUp: boolean; votedDown: boolean } | null> {
-  const patched = getPatchedVoteApi(getClient())
-  if (!patched) return null
-  const result = await patched.getUserVote(itemId)
+  if (!(await patchedVoteApiAvailable())) return null
+  const result = await steamCall<{ votedUp: boolean; votedDown: boolean }>('workshop.getUserVote', itemId)
   return { votedUp: result.votedUp, votedDown: result.votedDown }
 }
 
-export function voteOnItem(itemId: bigint, voteUp: boolean): bigint {
-  getClient() // ensure Steam is initialized before touching the flat API
-  const ffi = getUgcFfi()
-  const handle = ffi.setUserItemVote(ffi.ugcPtr, itemId, voteUp)
-  // k_uAPICallInvalid = 0 means the call failed immediately
-  if (handle === BigInt(0)) throw new Error('SetUserItemVote failed')
-  return handle
+export function voteOnItem(itemId: bigint, voteUp: boolean): Promise<bigint> {
+  return steamCall<bigint>('voteRaw', itemId, voteUp)
 }
 
-export function openWorkshopItemOverlay(itemId: bigint): void {
-  getClient().overlay.activateToWebPage(
-    `https://steamcommunity.com/sharedfiles/filedetails/?id=${itemId}`
-  )
+export async function openWorkshopItemOverlay(itemId: bigint): Promise<void> {
+  await steamCall('overlay.activateToWebPage', `https://steamcommunity.com/sharedfiles/filedetails/?id=${itemId}`)
 }
 
 const USER_ITEM_TYPE = 13 // UGCType.All, since WE items span multiple subtypes
@@ -201,18 +282,23 @@ const VOTED_DOWN = 3
 const PAGE_FETCH_TIMEOUT_MS = 8000
 const VOTE_TIMEOUT_MS = 15000
 
+interface UserItemsPage {
+  items: Array<{ publishedFileId: bigint } | null | undefined>
+  returnedResults: number
+  totalResults: number
+}
+
 async function getUserItemsPage(
   accountId: number,
   listType: number,
   page: number,
   retries = 2
-): Promise<{ items: Array<{ publishedFileId: bigint } | null | undefined>; returnedResults: number; totalResults: number }> {
-  const c = getClient()
+): Promise<UserItemsPage> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await withTimeout(
-        c.workshop.getUserItems(
-          page, accountId, listType, USER_ITEM_TYPE, CREATION_ORDER_DESC, { consumer: WE_APP_ID }
+        workshopCall<UserItemsPage>(
+          'getUserItems', page, accountId, listType, USER_ITEM_TYPE, CREATION_ORDER_DESC, { consumer: WE_APP_ID }
         ),
         PAGE_FETCH_TIMEOUT_MS,
         `getUserItems page ${page}`
@@ -342,7 +428,7 @@ function notifyVotedIds(): void {
 }
 
 async function runFullSync(): Promise<void> {
-  const accountId = getClient().localplayer.getSteamId().accountId
+  const accountId = await getLocalAccountId()
   if (voteStore.get('accountId') !== null && voteStore.get('accountId') !== accountId) {
     votedUpCache = new Set()
     missingLastCycle = new Set()
@@ -455,7 +541,7 @@ async function voteWithRetry(itemId: bigint, voteUp: boolean): Promise<boolean> 
   for (let attempt = 0; attempt < VOTE_ATTEMPTS; attempt++) {
     if (attempt > 0) await sleep(VOTE_RETRY_BASE_MS * 2 ** (attempt - 1))
     if (!isSteamRunning()) throw new Error('Steam is not running - start Steam to like wallpapers')
-    if (!isSteamOnline()) throw new Error('Steam is offline - check your internet connection and try again')
+    if (!(await isSteamOnline())) throw new Error('Steam is offline - check your internet connection and try again')
     try {
       const ok = await voteOnce(itemId, voteUp)
       setVoteFailure(itemId.toString(), null)
@@ -477,12 +563,10 @@ async function voteWithRetry(itemId: bigint, voteUp: boolean): Promise<boolean> 
 // because steamworks.js's manual dispatch loop consumes every call result on the shared Steam pipe first.
 async function voteOnce(itemId: bigint, voteUp: boolean): Promise<boolean> {
   const idStr = itemId.toString()
-  const patched = getPatchedVoteApi(getClient())
-
-  if (patched) {
-    await withTimeout(patched.voteItem(itemId, voteUp), VOTE_TIMEOUT_MS, 'Vote')
+  if (await patchedVoteApiAvailable()) {
+    await withTimeout(steamCall('workshop.voteItem', itemId, voteUp), VOTE_TIMEOUT_MS, 'Vote')
   } else {
-    voteOnItem(itemId, voteUp)
+    await voteOnItem(itemId, voteUp)
   }
   recordVote(idStr, voteUp)
   return true
@@ -502,7 +586,7 @@ export async function getVotedUpItemIds(): Promise<string[]> {
 const VOTE_SETTLE_MS = 10_000
 
 export async function refreshItemVote(itemId: bigint): Promise<boolean | null> {
-  if (!isSteamRunning() || !isSteamOnline()) return null
+  if (!isSteamRunning() || !(await isSteamOnline().catch(() => false))) return null
   const idStr = itemId.toString()
   const result = await withTimeout(checkUserVote(itemId), PAGE_FETCH_TIMEOUT_MS, 'getUserVote').catch((err) => {
     console.warn('[Steam] Per-item vote check failed:', err?.message ?? err)
@@ -533,15 +617,13 @@ export function startVotedItemsSync(onChange: (ids: string[]) => void): void {
   voteSyncTimer = setInterval(maybeRunFullSync, SYNC_CHECK_INTERVAL_MS)
 }
 
-export function getSubscribedItems(): string[] {
-  return getClient()
-    .workshop.getSubscribedItems()
-    .map((id) => id.toString())
+export async function getSubscribedItems(): Promise<string[]> {
+  return (await getSubscribedIds()).map((id) => id.toString())
 }
 
-export function getDownloadInfo(itemId: bigint): DownloadProgressEvent | null {
+export async function getDownloadInfo(itemId: bigint): Promise<DownloadProgressEvent | null> {
   try {
-    const info = getClient().workshop.downloadInfo(itemId)
+    const info = await workshopCall<{ current: bigint; total: bigint } | null>('downloadInfo', itemId)
     if (!info) return null
     const bytesTotal = Number(info.total)
     const bytesDownloaded = Number(info.current)
@@ -557,9 +639,9 @@ export function getDownloadInfo(itemId: bigint): DownloadProgressEvent | null {
   }
 }
 
-export function getInstallInfo(itemId: bigint): { folder: string; sizeOnDisk: number } | null {
+export async function getInstallInfo(itemId: bigint): Promise<{ folder: string; sizeOnDisk: number } | null> {
   try {
-    const info = getClient().workshop.installInfo(itemId)
+    const info = await workshopCall<{ folder: string; sizeOnDisk: bigint } | null>('installInfo', itemId)
     if (!info) return null
     return { folder: info.folder, sizeOnDisk: Number(info.sizeOnDisk) }
   } catch {
@@ -587,9 +669,9 @@ export async function getAuthorInfo(steamId: string): Promise<WorkshopAuthorInfo
   }
 }
 
-export function getItemState(itemId: bigint): number {
+export async function getItemState(itemId: bigint): Promise<number> {
   try {
-    return getClient().workshop.state(itemId) as number
+    return await workshopCall<number>('state', itemId)
   } catch {
     return 0
   }
@@ -603,15 +685,18 @@ const ITEM_STATE_DOWNLOAD_PENDING = 32
 
 // True for a subscribed item Steam has never actually started fetching - not installed, not
 // mid-transfer, not even flagged as needing an update. See downloadItem() above.
-export function isItemStuckNeverDownloaded(itemId: bigint): boolean {
-  const state = getItemState(itemId)
+function isStuckNeverDownloaded(state: number): boolean {
   const installed = (state & ITEM_STATE_INSTALLED) !== 0
   const inProgress = (state & (ITEM_STATE_DOWNLOADING | ITEM_STATE_DOWNLOAD_PENDING | ITEM_STATE_NEEDS_UPDATE)) !== 0
   return !installed && !inProgress
 }
 
-export function isItemDownloading(itemId: bigint): boolean {
-  const state = getItemState(itemId)
+export async function isItemStuckNeverDownloaded(itemId: bigint): Promise<boolean> {
+  return isStuckNeverDownloaded(await getItemState(itemId))
+}
+
+export async function isItemDownloading(itemId: bigint): Promise<boolean> {
+  const state = await getItemState(itemId)
   return (state & (ITEM_STATE_DOWNLOADING | ITEM_STATE_DOWNLOAD_PENDING)) !== 0
 }
 
@@ -619,10 +704,10 @@ export function isItemDownloading(itemId: bigint): boolean {
 // it's set but nothing is actively downloading/pending, Steam gave up on the transfer (e.g. it
 // errored out or the disk filled up). A never-downloaded item reports neither bit - treated as
 // "downloading" since the caller (scanLibrary) just kicked one off for it.
-export function getItemDownloadStatus(itemId: bigint): { downloading: boolean; failed: boolean } {
-  const state = getItemState(itemId)
+export async function getItemDownloadStatus(itemId: bigint): Promise<{ downloading: boolean; failed: boolean }> {
+  const state = await getItemState(itemId)
   const downloading =
-    (state & (ITEM_STATE_DOWNLOADING | ITEM_STATE_DOWNLOAD_PENDING)) !== 0 || isItemStuckNeverDownloaded(itemId)
+    (state & (ITEM_STATE_DOWNLOADING | ITEM_STATE_DOWNLOAD_PENDING)) !== 0 || isStuckNeverDownloaded(state)
   const failed = !downloading && (state & ITEM_STATE_NEEDS_UPDATE) !== 0
   return { downloading, failed }
 }
