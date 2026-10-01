@@ -67,13 +67,9 @@ export async function findBackupProblem(dir: string): Promise<string | null> {
 }
 
 async function sameFileList(sourcePath: string, backupDir: string): Promise<boolean> {
-  try {
-    const [src, dst] = await Promise.all([walkFiles(sourcePath), walkFiles(backupDir)])
-    const dstSizes = new Map(dst.map((f) => [f.relPath, f.size]))
-    return src.length === dst.length && src.every((f) => dstSizes.get(f.relPath) === f.size)
-  } catch {
-    return false
-  }
+  const [src, dst] = await Promise.all([walkFiles(sourcePath), walkFiles(backupDir)])
+  const dstSizes = new Map(dst.map((f) => [f.relPath, f.size]))
+  return src.length === dst.length && src.every((f) => dstSizes.get(f.relPath) === f.size)
 }
 
 function hashFile(filePath: string): Promise<string> {
@@ -86,12 +82,17 @@ function hashFile(filePath: string): Promise<string> {
   })
 }
 
+// Wallpaper Engine writes its compiled shaders (shaders/blobsSM40/*.dxs) into the wallpaper folder
+function isShaderCache(relPath: string): boolean {
+  return /^shaders[\\/]blobs/i.test(relPath)
+}
+
 async function walkFiles(dirPath: string, baseDir = dirPath): Promise<{ relPath: string; size: number }[]> {
   const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
   const nested = await Promise.all(
     entries.map(async (entry) => {
       const full = path.join(dirPath, entry.name)
-      if (entry.isDirectory()) return walkFiles(full, baseDir)
+      if (entry.isDirectory()) return isShaderCache(path.relative(baseDir, full)) ? [] : walkFiles(full, baseDir)
       if (!entry.isFile()) return []
       return [{ relPath: path.relative(baseDir, full), size: (await fs.promises.stat(full)).size }]
     })
@@ -356,11 +357,6 @@ export async function scanBackupFolder(): Promise<{
     if (!problems.has(key)) problems.set(key, findBackupProblem(dir))
     return problems.get(key)!
   }
-  const isValidFor = async (w: WallpaperMeta, dir: string): Promise<boolean> => {
-    if (await problemOf(dir)) return false
-    if (w.source !== 'workshop' || !w.localPath || !(await isDir(w.localPath))) return true
-    return sameFileList(w.localPath, dir)
-  }
 
   const upserts: WallpaperMeta[] = []
   const patches: { id: string; patch: Partial<WallpaperMeta> }[] = []
@@ -371,8 +367,8 @@ export async function scanBackupFolder(): Promise<{
     const dir = resolveBackupDir(w)
     // the drive holding it is not mounted
     if (dir && !(await isDir(path.dirname(dir)))) return
-    if (dir && (await isValidFor(w, dir))) return
-    const reason = dir ? ((await problemOf(dir)) ?? 'does not match the workshop copy') : 'no backup folder'
+    const reason = dir ? await problemOf(dir) : 'no backup folder'
+    if (!reason) return
     console.warn(`[Backup] Dropping broken backup of ${w.id} at ${dir}: ${reason}`)
     if (w.source === 'backup') {
       deletes.push(w.id)
@@ -397,11 +393,10 @@ export async function scanBackupFolder(): Promise<{
     if (existing?.source === 'workshop') {
       if ((existing.backedUp && !dropped.has(id)) || existing.downloading) {
         result.skipped++
-      } else if (await isValidFor(existing, dir)) {
+      } else {
+        // an older version than the workshop copy is still a backup, backing up again refreshes it
         patches.push({ id, patch: { backedUp: true, backupDir: dir } })
         result.linked++
-      } else {
-        result.corrupted.push(id)
       }
       return
     }
@@ -427,4 +422,39 @@ export async function scanBackupFolder(): Promise<{
   result.removed -= deletes.filter((id) => reimported.has(id)).length
   result.corrupted.sort()
   return result
+}
+
+// what each entry was last compared at, so only items whose workshop folder changed get re-walked
+const outdatedCheckedAt = new Map<string, string>()
+
+export async function checkOutdatedBackups(): Promise<boolean> {
+  const candidates = library
+    .getAllWallpapers()
+    .filter((w) => w.source === 'workshop' && w.backedUp && !w.downloading && w.localPath)
+  const patches: { id: string; patch: Partial<WallpaperMeta> }[] = []
+
+  await forEachLimit(candidates, SCAN_CONCURRENCY, async (w) => {
+    const dir = resolveBackupDir(w)
+    if (!dir) return
+    let key: string
+    try {
+      const stat = await fs.promises.stat(w.localPath!)
+      key = `${w.updatedAt}|${dir}|${stat.mtimeMs}`
+    } catch {
+      return
+    }
+    if (outdatedCheckedAt.get(w.id) === key) return
+    let outdated: boolean
+    try {
+      outdated = !(await sameFileList(w.localPath!, dir))
+    } catch {
+      // backup drive not mounted, or the folder is being replaced right now
+      return
+    }
+    outdatedCheckedAt.set(w.id, key)
+    if (!!w.backupOutdated !== outdated) patches.push({ id: w.id, patch: { backupOutdated: outdated } })
+  })
+
+  if (patches.length > 0) library.applyWallpaperChanges({ patches })
+  return patches.length > 0
 }

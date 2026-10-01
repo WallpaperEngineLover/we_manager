@@ -34,7 +34,7 @@ async function backupOne(id: string, win: BrowserWindow): Promise<BackupItemResu
     if (!alreadyBackedUp) {
       backupDir = await backup.backupWallpaper(id, sourcePath, win)
     }
-    library.updateWallpaper(id, { backedUp: true, backupDir: backupDir! })
+    library.updateWallpaper(id, { backedUp: true, backupDir: backupDir!, backupOutdated: false })
 
     let unsubscribed = false
     if (getAutoUnsubscribeAfterBackup()) {
@@ -91,8 +91,10 @@ export function registerBackupHandlers(win: BrowserWindow): void {
     return { backedUp, alreadyBackedUp, failed, unsubscribed }
   })
 
-  ipcMain.handle(IpcChannels.BACKUP_SCAN, () => {
-    return backup.scanBackupFolder()
+  ipcMain.handle(IpcChannels.BACKUP_SCAN, async () => {
+    const result = await backup.scanBackupFolder()
+    await backup.checkOutdatedBackups()
+    return result
   })
 
   ipcMain.handle(IpcChannels.BACKUP_REMOVE, async (_e, itemIds: string[]) => {

@@ -88,6 +88,8 @@ export interface WallpaperMeta {
   playbackSpeed?: number
   backedUp?: boolean
   backupDir?: string
+  /** The workshop copy no longer matches the backup (file list or sizes), e.g. the author published an update */
+  backupOutdated?: boolean
   /** Set by a "check unavailable" scan: true if the item has been removed from the Steam Workshop */
   unavailable?: boolean
   /** Object/layer ids or names to force-hide via linux-wallpaperengine --disable-object */
@@ -121,6 +123,8 @@ export interface WallpaperMeta {
   /** Launch-only engine flags, each one unset here falls back to the global setting */
   engineFlags?: EngineFlags
   compat?: WallpaperCompat
+  /** Scene with general.hdr on, or a PQ/HLG video. Unset until the background HDR pass has looked at it */
+  hdr?: boolean
   /** Thumbnail made by the app (a screenshot of the running wallpaper, or an image the user picked) */
   customPreview?: string
   /** Show the Workshop/project preview even though a custom one exists */

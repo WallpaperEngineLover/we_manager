@@ -67,6 +67,15 @@ describe('backupWallpaper', () => {
     expect(fs.existsSync(path.join(backupRoot, '123'))).toBe(false)
   })
 
+  it('ignores the shader cache Wallpaper Engine writes into the wallpaper', async () => {
+    writeFiles(source, { 'shaders/blobsSM40/abc.dxs': 'blob', 'shaders/custom.frag': 'void main() {}' })
+    const dir = await backup.backupWallpaper('123', source, win)
+    expect(fs.existsSync(path.join(dir, 'shaders/blobsSM40'))).toBe(false)
+    expect(fs.existsSync(path.join(dir, 'shaders/custom.frag'))).toBe(true)
+    writeFiles(source, { 'shaders/blobsSM40/def.dxs': 'another blob' })
+    expect(await backup.backupMatchesSource(source, dir)).toBe(true)
+  })
+
   it('replaces a corrupted backup', async () => {
     const dir = await backup.backupWallpaper('123', source, win)
     fs.writeFileSync(path.join(dir, 'materials/a.tex'), 'aaab')
@@ -149,15 +158,51 @@ describe('scanBackupFolder', () => {
     expect(wallpapers.get('moved')?.localPath).toBe(path.join(backupRoot, 'moved'))
   })
 
-  it('unlinks a workshop entry whose backup differs from the workshop copy', async () => {
+  it('keeps a workshop entry linked when its backup differs from the workshop copy', async () => {
     const dir = await backup.backupWallpaper('123', source, win)
     wallpapers.set('123', { ...base, id: '123', source: 'workshop', localPath: source, backedUp: true, backupDir: dir })
-    expect((await backup.scanBackupFolder()).unlinked).toBe(0)
+    writeFiles(source, { 'scene.pkg': 'updated-by-the-author', 'materials/b.tex': 'bbbb' })
+    const result = await backup.scanBackupFolder()
+    expect(result.unlinked).toBe(0)
+    expect(result.corrupted).toEqual([])
+    expect(wallpapers.get('123')?.backedUp).toBe(true)
+  })
 
-    fs.writeFileSync(path.join(dir, 'scene.pkg'), 'truncated-and-longer')
-    const result = (await backup.scanBackupFolder())
+  it('links an unlinked workshop entry to an older backup', async () => {
+    const dir = await backup.backupWallpaper('123', source, win)
+    wallpapers.set('123', { ...base, id: '123', source: 'workshop', localPath: source, backedUp: false })
+    writeFiles(source, { 'scene.pkg': 'updated-by-the-author' })
+    const result = await backup.scanBackupFolder()
+    expect(result.linked).toBe(1)
+    expect(wallpapers.get('123')).toMatchObject({ backedUp: true, backupDir: dir })
+  })
+
+  it('flags a backup that is older than the workshop copy', async () => {
+    const dir = await backup.backupWallpaper('123', source, win)
+    wallpapers.set('123', { ...base, id: '123', source: 'workshop', localPath: source, backedUp: true, backupDir: dir })
+    writeFiles(source, { 'shaders/blobsSM40/abc.dxs': 'blob' })
+    await backup.checkOutdatedBackups()
+    expect(wallpapers.get('123')?.backupOutdated).toBeFalsy()
+
+    writeFiles(source, { 'scene.pkg': 'updated-by-the-author' })
+    fs.utimesSync(source, new Date(), new Date(Date.now() + 5000))
+    expect(await backup.checkOutdatedBackups()).toBe(true)
+    expect(wallpapers.get('123')?.backupOutdated).toBe(true)
+
+    await backup.backupWallpaper('123', source, win)
+    fs.utimesSync(source, new Date(), new Date(Date.now() + 10000))
+    await backup.checkOutdatedBackups()
+    expect(wallpapers.get('123')?.backupOutdated).toBe(false)
+  })
+
+  it('unlinks a workshop entry whose backup lost its project.json', async () => {
+    const dir = await backup.backupWallpaper('123', source, win)
+    wallpapers.set('123', { ...base, id: '123', source: 'workshop', localPath: source, backedUp: true, backupDir: dir })
+    fs.rmSync(path.join(dir, 'project.json'))
+    const result = await backup.scanBackupFolder()
     expect(result.unlinked).toBe(1)
     expect(result.corrupted).toEqual(['123'])
     expect(wallpapers.get('123')?.backedUp).toBe(false)
   })
+
 })

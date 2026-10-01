@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import * as library from '../services/library.service'
+import { checkOutdatedBackups } from '../services/backup.service'
 import type { LibraryFilters, WallpaperMeta } from '@shared/types'
 
 export function registerLibraryHandlers(): void {
@@ -40,8 +41,10 @@ export function registerLibraryHandlers(): void {
     return library.getAllWallpapers({ searchText: query })
   })
 
-  ipcMain.handle(IpcChannels.LIBRARY_SCAN, () => {
-    return library.scanLibrary()
+  ipcMain.handle(IpcChannels.LIBRARY_SCAN, async () => {
+    const result = await library.scanLibrary()
+    await checkOutdatedBackups()
+    return result
   })
 
   ipcMain.handle(IpcChannels.LIBRARY_DISTINCT_TAGS, () => {

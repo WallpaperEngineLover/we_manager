@@ -3,8 +3,9 @@ import path from 'path'
 import { pathToFileURL } from 'url'
 import { IpcChannels } from '@shared/ipc-channels'
 import { isSteamRunning, startVotedItemsSync, onFailedVotesChange, bindSteamToWindow } from './services/steam.service'
-import { initLibrary, checkUnavailableWallpapers, backfillResolutions } from './services/library.service'
+import { initLibrary, checkUnavailableWallpapers, backfillResolutions, onHdrDetected, queueHdrCheck } from './services/library.service'
 import { startWatcher } from './services/watcher.service'
+import { checkOutdatedBackups } from './services/backup.service'
 import { registerAllHandlers } from './ipc'
 import { initDesktopIcons, cleanupDesktopIcons } from './services/desktop-icons.service'
 import { getTrayEnabled, getAutostartPlaylistId, getKillLweOnQuit } from './services/config.service'
@@ -36,7 +37,23 @@ function startBackgroundSync(win: BrowserWindow): void {
       win.webContents.send(IpcChannels.EVENT_LIBRARY_CHANGED)
     }
   }
-  win.webContents.once('did-finish-load', () => void syncResolutions())
+  onHdrDetected(() => {
+    if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_LIBRARY_CHANGED)
+  })
+  const syncOutdatedBackups = async (): Promise<void> => {
+    try {
+      if (await checkOutdatedBackups() && !win.isDestroyed()) {
+        win.webContents.send(IpcChannels.EVENT_LIBRARY_CHANGED)
+      }
+    } catch (err) {
+      console.warn('[Backup] Outdated check failed:', err)
+    }
+  }
+  win.webContents.once('did-finish-load', () => {
+    void syncResolutions()
+    void syncOutdatedBackups()
+    queueHdrCheck()
+  })
 
   const pushSteamStatus = (): void => {
     if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_STEAM_STATUS, isSteamRunning())
@@ -48,6 +65,7 @@ function startBackgroundSync(win: BrowserWindow): void {
     if (win.isDestroyed()) return
     const running = isSteamRunning()
     win.webContents.send(IpcChannels.EVENT_STEAM_STATUS, running)
+    await syncOutdatedBackups()
     if (!running) return
 
     try {

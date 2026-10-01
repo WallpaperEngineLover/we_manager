@@ -13,6 +13,7 @@ import {
 } from './workshop.service'
 import { findAndMutate } from '../utils/collections'
 import { resolutionsFromTags } from '@shared/resolutions'
+import { detectHdr } from '../utils/hdr'
 import {
   isSteamRunning,
   getItemDownloadStatus,
@@ -348,7 +349,9 @@ function buildMeta(
     backupDir: existing?.backupDir ?? (existing?.source === 'backup' ? existing.localPath : undefined),
     tags: pj?.tags ?? existing?.tags ?? [],
     resolutions: liveWorkshopTags ? resolutionsFromTags(liveWorkshopTags) : existing?.resolutions,
-    authorSteamId: authorSteamId ?? existing?.authorSteamId
+    authorSteamId: authorSteamId ?? existing?.authorSteamId,
+    // content may have changed, let the HDR pass look again
+    hdr: undefined
   }
 }
 
@@ -385,6 +388,7 @@ async function buildIncompleteMeta(
     downloadFailed: failed,
     authorSteamId: authorSteamId ?? existing?.authorSteamId,
     backedUp: existing?.backedUp,
+    backupOutdated: existing?.backupOutdated,
     backupDir: existing?.backupDir ?? (existing?.source === 'backup' ? existing.localPath : undefined)
   }
 }
@@ -416,6 +420,9 @@ export async function importWallpaperById(workshopId: string): Promise<Wallpaper
     liveTags.get(workshopId)
   )
   upsertWallpaper(meta)
+  // a preset waiting on this item as its dependency can be decided now
+  hdrUndecided.clear()
+  queueHdrCheck()
   return meta
 }
 
@@ -609,6 +616,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   // Auto-cleanup folder/playlist items that reference non-existent wallpapers
   cleanupFolders()
   cleanupPlaylists(new Set(Object.keys(wallpapers)))
+  queueHdrCheck()
 
   return { imported, skipped, removed }
 }
@@ -693,6 +701,78 @@ export async function backfillResolutions(): Promise<boolean> {
     console.log(`[Library] Resolution tags fetched for ${tags.size} of ${ids.length} items`)
   }
   return changed
+}
+
+// Ids the HDR pass could not decide this session (no ffprobe, unreadable files), so a big
+// library on a slow disk is not re-read every background tick
+const hdrUndecided = new Set<string>()
+let hdrPassRunning = false
+let hdrPassQueued = false
+let hdrListener: (() => void) | undefined
+
+export function onHdrDetected(listener: () => void): void {
+  hdrListener = listener
+}
+
+export function queueHdrCheck(): void {
+  void backfillHdr().then((changed) => {
+    if (changed) hdrListener?.()
+  })
+}
+
+// Detects HDR for items that have no answer stored yet. After the first run only new or
+// updated items get read, so this is cheap to call often.
+export async function backfillHdr(): Promise<boolean> {
+  if (hdrPassRunning) {
+    hdrPassQueued = true
+    return false
+  }
+  hdrPassRunning = true
+  try {
+    const pending = Object.values(store.get('wallpapers')).filter(
+      (w) => w.hdr === undefined && !!w.localPath && !w.downloading && !hdrUndecided.has(w.id)
+    )
+    if (pending.length === 0) return false
+
+    let changed = false
+    let results = new Map<string, boolean>()
+    const flush = (): void => {
+      if (results.size === 0) return
+      const wallpapers = store.get('wallpapers')
+      for (const [id, hdr] of results) {
+        if (wallpapers[id]) wallpapers[id] = { ...wallpapers[id], hdr }
+      }
+      store.set('wallpapers', wallpapers)
+      results = new Map()
+      changed = true
+    }
+
+    // a few reads in flight keeps SSDs busy without making an HDD seek back and forth
+    let next = 0
+    const worker = async (): Promise<void> => {
+      while (next < pending.length) {
+        const w = pending[next++]
+        const hdr = await detectHdr(w).catch(() => undefined)
+        if (hdr === undefined) {
+          hdrUndecided.add(w.id)
+        } else {
+          results.set(w.id, hdr)
+          if (results.size >= 500) flush()
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: 4 }, worker))
+    flush()
+
+    console.log(`[Library] HDR check: ${pending.length} items read, ${hdrUndecided.size} undecided`)
+    return changed
+  } finally {
+    hdrPassRunning = false
+    if (hdrPassQueued) {
+      hdrPassQueued = false
+      queueHdrCheck()
+    }
+  }
 }
 
 export function getAllFolders(): WallpaperFolder[] {

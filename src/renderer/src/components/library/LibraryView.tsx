@@ -21,6 +21,7 @@ import {
   ThumbsDown,
   Eraser,
   Archive,
+  ArchiveRestore,
   AlertTriangle,
   Heart,
   User,
@@ -31,7 +32,7 @@ import WallpaperCard from './WallpaperCard'
 import PreviewSizeToggle from '../common/PreviewSizeToggle'
 import DetailSidebar from '../common/DetailSidebar'
 import { useToast } from '../common/Toast'
-import type { LibraryFilters, WallpaperFolder, LweStatus, ScreenTarget } from '@shared/types'
+import type { LibraryFilters, WallpaperFolder, WallpaperMeta, LweStatus, ScreenTarget } from '@shared/types'
 import clsx from 'clsx'
 import {
   WE_TYPES,
@@ -62,6 +63,7 @@ interface LibraryFilterState {
   failedOnly: boolean
   likedOnly: boolean
   unavailableOnly: boolean
+  outdatedBackupOnly: boolean
 }
 
 const DEFAULT_STATE: LibraryFilterState = {
@@ -72,7 +74,8 @@ const DEFAULT_STATE: LibraryFilterState = {
   sources: [],
   failedOnly: false,
   likedOnly: false,
-  unavailableOnly: false
+  unavailableOnly: false,
+  outdatedBackupOnly: false
 }
 
 const TYPE_MAP: Record<string, string> = {
@@ -90,6 +93,11 @@ const RATING_MAP: Record<string, string> = {
 const SOURCE_MAP: Record<string, string> = {
   Workshop: 'workshop',
   Backup: 'backup'
+}
+
+// removed items can't be updated anymore, those belong to the Unavailable filter
+function isBackupOutdated(w: WallpaperMeta): boolean {
+  return w.source === 'workshop' && !!w.backedUp && !!w.backupOutdated && !w.unavailable
 }
 
 function loadFilters(): LibraryFilterState {
@@ -415,6 +423,10 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     setFilterState((prev) => ({ ...prev, unavailableOnly: !prev.unavailableOnly }))
   }
 
+  function toggleOutdatedBackupOnly() {
+    setFilterState((prev) => ({ ...prev, outdatedBackupOnly: !prev.outdatedBackupOnly }))
+  }
+
   const activeCount =
     filterState.types.length +
     filterState.ageRatings.length +
@@ -423,7 +435,8 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     filterState.sources.length +
     (filterState.failedOnly ? 1 : 0) +
     (filterState.likedOnly ? 1 : 0) +
-    (filterState.unavailableOnly ? 1 : 0)
+    (filterState.unavailableOnly ? 1 : 0) +
+    (filterState.outdatedBackupOnly ? 1 : 0)
 
   // Refresh the library once a background download (subscribe or redownload) settles,
   // so the downloading/downloadFailed badges stay in sync without a manual Scan.
@@ -493,6 +506,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       if (filterState.failedOnly && !w.downloadFailed) return false
       if (filterState.likedOnly && !votedSet.has(w.id)) return false
       if (filterState.unavailableOnly && !w.unavailable) return false
+      if (filterState.outdatedBackupOnly && !isBackupOutdated(w)) return false
       return true
     })
   }, [allWallpapers, filterState, votedSet])
@@ -509,6 +523,11 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   const unavailableCount = useMemo(
     () => allWallpapers.filter((w) => w.unavailable).length,
+    [allWallpapers]
+  )
+
+  const outdatedBackupCount = useMemo(
+    () => allWallpapers.filter(isBackupOutdated).length,
     [allWallpapers]
   )
 
@@ -1228,6 +1247,25 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
           Unavailable
           {unavailableCount > 0 && (
             <span className="rounded-full bg-black/30 px-1.5">{unavailableCount}</span>
+          )}
+        </button>
+
+        <button
+          onClick={toggleOutdatedBackupOnly}
+          title="Show only wallpapers whose backup is an older version than the one on the Steam Workshop"
+          className={clsx(
+            'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+            filterState.outdatedBackupOnly
+              ? 'bg-sky-600 text-white'
+              : outdatedBackupCount > 0
+                ? 'text-sky-400 hover:bg-white/5'
+                : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+          )}
+        >
+          <ArchiveRestore size={12} />
+          Outdated backup
+          {outdatedBackupCount > 0 && (
+            <span className="rounded-full bg-black/30 px-1.5">{outdatedBackupCount}</span>
           )}
         </button>
 

@@ -262,6 +262,18 @@ export default function WallpaperCard({
             </div>
           </div>
         )}
+        {wallpaper.hdr && (
+          <span
+            className="absolute right-2 top-2 rounded bg-black/70 px-1 py-0.5 text-[10px] font-semibold leading-none tracking-wide text-amber-300"
+            title={
+              wallpaper.type === 'video'
+                ? 'HDR video - shown in HDR with the HDR output setting on an HDR monitor'
+                : 'Uses HDR rendering - needs post processing set to Ultra'
+            }
+          >
+            HDR
+          </span>
+        )}
         {backupProgress == null && (wallpaper.backedUp || wallpaper.source === 'backup') && (
           <div
             className="absolute bottom-2 right-2 flex h-5 w-5 items-center justify-center rounded bg-black/60 text-indigo-300"
