@@ -11,9 +11,9 @@ jobs:
   steamworks-vote:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -32,7 +32,7 @@ jobs:
           npm pack --pack-destination "$RUNNER_TEMP/out"
           cp dist/linux64/steamworksjs.linux-x64-gnu.node dist/linux64/libsteam_api.so "$RUNNER_TEMP/out/"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: steamworks-vote
           path: ${{ runner.temp }}/out/*
@@ -44,16 +44,16 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
 
       - run: npm ci
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: ${{ needs.steamworks-vote.result == 'success' }}
         with:
           name: steamworks-vote
@@ -67,7 +67,7 @@ jobs:
 
       - run: npx electron-builder --linux --publish never
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: we-manager
           path: |
@@ -82,7 +82,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Check tag matches package.json version
         run: |
@@ -92,7 +92,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: release
           merge-multiple: true
