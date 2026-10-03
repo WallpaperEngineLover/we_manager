@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Gauge, Loader2 } from 'lucide-react'
 import type { EngineFlags, FullscreenPauseMode, WallpaperMeta } from '@shared/types'
 import { hasEngineFlags } from '@shared/engineFlags'
 import { BOOLEAN_FLAGS, CHOICE_FLAGS, FULLSCREEN_PAUSE_OPTIONS } from '../../../constants/engineFlags'
+import { useConfig } from '../../../hooks/queries'
 
 interface Props {
   flags?: EngineFlags
@@ -18,10 +18,7 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  const { data: config } = useQuery({
-    queryKey: ['config'],
-    queryFn: () => window.electronAPI.config.get()
-  })
+  const config = useConfig()
   const global = config?.engineFlags ?? {}
   const presets = config?.engineFlagPresets ?? []
 

@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Check, Plus, Save, Trash2 } from 'lucide-react'
 import type { EngineFlagPreset, EngineFlags, FullscreenPauseMode } from '@shared/types'
 import { BOOLEAN_FLAGS, CHOICE_FLAGS, FULLSCREEN_PAUSE_OPTIONS } from '../../constants/engineFlags'
+import { useConfig } from '../../hooks/queries'
 
 interface Props {
   defaultFps: number | null
@@ -42,10 +43,7 @@ function describePreset(preset: EngineFlagPreset): string {
 
 export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }: Props) {
   const queryClient = useQueryClient()
-  const { data: config } = useQuery({
-    queryKey: ['config'],
-    queryFn: () => window.electronAPI.config.get()
-  })
+  const config = useConfig()
   const flags: EngineFlags = config?.engineFlags ?? {}
   const presets = config?.engineFlagPresets ?? []
   const [newName, setNewName] = useState('')

@@ -1,10 +1,8 @@
 export const IpcChannels = {
-  // Workshop browsing (steamworks.js)
   WORKSHOP_QUERY: 'workshop:query',
   WORKSHOP_GET_ITEM: 'workshop:get-item',
   WORKSHOP_QUERY_BY_CREATOR: 'workshop:query-by-creator',
 
-  // Steamworks operations
   STEAM_SUBSCRIBE: 'steam:subscribe',
   STEAM_UNSUBSCRIBE: 'steam:unsubscribe',
   STEAM_GET_SUBSCRIBED: 'steam:get-subscribed',
@@ -20,7 +18,6 @@ export const IpcChannels = {
   STEAM_REDOWNLOAD: 'steam:redownload',
   STEAM_GET_AUTHOR_INFO: 'steam:get-author-info',
 
-  // Library management
   LIBRARY_GET_ALL: 'library:get-all',
   LIBRARY_GET_ONE: 'library:get-one',
   LIBRARY_UPDATE: 'library:update',
@@ -34,7 +31,6 @@ export const IpcChannels = {
   LIBRARY_RESET_FPS_OVERRIDES: 'library:reset-fps-overrides',
   LIBRARY_CHECK_UNAVAILABLE: 'library:check-unavailable',
 
-  // Folders
   FOLDERS_GET_ALL: 'folders:get-all',
   FOLDERS_CREATE: 'folders:create',
   FOLDERS_RENAME: 'folders:rename',
@@ -44,7 +40,6 @@ export const IpcChannels = {
   FOLDERS_IMPORT_WE_CONFIG: 'folders:import-we-config',
   FOLDERS_CLEANUP: 'folders:cleanup',
 
-  // Wallpaper application
   WALLPAPER_APPLY: 'wallpaper:apply',
   WALLPAPER_GET_ACTIVE: 'wallpaper:get-active',
   WALLPAPER_DETECT_ENV: 'wallpaper:detect-env',
@@ -56,13 +51,11 @@ export const IpcChannels = {
   WALLPAPER_PICK_THUMBNAIL: 'wallpaper:pick-thumbnail',
   WALLPAPER_DELETE_THUMBNAIL: 'wallpaper:delete-thumbnail',
 
-  // Scheduling
   SCHEDULE_GET_ALL: 'schedule:get-all',
   SCHEDULE_SAVE: 'schedule:save',
   SCHEDULE_DELETE: 'schedule:delete',
   SCHEDULE_RUN: 'schedule:run',
 
-  // Configuration
   CONFIG_GET: 'config:get',
   CONFIG_SET_WORKSHOP_PATH: 'config:set-workshop-path',
   CONFIG_SET_DEFAULT_FPS: 'config:set-default-fps',
@@ -87,13 +80,11 @@ export const IpcChannels = {
   CONFIG_IMPORT_WE: 'config:import-we',
   CONFIG_CREATE_FRESH: 'config:create-fresh',
 
-  // Backup
   BACKUP_ITEM: 'backup:item',
   BACKUP_SELECTION: 'backup:selection',
   BACKUP_SCAN: 'backup:scan',
   BACKUP_REMOVE: 'backup:remove',
 
-  // Playlists
   PLAYLIST_GET_ALL: 'playlist:get-all',
   PLAYLIST_GET_ONE: 'playlist:get-one',
   PLAYLIST_CREATE: 'playlist:create',
@@ -120,14 +111,12 @@ export const IpcChannels = {
   CONFIG_SET_AUTOSTART: 'config:set-autostart',
   CONFIG_GET_AUTOSTART_SUPPORTED: 'config:get-autostart-supported',
 
-  // Shell operations
   SHELL_OPEN_PATH: 'shell:open-path',
   SHELL_OPEN_PATHS: 'shell:open-paths',
   SHELL_OPEN_IN_FILE_MANAGER: 'shell:open-in-file-manager',
   SHELL_OPEN_WITH_DEFAULT: 'shell:open-with-default',
   SHELL_OPEN_EXTERNAL: 'shell:open-external',
 
-  // linux-wallpaperengine
   LWE_STATUS: 'lwe:status',
   LWE_DETECT_DISTRO: 'lwe:detect-distro',
   LWE_INSTALL_DEPS: 'lwe:install-deps',
@@ -146,8 +135,8 @@ export const IpcChannels = {
   LWE_LIST_EFFECTS: 'lwe:list-effects',
   LWE_LIST_APPLICATIONS: 'lwe:list-applications',
   LWE_PICK_SHORTCUT_PATH: 'lwe:pick-shortcut-path',
+  LWE_VIDEO_DURATION: 'lwe:video-duration',
 
-  // Desktop icons overlay
   DESKTOP_ICONS_SET_ENABLED: 'desktop-icons:set-enabled',
   DESKTOP_ICONS_GET_ENABLED: 'desktop-icons:get-enabled',
 

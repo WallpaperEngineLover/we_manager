@@ -225,7 +225,9 @@ const DEPS_DEBIAN = [
   'libxxf86vm-dev', 'libglm-dev', 'libglfw3-dev',
   'libmpv-dev', 'mpv', 'libpulse-dev', 'libpulse0', 'libfftw3-dev', 'libfreetype-dev', 'libharfbuzz-dev', 'libdbus-1-dev',
   'libwayland-dev', 'wayland-protocols', 'libegl1-mesa-dev',
-  'libgmp-dev', 'patchelf'
+  'libgmp-dev', 'patchelf',
+  // V8 for scene scripts, from Node.js's shared library
+  'libnode-dev'
 ]
 
 // Fedora/Nobara: 'ffmpeg' conflicts with ffmpeg-free, so only ffmpeg-free-devel is listed
@@ -240,6 +242,30 @@ const DEPS_FEDORA = [
   'gmp-devel', 'patchelf'
 ]
 
+/**
+ * Fedora's Node.js packages are versioned (nodejs22, nodejs24, ...) and their -devel packages conflict, so the headers
+ * have to belong to the libnode already installed; with none installed dnf picks the default for nodejs-devel
+ */
+export function nodeDevelPackage(installedLibs: string[]): string {
+  let best: { name: string; version: number } | undefined
+  for (const name of installedLibs) {
+    const match = /^nodejs(\d*)-libs$/.exec(name.trim())
+    if (!match) continue
+    const version = match[1] ? Number(match[1]) : 0
+    if (!best || version > best.version) best = { name: `nodejs${match[1]}-devel`, version }
+  }
+  return best?.name ?? 'nodejs-devel'
+}
+
+function installedNodeLibs(): string[] {
+  try {
+    return execFileSync('rpm', ['-qa', '--qf', '%{NAME}\n', 'nodejs*-libs'], { encoding: 'utf8', timeout: 10_000 }).split('\n')
+  } catch {
+    return []
+  }
+}
+
+// Arch only has libnode in the AUR, see installLweDeps
 const DEPS_ARCH = [
   'git', 'base-devel', 'cmake', 'pkg-config',
   'glew', 'freeglut', 'sdl2', 'lz4', 'ffmpeg',
@@ -278,7 +304,7 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
       pkgManager = 'dnf'
       // --skip-unavailable: avoid failing on missing/broken repos (e.g. Cursor 403) or package renames
       installArgs = ['install', '-y', '--skip-unavailable']
-      packages = DEPS_FEDORA
+      packages = [...DEPS_FEDORA, nodeDevelPackage(installedNodeLibs())]
       break
     case 'arch':
       pkgManager = 'pacman'
@@ -299,9 +325,13 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
     await execFileAsync(elevate, [pkgManager, ...installArgs, ...packages], {
       timeout: 600_000
     })
+    // the AUR needs a helper running as the user and builds Node.js from source, that is left to the user
+    const libnodeMissing = distro === 'arch' && !fs.existsSync('/usr/lib/libnode.so')
     send({
       stage: 'done',
-      message: 'Build dependencies installed.',
+      message: libnodeMissing
+        ? 'Build dependencies installed, except V8: Arch only has it in the AUR, install the "libnode" package (e.g. paru -S libnode) before building.'
+        : 'Build dependencies installed.',
       percentage: 100
     })
   } catch (err) {
@@ -401,7 +431,6 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
 
     const buildEnv = buildCleanBuildEnv()
 
-    // cmake configure downloads CEF on first run, which can take several minutes
     send({ stage: 'building', message: 'Running cmake (downloading CEF if needed, may take a few minutes)...', percentage: 25 })
     await execFileAsync('cmake', [
       '..',
@@ -611,7 +640,6 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
   }
 }
 
-/** Find the Wallpaper Engine assets directory from the Steam install. */
 function findWeAssetsDir(): string | undefined {
   const workshopPath = getWorkshopPath()
   // Workshop path looks like: .../steamapps/workshop/content/431960
@@ -632,7 +660,6 @@ function findWeAssetsDir(): string | undefined {
   return candidates.find(p => fs.existsSync(p))
 }
 
-/** Directory containing the LWE binary; used for LD_LIBRARY_PATH. */
 function getLweLibDir(): string {
   const p = findLweBinary()
   if (!p) return '/usr/local'
@@ -644,7 +671,6 @@ function getLweLibDir(): string {
   }
 }
 
-/** LD_LIBRARY_PATH value so the loader finds LWE's .so files. */
 function getLweLdLibraryPath(): string {
   const binDir = getLweLibDir()
   const candidates = [
@@ -674,7 +700,6 @@ function getLweBinaryPath(): string {
   }
 }
 
-/** Build env vars that must be set for LWE, as KEY=VALUE strings for use with `env` command. */
 function buildLweEnvVars(): string[] {
   const vars: string[] = []
 
@@ -915,6 +940,8 @@ export interface LweLaunchOptions {
   cornerColor?: string
   imageAdjustments?: ImageAdjustments
   speed?: number
+  videoStart?: number
+  videoEnd?: number
   audioSensitivity?: Record<string, number>
   soundVolume?: Record<string, number>
   customArgs?: string
@@ -924,7 +951,6 @@ export interface LweLaunchOptions {
   forceFresh?: boolean
 }
 
-/** Build the common LWE args (assets dir, screen roots, fps, volume, object overrides). */
 function buildLweArgs(
   wallpaperPath: string,
   options: LweLaunchOptions,
@@ -967,6 +993,10 @@ function buildLweArgs(
   if (options.expandCanvas && supportsExpandCanvas()) args.push('--expand-canvas')
   if (options.cornerColor) args.push('--corner-color', options.cornerColor)
   if (options.speed !== undefined) args.push('--speed', String(options.speed))
+  if (supportsFlag('--video-start')) {
+    if (options.videoStart !== undefined) args.push('--video-start', String(options.videoStart))
+    if (options.videoEnd !== undefined) args.push('--video-end', String(options.videoEnd))
+  }
   if ((options.disabledObjects?.length || options.enabledObjects?.length) && supportsObjectFlags()) {
     for (const id of options.disabledObjects ?? []) args.push('--disable-object', id)
     for (const id of options.enabledObjects ?? []) args.push('--enable-object', id)
@@ -1253,6 +1283,11 @@ export interface HotswapOptions {
   cornerColor?: string
   imageAdjustments?: ImageAdjustments
   speed?: number
+  /** null clears that side of the video trim */
+  videoStart?: number | null
+  videoEnd?: number | null
+  /** Jumps a video wallpaper to this many seconds, e.g. to watch the loop point */
+  videoSeek?: number
   propertyOverrides?: Record<string, string>
   /** Empty string clears the restriction back to "every screen can produce audio" */
   audioScreen?: string
@@ -1290,6 +1325,9 @@ export function buildHotswapLines(options: HotswapOptions): string[] {
   if (options.cornerColor !== undefined) lines.push(`corner-color=${options.cornerColor}`)
   lines.push(...imageAdjustmentLines(options.imageAdjustments))
   if (options.speed !== undefined) lines.push(`speed=${options.speed}`)
+  if (options.videoStart !== undefined) lines.push(`video-start=${options.videoStart ?? 'none'}`)
+  if (options.videoEnd !== undefined) lines.push(`video-end=${options.videoEnd ?? 'none'}`)
+  if (options.videoSeek !== undefined) lines.push(`video-seek=${options.videoSeek}`)
   if (options.audioScreen !== undefined) lines.push(`audio-screen=${options.audioScreen}`)
   if (options.ambientVolume !== undefined) lines.push(`ambient-volume=${options.ambientVolume}`)
   for (const [name, value] of Object.entries(options.propertyOverrides ?? {})) {
@@ -1387,6 +1425,9 @@ function hotswapOptionsFor(wallpaperPath: string, options: LweLaunchOptions): Ho
     cornerColor: options.cornerColor ?? '000000',
     imageAdjustments: options.imageAdjustments,
     speed: options.speed ?? 1,
+    // the engine drops the trim on a path swap, so only a trimmed wallpaper has to send one
+    videoStart: options.videoStart,
+    videoEnd: options.videoEnd,
     propertyOverrides: options.propertyOverrides ?? {},
     audioSensitivity: {
       ...(defaultSensitivity !== 1 ? { '*': defaultSensitivity } : {}),

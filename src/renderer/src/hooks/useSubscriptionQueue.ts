@@ -10,6 +10,13 @@ export type SubscribeState =
   | 'done'
   | 'download-error'
 
+const SUBSCRIBED_STATES = new Set<SubscribeState>(['download-queued', 'downloading', 'done', 'download-error'])
+
+// the subscribe call went through, whatever happened to the download after it
+export function isSubscribedState(state: SubscribeState | undefined): boolean {
+  return !!state && SUBSCRIBED_STATES.has(state)
+}
+
 export interface SubscribeEntry {
   state: SubscribeState
   percentage?: number

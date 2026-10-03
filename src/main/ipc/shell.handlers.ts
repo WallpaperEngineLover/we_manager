@@ -6,7 +6,6 @@ import { spawn } from 'child_process'
 import { isCommandAvailable } from '../utils/platform'
 
 export function registerShellHandlers(): void {
-  // Open a file with the OS default application (e.g. video in media player)
   ipcMain.handle(IpcChannels.SHELL_OPEN_WITH_DEFAULT, async (_e, filePath: string) => {
     const resolved = path.resolve(filePath)
     if (!fs.existsSync(resolved)) return { ok: false, error: 'File not found' }
@@ -14,7 +13,6 @@ export function registerShellHandlers(): void {
     return { ok: !result, error: result || undefined }
   })
 
-  // Open a folder in the system file manager
   ipcMain.handle(IpcChannels.SHELL_OPEN_IN_FILE_MANAGER, async (_e, folderPath: string) => {
     const resolved = path.resolve(folderPath)
     if (!fs.existsSync(resolved)) return { ok: false, error: 'Path not found' }
@@ -22,7 +20,6 @@ export function registerShellHandlers(): void {
     return { ok: true }
   })
 
-  // Open a path (file or folder) with shell.openPath
   ipcMain.handle(IpcChannels.SHELL_OPEN_PATH, async (_e, targetPath: string) => {
     const resolved = path.resolve(targetPath)
     const result = await shell.openPath(resolved)
@@ -52,7 +49,6 @@ export function registerShellHandlers(): void {
     return { ok: true }
   })
 
-  // Open a URL or protocol link (e.g. steam://, https://) with the OS handler
   ipcMain.handle(IpcChannels.SHELL_OPEN_EXTERNAL, async (_e, url: string) => {
     try {
       await shell.openExternal(url)

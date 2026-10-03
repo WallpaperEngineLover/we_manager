@@ -42,23 +42,29 @@ function startDownloadPoll(win: BrowserWindow, itemId: string): void {
   }, 1000)
 }
 
+async function subscribeAndDownload(win: BrowserWindow, itemId: string): Promise<void> {
+  await steam.subscribeToItem(BigInt(itemId))
+  // Steam doesn't always actually start fetching content just because we subscribed - see
+  // downloadItem()'s comment. This is the reliable kick.
+  await steam.downloadItem(BigInt(itemId))
+  startDownloadPoll(win, itemId)
+}
+
+// async: an unresponsive mount here must not block the main process (and every other
+// pending IPC call) while it deletes
+async function removeLocalFiles(dir: string): Promise<void> {
+  try { await fs.promises.rm(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+}
+
 export function registerSteamHandlers(win: BrowserWindow): void {
-  setDependencyInstaller(async (itemId) => {
-    await steam.subscribeToItem(BigInt(itemId))
-    await steam.downloadItem(BigInt(itemId))
-    startDownloadPoll(win, itemId)
-  })
+  setDependencyInstaller((itemId) => subscribeAndDownload(win, itemId))
 
   ipcMain.handle(IpcChannels.STEAM_IS_RUNNING, () => {
     return steam.isSteamRunning()
   })
 
   ipcMain.handle(IpcChannels.STEAM_SUBSCRIBE, async (_e, itemId: string) => {
-    await steam.subscribeToItem(BigInt(itemId))
-    // Steam doesn't always actually start fetching content just because we subscribed - see
-    // downloadItem()'s comment. This is the reliable kick.
-    await steam.downloadItem(BigInt(itemId))
-    startDownloadPoll(win, itemId)
+    await subscribeAndDownload(win, itemId)
     return { ok: true }
   })
 
@@ -70,11 +76,7 @@ export function registerSteamHandlers(win: BrowserWindow): void {
       library.updateWallpaper(itemId, { subscribed: false, downloading: false, downloadFailed: false })
       return { ok: true }
     }
-    if (wallpaper?.localPath) {
-      // async: an unresponsive mount here must not block the main process (and every other
-      // pending IPC call) while it deletes
-      try { await fs.promises.rm(wallpaper.localPath, { recursive: true, force: true }) } catch { /* ignore */ }
-    }
+    if (wallpaper?.localPath) await removeLocalFiles(wallpaper.localPath)
     const backupDir = wallpaper?.backedUp ? backup.resolveBackupDir(wallpaper) : null
     if (wallpaper && backupDir && (await backup.hasBackupFiles(backupDir))) {
       library.updateWallpaper(itemId, {
@@ -95,9 +97,7 @@ export function registerSteamHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.STEAM_REDOWNLOAD, async (_e, itemId: string) => {
     const wallpaper = library.getWallpaper(itemId)
     await steam.unsubscribeFromItem(BigInt(itemId))
-    if (wallpaper?.localPath && wallpaper.source === 'workshop') {
-      try { await fs.promises.rm(wallpaper.localPath, { recursive: true, force: true }) } catch { /* ignore */ }
-    }
+    if (wallpaper?.localPath && wallpaper.source === 'workshop') await removeLocalFiles(wallpaper.localPath)
     if (wallpaper) {
       library.updateWallpaper(itemId, { downloading: true, downloadFailed: false })
     }

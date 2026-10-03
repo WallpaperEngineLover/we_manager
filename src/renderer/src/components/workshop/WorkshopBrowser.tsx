@@ -1,186 +1,116 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  Search,
-  Loader2,
-  SlidersHorizontal,
-  X,
-  ChevronDown,
-  ChevronRight,
-  User,
-  ExternalLink,
-  Play,
-  Download,
-  EyeOff,
-  Eye,
-  Folder,
-  FolderInput,
-  Trash2
-} from 'lucide-react'
+import { X, Loader2, User, ExternalLink, Play, Download, EyeOff, Eye } from 'lucide-react'
 import WorkshopCard from './WorkshopCard'
 import PreviewSizeToggle from '../common/PreviewSizeToggle'
 import DetailSidebar from '../common/DetailSidebar'
-import { useToast } from '../common/Toast'
-import type { ScreenTarget, WorkshopQueryType } from '@shared/types'
+import {
+  ContextMenu,
+  FolderMenuItems,
+  MenuItem,
+  MenuSelectionCount,
+  MenuSeparator,
+  VoteMenuItems
+} from '../common/ContextMenu'
+import {
+  FiltersToggle,
+  LoadingSpinner,
+  MarqueeOverlay,
+  Pagination,
+  ResetFiltersButton,
+  SearchInput
+} from '../common/GridControls'
+import { CheckItem, FilterPanel, FilterSection, ResolutionFilterSection, TagFilterSection } from '../common/FilterPanel'
+import type { WorkshopQueryType } from '@shared/types'
 import clsx from 'clsx'
 import {
   WE_SHOW_ONLY,
   WE_TYPES,
   WE_ASSET_TYPES,
   WE_AGE_RATINGS,
-  WE_RESOLUTION_GROUPS,
   WE_GENRES,
   ALL_RESOLUTION_TAGS,
-  setGroupSelected,
   migrateResolutionSelection
 } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
+import { usePersistentState } from '../../hooks/usePersistentState'
 import { useVoteBorders } from '../../hooks/useVoteBorders'
+import { useBatchVote, useVotedIds } from '../../hooks/useVotes'
+import { useAllWallpapers, useFolders, useLweInstalled } from '../../hooks/queries'
+import { useApplyWallpaper, useUnsubscribe } from '../../hooks/useWallpaperActions'
 import { useSelectableGrid } from '../../hooks/useSelectableGrid'
-import { useClickOutside } from '../../hooks/useClickOutside'
-import { useClampedPosition, useFlipSide } from '../../hooks/useContextMenuPosition'
-import { useSubscriptionQueue } from '../../hooks/useSubscriptionQueue'
-import { toggle } from '../../utils/array'
-import { forEachIgnoringErrors } from '../../utils/async'
+import { isSubscribedState, useSubscriptionQueue } from '../../hooks/useSubscriptionQueue'
 import { openWorkshopPage, openProfilePage } from '../../utils/steam'
+import { isPlayable } from '../../utils/wallpaper'
+import { matchesSearchTerms, parseSearchQuery } from '../../utils/searchQuery'
+import { formatFileSize } from '../../utils/format'
 
 const STORAGE_KEY = 'we-workshop-filters'
 const STORAGE_VERSION = 2
 
-interface WorkshopFilterState {
+const ALL_TAGS = {
+  types: WE_TYPES.map((i) => i.tag),
+  assetTypes: WE_ASSET_TYPES.map((i) => i.tag),
+  ageRatings: WE_AGE_RATINGS.map((i) => i.tag),
+  resolutions: ALL_RESOLUTION_TAGS,
+  genres: WE_GENRES.map((i) => i.tag)
+}
+type TagCategory = keyof typeof ALL_TAGS
+const TAG_CATEGORIES = Object.keys(ALL_TAGS) as TagCategory[]
+// showOnly and assetTypes always AND, these follow the Match setting
+const OR_CATEGORIES: TagCategory[] = ['types', 'ageRatings', 'resolutions', 'genres']
+
+interface WorkshopFilterState extends Record<TagCategory, string[]> {
+  _v: typeof STORAGE_VERSION
   filterMode: 'and' | 'or'
   showOnly: string[]
-  types: string[]
-  assetTypes: string[]
-  ageRatings: string[]
-  resolutions: string[]
-  genres: string[]
   notDownloaded: boolean
   notLiked: boolean
   sizeFilterMode: 'none' | 'lt' | 'gt'
   sizeFilterMb: number
 }
 
-const ALL_AGE_RATINGS = WE_AGE_RATINGS.map((i) => i.tag)
-const ALL_GENRES = WE_GENRES.map((i) => i.tag)
-const ALL_TYPES = WE_TYPES.map((i) => i.tag)
-const ALL_ASSET_TYPES = WE_ASSET_TYPES.map((i) => i.tag)
-
 const DEFAULT_STATE: WorkshopFilterState = {
+  _v: STORAGE_VERSION,
   filterMode: 'or',
   showOnly: [],
   types: ['Scene', 'Video', 'Web'],
   assetTypes: [],
-  ageRatings: ALL_AGE_RATINGS,
+  ageRatings: ALL_TAGS.ageRatings,
   resolutions: ALL_RESOLUTION_TAGS,
-  genres: ALL_GENRES,
+  genres: ALL_TAGS.genres,
   notDownloaded: false,
   notLiked: false,
   sizeFilterMode: 'none',
   sizeFilterMb: 100
 }
 
-function loadFilters(): WorkshopFilterState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return DEFAULT_STATE
-    const parsed = JSON.parse(raw)
-    if (parsed._v !== STORAGE_VERSION) return DEFAULT_STATE
-    const state = { ...DEFAULT_STATE, ...parsed }
-    if ('resolutions' in parsed) state.resolutions = migrateResolutionSelection(parsed.resolutions)
-    return state
-  } catch {
-    return DEFAULT_STATE
+function loadFilters(stored: unknown): WorkshopFilterState {
+  const parsed = stored as Partial<WorkshopFilterState>
+  if (parsed._v !== STORAGE_VERSION) return DEFAULT_STATE
+  const state = { ...DEFAULT_STATE, ...parsed }
+  if ('resolutions' in parsed) state.resolutions = migrateResolutionSelection(parsed.resolutions)
+  return state
+}
+
+// Having every option of a category selected means no filter for that category
+function effectiveTags(filters: WorkshopFilterState): Record<TagCategory, string[]> {
+  const result = {} as Record<TagCategory, string[]>
+  for (const key of TAG_CATEGORIES) {
+    result[key] = filters[key].length === ALL_TAGS[key].length ? [] : filters[key]
   }
+  return result
 }
 
-function saveFilters(state: WorkshopFilterState) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, _v: STORAGE_VERSION }))
-}
-
-function parseSearchQuery(raw: string): { positiveText: string; excludeTerms: string[] } {
-  const tokens = raw.trim().split(/\s+/).filter(Boolean)
-  const positiveTokens: string[] = []
-  const excludeTerms: string[] = []
-  for (const token of tokens) {
-    if (token.length > 1 && token.startsWith('-')) {
-      excludeTerms.push(token.slice(1).toLowerCase())
-    } else {
-      positiveTokens.push(token)
-    }
-  }
-  return { positiveText: positiveTokens.join(' '), excludeTerms }
-}
-
-function CheckItem({
-  label,
-  checked,
-  onChange
-}: {
+interface DownloadSize {
   label: string
-  checked: boolean
-  onChange: () => void
-}) {
-  return (
-    <label className="flex cursor-pointer items-center gap-2 py-0.5 text-xs text-gray-400 hover:text-gray-200">
-      <input type="checkbox" checked={checked} onChange={onChange} className="accent-indigo-500 cursor-pointer" />
-      {label}
-    </label>
-  )
-}
-
-function FilterSection({
-  title,
-  children,
-  defaultOpen = true,
-  activeCount = 0,
-  onAll,
-  onNone
-}: {
   title: string
-  children: React.ReactNode
-  defaultOpen?: boolean
-  activeCount?: number
-  onAll?: () => void
-  onNone?: () => void
-}) {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <div>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
-      >
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        <span className="flex-1 text-left">{title}</span>
-        {activeCount > 0 && (
-          <span className="rounded-full bg-indigo-600/40 px-1.5 text-indigo-300">{activeCount}</span>
-        )}
-      </button>
-      {open && (
-        <div className="mt-1 pl-1 space-y-0.5">
-          {(onAll || onNone) && (
-            <div className="flex gap-2 pb-0.5">
-              {onAll && (
-                <button onClick={onAll} className="text-[10px] text-gray-600 hover:text-gray-400">all</button>
-              )}
-              {onNone && (
-                <button onClick={onNone} className="text-[10px] text-gray-600 hover:text-gray-400">none</button>
-              )}
-            </div>
-          )}
-          {children}
-        </div>
-      )}
-    </div>
-  )
 }
 
 interface CtxMenu {
   x: number
   y: number
   ids: string[]
-  showFolderSub: boolean
 }
 
 interface WorkshopBrowserProps {
@@ -195,96 +125,52 @@ export default function WorkshopBrowser({
   onBrowseCreator
 }: WorkshopBrowserProps) {
   const queryClient = useQueryClient()
-  const { showToast } = useToast()
   const { entries: subscribeEntries, enqueue: enqueueSubscribe, clear: clearSubscribeEntries } =
     useSubscriptionQueue(() => queryClient.invalidateQueries({ queryKey: ['library'] }))
   const [searchText, setSearchText] = useState('')
-  const { positiveText: searchPositiveText, excludeTerms: searchExcludeTerms } = useMemo(
-    () => parseSearchQuery(searchText),
-    [searchText]
-  )
+  const searchQuery = useMemo(() => parseSearchQuery(searchText), [searchText])
+  const steamSearchText = searchQuery.steamText
   const [queryType, setQueryType] = useState<WorkshopQueryType>('RankedByPublicationDate')
-  const [showFilters, setShowFilters] = useState(true)
-  const [filters, setFilters] = useState<WorkshopFilterState>(loadFilters)
+  const [showFilters, setShowFilters] = usePersistentState('we-workshop-show-filters', true, (v) => v !== false)
+  const [filters, setFilters] = usePersistentState(STORAGE_KEY, DEFAULT_STATE, loadFilters)
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null)
-  const ctxRef = useRef<HTMLDivElement>(null)
-  const folderSubRef = useRef<HTMLDivElement>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [previewSize, setPreviewSize] = usePreviewSize()
   const [detailId, setDetailId] = useState<string | null>(null)
   const [showIgnored, setShowIgnored] = useState(false)
 
-  useClickOutside(ctxRef, () => setCtxMenu(null), !!ctxMenu)
-  const ctxPos = useClampedPosition(ctxRef, ctxMenu)
-  const folderSubSide = useFlipSide(folderSubRef, !!ctxMenu?.showFolderSub)
-
-  useEffect(() => {
-    saveFilters(filters)
-  }, [filters])
+  const votedSet = useVotedIds()
+  const batchVote = useBatchVote()
+  const { enabled: voteBordersEnabled, failed: failedVotes } = useVoteBorders()
+  const lweInstalled = useLweInstalled()
+  const applyWallpaper = useApplyWallpaper()
+  const unsubscribe = useUnsubscribe()
+  const { moveToFolder, removeFromFolders, menuState } = useFolders()
 
   useEffect(() => {
     setPage(1)
   }, [searchText, queryType, filters, pageSize, creatorFilter])
 
-  function update<K extends keyof WorkshopFilterState>(key: K, tag: string) {
-    setFilters((prev) => ({ ...prev, [key]: toggle(prev[key] as string[], tag) }))
+  function setFilter<K extends keyof WorkshopFilterState>(key: K, value: WorkshopFilterState[K]) {
+    setFilters((prev) => ({ ...prev, [key]: value }))
   }
 
-  function toggleNotDownloaded() {
-    setFilters((prev) => ({ ...prev, notDownloaded: !prev.notDownloaded }))
-  }
-
-  function toggleNotLiked() {
-    setFilters((prev) => ({ ...prev, notLiked: !prev.notLiked }))
-  }
-
-  function setSizeFilterMode(mode: WorkshopFilterState['sizeFilterMode']) {
-    setFilters((prev) => ({ ...prev, sizeFilterMode: mode }))
-  }
-
-  function setSizeFilterMb(mb: number) {
-    setFilters((prev) => ({ ...prev, sizeFilterMb: mb }))
-  }
-
-  // Having every option of a category selected means no filter for that category
-  const effectiveTypes = filters.types.length === ALL_TYPES.length ? [] : filters.types
-  const effectiveAssetTypes = filters.assetTypes.length === ALL_ASSET_TYPES.length ? [] : filters.assetTypes
-  const effectiveAgeRatings = filters.ageRatings.length === ALL_AGE_RATINGS.length ? [] : filters.ageRatings
-  const effectiveResolutions = filters.resolutions.length === ALL_RESOLUTION_TAGS.length ? [] : filters.resolutions
-  const effectiveGenres = filters.genres.length === ALL_GENRES.length ? [] : filters.genres
+  const effective = useMemo(() => effectiveTags(filters), [filters])
 
   // AND mode: all selected tags passed to Steam as requiredTags (every tag must match)
   // OR mode: single-selected categories pass to Steam; multi-selected use client-side OR
-  // showOnly and assetTypes are always AND regardless of mode
-  const allSelected = [
+  const steamTags: string[] = [
     ...filters.showOnly,
-    ...effectiveAssetTypes,
-    ...effectiveTypes,
-    ...effectiveAgeRatings,
-    ...effectiveResolutions,
-    ...effectiveGenres
+    ...effective.assetTypes,
+    ...OR_CATEGORIES.flatMap((key) =>
+      filters.filterMode === 'and' || effective[key].length === 1 ? effective[key] : []
+    )
   ]
-
-  const steamTags: string[] =
-    filters.filterMode === 'and'
-      ? allSelected
-      : [
-          ...filters.showOnly,
-          ...effectiveAssetTypes,
-          ...(effectiveTypes.length === 1 ? effectiveTypes : []),
-          ...(effectiveAgeRatings.length === 1 ? effectiveAgeRatings : []),
-          ...(effectiveResolutions.length === 1 ? effectiveResolutions : []),
-          ...(effectiveGenres.length === 1 ? effectiveGenres : [])
-        ]
 
   const activeCount =
     filters.showOnly.length +
-    effectiveTypes.length +
-    effectiveAssetTypes.length +
-    effectiveAgeRatings.length +
-    effectiveResolutions.length +
-    effectiveGenres.length +
+    TAG_CATEGORIES.reduce((sum, key) => sum + effective[key].length, 0) +
     (filters.notDownloaded ? 1 : 0) +
     (filters.notLiked ? 1 : 0) +
     (filters.sizeFilterMode !== 'none' ? 1 : 0)
@@ -293,139 +179,40 @@ export default function WorkshopBrowser({
     setFilters((prev) => ({ ...DEFAULT_STATE, filterMode: prev.filterMode }))
   }
 
-  function closeCtxMenu() {
-    setCtxMenu(null)
-  }
-
-  function ctxSubscribe() {
-    if (!ctxMenu) return
-    enqueueSubscribe(ctxMenu.ids)
-    closeCtxMenu()
-  }
-
   async function unsubscribeIds(ids: string[]) {
     clearSubscribeEntries(ids)
-    await forEachIgnoringErrors(ids, (id) => window.electronAPI.steam.unsubscribe(id))
-    queryClient.invalidateQueries({ queryKey: ['library'] })
+    await unsubscribe(ids)
   }
 
-  async function ctxUnsubscribe() {
-    if (!ctxMenu) return
-    const ids = ctxMenu.ids
-    closeCtxMenu()
-    await unsubscribeIds(ids)
-  }
-
-  async function ctxVote(up: boolean) {
-    if (!ctxMenu) return
-    const ids = ctxMenu.ids
-    closeCtxMenu()
-    if (ids.length > 1) showToast(`${up ? 'Liking' : 'Disliking'} ${ids.length} wallpapers on Steam...`)
-
-    const results = await Promise.allSettled(ids.map((id) => window.electronAPI.steam.vote(id, up)))
-    const confirmedIds = ids.filter((_, i) => {
-      const r = results[i]
-      return r.status === 'fulfilled' && r.value.confirmed
-    })
-
-    if (confirmedIds.length > 0) {
-      const confirmedSet = new Set(confirmedIds)
-      queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
-        up ? [...new Set([...(old ?? []), ...confirmedIds])] : (old ?? []).filter((id) => !confirmedSet.has(id))
-      )
-    }
-
-    const failed = ids.length - confirmedIds.length
-    showToast(
-      failed === 0
-        ? `${up ? 'Liked' : 'Disliked'} ${confirmedIds.length} on Steam`
-        : `${up ? 'Liked' : 'Disliked'} ${confirmedIds.length}, ${failed} could not be confirmed`
-    )
-  }
-
-  function ctxOpenInSteam() {
-    if (!ctxMenu) return
-    for (const id of ctxMenu.ids) openWorkshopPage(id)
-    closeCtxMenu()
-  }
-
-  function ctxPlay() {
-    if (!ctxMenu || ctxMenu.ids.length !== 1) return
-    handlePlay(ctxMenu.ids[0])
-    closeCtxMenu()
-  }
-
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error } =
-    useInfiniteQuery({
-      queryKey: ['workshop', creatorFilter, searchPositiveText, queryType, steamTags],
-      queryFn: ({ pageParam = 1 }) =>
-        creatorFilter
-          ? window.electronAPI.workshop.queryByCreator(creatorFilter, {
-              searchText: searchPositiveText || undefined,
-              queryType,
-              tags: steamTags.length > 0 ? steamTags : undefined,
-              page: pageParam as number
-            })
-          : window.electronAPI.workshop.query({
-              searchText: searchPositiveText || undefined,
-              queryType,
-              tags: steamTags.length > 0 ? steamTags : undefined,
-              page: pageParam as number
-            }),
-      getNextPageParam: (lastPage, allPages) => {
-        const fetched = allPages.length * 50
-        return fetched < lastPage.totalResults ? allPages.length + 1 : undefined
-      },
-      initialPageParam: 1
-    })
-
-  const allItems = useMemo(
-    () => data?.pages.flatMap((p) => p.items) ?? [],
-    [data]
-  )
-
-  const { data: votedIds } = useQuery({
-    queryKey: ['steam-voted-ids'],
-    queryFn: () => window.electronAPI.steam.getVotedIds(),
-    staleTime: Infinity
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error } = useInfiniteQuery({
+    queryKey: ['workshop', creatorFilter, steamSearchText, queryType, steamTags],
+    queryFn: ({ pageParam = 1 }) => {
+      const params = {
+        searchText: steamSearchText || undefined,
+        queryType,
+        tags: steamTags.length > 0 ? steamTags : undefined,
+        page: pageParam as number
+      }
+      return creatorFilter
+        ? window.electronAPI.workshop.queryByCreator(creatorFilter, params)
+        : window.electronAPI.workshop.query(params)
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const fetched = allPages.length * 50
+      return fetched < lastPage.totalResults ? allPages.length + 1 : undefined
+    },
+    initialPageParam: 1
   })
-  const votedSet = useMemo(() => new Set(votedIds ?? []), [votedIds])
-  const { enabled: voteBordersEnabled, failed: failedVotes } = useVoteBorders()
 
-  const { data: libraryWallpapers = [] } = useQuery({
-    queryKey: ['library'],
-    queryFn: () => window.electronAPI.library.getAll()
-  })
+  const allItems = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data])
+  const itemById = useMemo(() => new Map(allItems.map((i) => [i.publishedFileId, i])), [allItems])
+
+  const libraryWallpapers = useAllWallpapers()
   const playableSet = useMemo(
-    () =>
-      new Set(
-        libraryWallpapers
-          .filter((w) => w.localPath && !w.downloading && !w.downloadFailed)
-          .map((w) => w.id)
-      ),
+    () => new Set(libraryWallpapers.filter(isPlayable).map((w) => w.id)),
     [libraryWallpapers]
   )
-  const libraryIdSet = useMemo(
-    () => new Set(libraryWallpapers.map((w) => w.id)),
-    [libraryWallpapers]
-  )
-
-  const { data: folders = [], refetch: refetchFolders } = useQuery({
-    queryKey: ['folders'],
-    queryFn: () => window.electronAPI.folders.getAll()
-  })
-  const folderOfItem = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const f of folders) {
-      for (const id of f.items) map.set(id, f.id)
-    }
-    return map
-  }, [folders])
-
-  const { data: lweStatus } = useQuery({
-    queryKey: ['lwe-status'],
-    queryFn: () => window.electronAPI.lwe.status()
-  })
+  const libraryIdSet = useMemo(() => new Set(libraryWallpapers.map((w) => w.id)), [libraryWallpapers])
 
   const { data: ignoredCreators = [] } = useQuery({
     queryKey: ['ignored-creators'],
@@ -433,82 +220,48 @@ export default function WorkshopBrowser({
   })
   const ignoredCreatorSet = useMemo(() => new Set(ignoredCreators), [ignoredCreators])
 
-  async function handlePlay(id: string, screen?: ScreenTarget) {
-    try {
-      await window.electronAPI.wallpaper.apply({ wallpaperId: id, screen })
-    } catch (err) {
-      showToast((err as Error).message)
+  // What subscribing these ids would download: items already subscribed, queued or in the
+  // library are skipped, sizes come from Steam and can be missing for some items
+  function downloadSize(ids: string[]): DownloadSize | null {
+    let bytes = 0
+    let count = 0
+    let unknown = 0
+    for (const id of ids) {
+      const item = itemById.get(id)
+      if (item?.isSubscribed || libraryIdSet.has(id) || subscribeEntries.has(id)) continue
+      count++
+      if (item?.fileSize) bytes += item.fileSize
+      else unknown++
     }
+    if (count === 0) return null
+    const size = formatFileSize(bytes)
+    if (!size) return { label: 'size unknown', title: `${count} to download, Steam reports no size` }
+    const label = unknown > 0 ? `${size}+` : size
+    let title = `${count} to download, ${size} total`
+    if (unknown > 0) title += ` (+ ${unknown} without a size from Steam)`
+    if (count < ids.length) title += `, ${ids.length - count} already subscribed or queued`
+    return { label, title }
   }
 
-  function ctxBrowseCreator() {
-    if (!ctxMenu || ctxMenu.ids.length !== 1) return
-    const item = allItems.find((i) => i.publishedFileId === ctxMenu.ids[0])
-    if (!item) return
-    onBrowseCreator?.(item.creatorSteamId)
-    closeCtxMenu()
-  }
-
-  async function ctxMoveToFolder(folderId: string) {
-    if (!ctxMenu) return
-    const ids = ctxMenu.ids.filter((id) => libraryIdSet.has(id))
-    closeCtxMenu()
-    if (ids.length === 0) return
-    await window.electronAPI.folders.addItems(folderId, ids)
-    refetchFolders()
-  }
-
-  async function ctxRemoveFromFolder() {
-    if (!ctxMenu) return
-    const ids = ctxMenu.ids
-    closeCtxMenu()
-    for (const folder of folders) {
-      const overlap = ids.filter((id) => folder.items.includes(id))
-      if (overlap.length > 0) {
-        await window.electronAPI.folders.removeItems(folder.id, overlap)
-      }
-    }
-    refetchFolders()
-  }
-
-  async function ctxToggleIgnoreCreator() {
-    if (!ctxMenu || ctxMenu.ids.length !== 1) return
-    const item = allItems.find((i) => i.publishedFileId === ctxMenu.ids[0])
-    closeCtxMenu()
-    if (!item) return
-    if (ignoredCreatorSet.has(item.creatorSteamId)) {
-      await window.electronAPI.config.unignoreCreator(item.creatorSteamId)
+  async function toggleIgnoreCreator(creatorSteamId: string) {
+    if (ignoredCreatorSet.has(creatorSteamId)) {
+      await window.electronAPI.config.unignoreCreator(creatorSteamId)
     } else {
-      await window.electronAPI.config.ignoreCreator(item.creatorSteamId)
+      await window.electronAPI.config.ignoreCreator(creatorSteamId)
     }
     queryClient.invalidateQueries({ queryKey: ['ignored-creators'] })
   }
 
   // In OR mode: client-side OR filtering for multi-selected categories
   const tagFiltered = useMemo(() => {
-    const tagMatched =
-      filters.filterMode !== 'or'
-        ? allItems
-        : allItems.filter((item) => {
-            if (effectiveTypes.length > 1 && !effectiveTypes.some((t) => item.tags.includes(t)))
-              return false
-            if (
-              effectiveAgeRatings.length > 1 &&
-              !effectiveAgeRatings.some((t) => item.tags.includes(t))
-            )
-              return false
-            if (
-              effectiveResolutions.length > 1 &&
-              !effectiveResolutions.some((t) => item.tags.includes(t))
-            )
-              return false
-            if (effectiveGenres.length > 1 && !effectiveGenres.some((t) => item.tags.includes(t)))
-              return false
-            return true
-          })
     const sizeThresholdBytes = filters.sizeFilterMb * 1024 * 1024
 
-    return tagMatched.filter((item) => {
+    return allItems.filter((item) => {
+      if (
+        filters.filterMode === 'or' &&
+        !OR_CATEGORIES.every((key) => effective[key].length <= 1 || effective[key].some((t) => item.tags.includes(t)))
+      )
+        return false
       if (filters.notDownloaded && playableSet.has(item.publishedFileId)) return false
       if (filters.notLiked && votedSet.has(item.publishedFileId)) return false
       if (filters.sizeFilterMode !== 'none') {
@@ -516,27 +269,14 @@ export default function WorkshopBrowser({
         if (filters.sizeFilterMode === 'lt' && item.fileSize >= sizeThresholdBytes) return false
         if (filters.sizeFilterMode === 'gt' && item.fileSize <= sizeThresholdBytes) return false
       }
-      if (searchExcludeTerms.length > 0) {
-        const haystack = `${item.title} ${item.description} ${item.tags.join(' ')}`.toLowerCase()
-        if (searchExcludeTerms.some((term) => haystack.includes(term))) return false
-      }
+      if (
+        (searchQuery.requiredTerms.length > 0 || searchQuery.excludeTerms.length > 0) &&
+        !matchesSearchTerms(`${item.title} ${item.description} ${item.tags.join(' ')}`, searchQuery)
+      )
+        return false
       return true
     })
-  }, [
-    allItems,
-    searchExcludeTerms,
-    filters.filterMode,
-    filters.notDownloaded,
-    filters.notLiked,
-    filters.sizeFilterMode,
-    filters.sizeFilterMb,
-    effectiveTypes,
-    effectiveAgeRatings,
-    effectiveResolutions,
-    effectiveGenres,
-    playableSet,
-    votedSet
-  ])
+  }, [allItems, searchQuery, filters, effective, playableSet, votedSet])
 
   // Page boundaries are fixed against the full tag-filtered list (ignored creators' items
   // included) so a page's contents don't shift around as the ignore list changes. Within a
@@ -565,30 +305,21 @@ export default function WorkshopBrowser({
   const paginatedIds = useMemo(() => paginatedItems.map((i) => i.publishedFileId), [paginatedItems])
   const {
     selectedIds: selection,
-    setSelectedIds: setSelection,
-    gridRef,
+    selectForContextMenu,
     handleCardSelect,
-    handleMarqueeStart,
-    handleMarqueeMove,
-    handleMarqueeEnd,
+    containerProps,
     marqueeRect
   } = useSelectableGrid({
     ids: paginatedIds,
     dataAttr: 'data-workshop-id',
     onOpenDetail: setDetailId
   })
+  const selectionSize = selection.size > 0 ? downloadSize([...selection]) : null
 
-  const openCtxMenu = useCallback(
-    (e: React.MouseEvent, itemId: string) => {
-      e.preventDefault()
-      const ids = selection.has(itemId) ? [...selection] : [itemId]
-      if (!selection.has(itemId)) {
-        setSelection(new Set(ids))
-      }
-      setCtxMenu({ x: e.clientX, y: e.clientY, ids, showFolderSub: false })
-    },
-    [selection, setSelection]
-  )
+  function openCtxMenu(e: React.MouseEvent, itemId: string) {
+    e.preventDefault()
+    setCtxMenu({ x: e.clientX, y: e.clientY, ids: selectForContextMenu(itemId) })
+  }
 
   // Auto-fetch more Steam API pages if needed to fill the current view.
   // Must compare against the tag-filtered count, not the raw fetched count - in OR mode a
@@ -602,60 +333,89 @@ export default function WorkshopBrowser({
     }
   }, [needMore, hasNextPage, isFetchingNextPage, fetchNextPage])
 
-  const assetSelected = filters.types.includes('Asset') || effectiveTypes.length === 0
+  const assetSelected = filters.types.includes('Asset') || effective.types.length === 0
 
-  const ctxLibraryIds = ctxMenu ? ctxMenu.ids.filter((id) => libraryIdSet.has(id)) : []
-  const ctxCurrentFolderIds = ctxMenu
-    ? new Set(ctxMenu.ids.map((id) => folderOfItem.get(id)).filter((id): id is string => !!id))
-    : new Set<string>()
-  const ctxHasFolder = ctxCurrentFolderIds.size > 0
-  const ctxMoveTargets = folders.filter(
-    (f) => !(ctxCurrentFolderIds.size === 1 && ctxCurrentFolderIds.has(f.id))
-  )
+  const detailItem = detailId ? itemById.get(detailId) : undefined
 
-  const detailItem = detailId ? allItems.find((i) => i.publishedFileId === detailId) : undefined
-  const detailSubscribeState = detailId ? subscribeEntries.get(detailId)?.state : undefined
-  const detailSubscribed = detailItem
-    ? detailItem.isSubscribed ||
-      detailSubscribeState === 'download-queued' ||
-      detailSubscribeState === 'downloading' ||
-      detailSubscribeState === 'done' ||
-      detailSubscribeState === 'download-error'
-    : false
+  // menu actions close the menu first, the action itself may take a while
+  function run(action: () => unknown) {
+    return () => {
+      setCtxMenu(null)
+      void action()
+    }
+  }
+
+  function renderCtxMenu(menu: CtxMenu) {
+    const single = menu.ids.length === 1 ? itemById.get(menu.ids[0]) : undefined
+    const libraryIds = menu.ids.filter((id) => libraryIdSet.has(id))
+    const { hasFolder, moveTargets } = menuState(menu.ids)
+    const menuSize = downloadSize(menu.ids)
+
+    return (
+      <ContextMenu x={menu.x} y={menu.y} onClose={() => setCtxMenu(null)} className="min-w-[180px]">
+        <MenuSelectionCount count={menu.ids.length} />
+        {single && playableSet.has(single.publishedFileId) && (
+          <>
+            <MenuItem icon={Play} onClick={run(() => applyWallpaper(single.publishedFileId))}>
+              Play wallpaper
+            </MenuItem>
+            <MenuSeparator />
+          </>
+        )}
+        <MenuItem onClick={run(() => enqueueSubscribe(menu.ids))}>
+          <span title={menuSize?.title}>
+            Subscribe{menuSize && <span className="ml-1.5 text-xs text-gray-500">{menuSize.label}</span>}
+          </span>
+        </MenuItem>
+        <MenuItem onClick={run(() => unsubscribeIds(menu.ids))}>Unsubscribe</MenuItem>
+        <MenuSeparator />
+        <VoteMenuItems onVote={(up) => run(() => batchVote(menu.ids, up))()} />
+        <MenuSeparator />
+        <MenuItem icon={ExternalLink} onClick={run(() => menu.ids.forEach(openWorkshopPage))}>
+          Open in Steam Workshop
+        </MenuItem>
+        {single && (
+          <MenuItem icon={User} onClick={run(() => onBrowseCreator?.(single.creatorSteamId))}>
+            Browse wallpapers from this creator
+          </MenuItem>
+        )}
+        {libraryIds.length > 0 && (
+          <>
+            <MenuSeparator />
+            <FolderMenuItems
+              moveTargets={moveTargets}
+              hasFolder={hasFolder}
+              onMove={(folderId) => run(() => moveToFolder(folderId, libraryIds))()}
+              onRemove={run(() => removeFromFolders(menu.ids))}
+            />
+          </>
+        )}
+        {single && (
+          <MenuItem
+            icon={ignoredCreatorSet.has(single.creatorSteamId) ? Eye : EyeOff}
+            onClick={run(() => toggleIgnoreCreator(single.creatorSteamId))}
+          >
+            {ignoredCreatorSet.has(single.creatorSteamId) ? 'Unignore this creator' : 'Ignore this creator'}
+          </MenuItem>
+        )}
+      </ContextMenu>
+    )
+  }
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
-        <button
-          onClick={() => setShowFilters((v) => !v)}
-          className={clsx(
-            'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
-            showFilters || activeCount > 0
-              ? 'bg-indigo-600 text-white'
-              : 'bg-white/5 text-gray-300 hover:bg-white/10'
-          )}
-        >
-          <SlidersHorizontal size={14} />
-          Filters
-          {activeCount > 0 && (
-            <span className="rounded-full bg-white/20 px-1.5 text-xs">{activeCount}</span>
-          )}
-        </button>
-        <div className="relative flex-1 max-w-md">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-          <input
-            type="text"
-            placeholder="Search wallpapers... (-word to exclude)"
-            title="Prefix a word with - to exclude it, e.g. holo -hololive"
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            className="w-full rounded-lg bg-white/5 py-2 pl-9 pr-3 text-sm text-gray-200 placeholder-gray-500 outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-        </div>
+        <FiltersToggle open={showFilters} activeCount={activeCount} onClick={() => setShowFilters((v) => !v)} />
+        <SearchInput
+          value={searchText}
+          placeholder="Search wallpapers... (a+b all words, -word to exclude)"
+          title="Join words with + to require all of them, e.g. luna+god. Prefix a word with - to exclude it, e.g. holo -hololive"
+          onChange={setSearchText}
+        />
         <select
           value={queryType}
           onChange={(e) => setQueryType(e.target.value as WorkshopQueryType)}
-          className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 [&>option]:bg-[#1a1a1a] [&>option]:text-gray-200"
+          className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
         >
           <option value="RankedByVote">Top Rated</option>
           <option value="RankedByPublicationDate">Newest</option>
@@ -664,22 +424,17 @@ export default function WorkshopBrowser({
           <option value="RankedByLastUpdatedDate">Recently Updated</option>
         </select>
         <PreviewSizeToggle value={previewSize} onChange={setPreviewSize} />
-        {activeCount > 0 && (
-          <button
-            onClick={clearAll}
-            className="flex items-center gap-1 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10"
-          >
-            <X size={14} /> Reset
-          </button>
-        )}
+        {activeCount > 0 && <ResetFiltersButton onClick={clearAll} />}
         {selection.size > 0 && (
           <>
             <span className="text-xs text-gray-500">{selection.size} selected</span>
             <button
               onClick={() => enqueueSubscribe([...selection])}
+              title={selectionSize?.title ?? 'Everything selected is already subscribed or queued'}
               className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-500"
             >
               <Download size={14} /> Subscribe selection
+              {selectionSize && <span className="text-indigo-200">({selectionSize.label})</span>}
             </button>
           </>
         )}
@@ -706,32 +461,24 @@ export default function WorkshopBrowser({
 
       <div className="flex flex-1 overflow-hidden">
         {showFilters && (
-          <div className="w-52 flex-shrink-0 overflow-y-auto border-r border-white/5 bg-[#0d0d0d] px-3 py-3 space-y-3">
+          <FilterPanel>
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500">Match</span>
               <div className="flex rounded-md overflow-hidden text-xs">
-                <button
-                  onClick={() => setFilters((prev) => ({ ...prev, filterMode: 'or' }))}
-                  className={clsx(
-                    'px-2.5 py-1 transition-colors',
-                    filters.filterMode === 'or'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-white/5 text-gray-400 hover:text-gray-200'
-                  )}
-                >
-                  Any (OR)
-                </button>
-                <button
-                  onClick={() => setFilters((prev) => ({ ...prev, filterMode: 'and' }))}
-                  className={clsx(
-                    'px-2.5 py-1 transition-colors',
-                    filters.filterMode === 'and'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-white/5 text-gray-400 hover:text-gray-200'
-                  )}
-                >
-                  All (AND)
-                </button>
+                {(['or', 'and'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setFilter('filterMode', mode)}
+                    className={clsx(
+                      'px-2.5 py-1 transition-colors',
+                      filters.filterMode === mode
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-white/5 text-gray-400 hover:text-gray-200'
+                    )}
+                  >
+                    {mode === 'or' ? 'Any (OR)' : 'All (AND)'}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -742,18 +489,19 @@ export default function WorkshopBrowser({
               <CheckItem
                 label="Not downloaded"
                 checked={filters.notDownloaded}
-                onChange={toggleNotDownloaded}
+                onChange={() => setFilter('notDownloaded', !filters.notDownloaded)}
               />
-              <CheckItem label="Not liked" checked={filters.notLiked} onChange={toggleNotLiked} />
+              <CheckItem
+                label="Not liked"
+                checked={filters.notLiked}
+                onChange={() => setFilter('notLiked', !filters.notLiked)}
+              />
             </FilterSection>
-            <FilterSection
-              title="File Size"
-              activeCount={filters.sizeFilterMode !== 'none' ? 1 : 0}
-            >
+            <FilterSection title="File Size" activeCount={filters.sizeFilterMode !== 'none' ? 1 : 0}>
               <select
                 value={filters.sizeFilterMode}
-                onChange={(e) => setSizeFilterMode(e.target.value as WorkshopFilterState['sizeFilterMode'])}
-                className="w-full rounded bg-[#1a1a1a] px-1.5 py-1 text-xs text-gray-300 outline-none [&>option]:bg-[#1a1a1a] [&>option]:text-gray-300"
+                onChange={(e) => setFilter('sizeFilterMode', e.target.value as WorkshopFilterState['sizeFilterMode'])}
+                className="w-full rounded bg-[#1a1a1a] px-1.5 py-1 text-xs text-gray-300 outline-none"
               >
                 <option value="none">Any size</option>
                 <option value="lt">Less than</option>
@@ -765,151 +513,63 @@ export default function WorkshopBrowser({
                     type="number"
                     min={0}
                     value={filters.sizeFilterMb}
-                    onChange={(e) => setSizeFilterMb(Math.max(0, Number(e.target.value) || 0))}
+                    onChange={(e) => setFilter('sizeFilterMb', Math.max(0, Number(e.target.value) || 0))}
                     className="w-16 rounded bg-[#1a1a1a] px-1.5 py-1 text-xs text-gray-300 outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                   <span className="text-xs text-gray-500">MB</span>
                 </div>
               )}
             </FilterSection>
-            <FilterSection
+            <TagFilterSection
               title="Show Only"
               defaultOpen={false}
+              options={WE_SHOW_ONLY}
+              selected={filters.showOnly}
               activeCount={filters.showOnly.length}
-              onAll={() => setFilters((p) => ({ ...p, showOnly: WE_SHOW_ONLY.map((i) => i.tag) }))}
-              onNone={() => setFilters((p) => ({ ...p, showOnly: [] }))}
-            >
-              {WE_SHOW_ONLY.map((item) => (
-                <CheckItem
-                  key={item.tag}
-                  label={item.label}
-                  checked={filters.showOnly.includes(item.tag)}
-                  onChange={() => update('showOnly', item.tag)}
-                />
-              ))}
-            </FilterSection>
-            <FilterSection
+              onChange={(tags) => setFilter('showOnly', tags)}
+            />
+            <TagFilterSection
               title="Type"
-              activeCount={effectiveTypes.length}
-              onAll={() => setFilters((p) => ({ ...p, types: ALL_TYPES }))}
-              onNone={() => setFilters((p) => ({ ...p, types: [] }))}
-            >
-              {WE_TYPES.map((item) => (
-                <CheckItem
-                  key={item.tag}
-                  label={item.label}
-                  checked={filters.types.includes(item.tag)}
-                  onChange={() => update('types', item.tag)}
-                />
-              ))}
-            </FilterSection>
+              options={WE_TYPES}
+              selected={filters.types}
+              activeCount={effective.types.length}
+              onChange={(tags) => setFilter('types', tags)}
+            />
             {assetSelected && (
-              <FilterSection
+              <TagFilterSection
                 title="Asset Type"
-                activeCount={effectiveAssetTypes.length}
-                onAll={() => setFilters((p) => ({ ...p, assetTypes: ALL_ASSET_TYPES }))}
-                onNone={() => setFilters((p) => ({ ...p, assetTypes: [] }))}
-              >
-                {WE_ASSET_TYPES.map((item) => (
-                  <CheckItem
-                    key={item.tag}
-                    label={item.label}
-                    checked={filters.assetTypes.includes(item.tag)}
-                    onChange={() => update('assetTypes', item.tag)}
-                  />
-                ))}
-              </FilterSection>
+                options={WE_ASSET_TYPES}
+                selected={filters.assetTypes}
+                activeCount={effective.assetTypes.length}
+                onChange={(tags) => setFilter('assetTypes', tags)}
+              />
             )}
-            <FilterSection
+            <TagFilterSection
               title="Age Rating"
-              activeCount={effectiveAgeRatings.length}
-              onAll={() => setFilters((p) => ({ ...p, ageRatings: ALL_AGE_RATINGS }))}
-              onNone={() => setFilters((p) => ({ ...p, ageRatings: [] }))}
-            >
-              {WE_AGE_RATINGS.map((item) => (
-                <CheckItem
-                  key={item.tag}
-                  label={item.label}
-                  checked={filters.ageRatings.includes(item.tag)}
-                  onChange={() => update('ageRatings', item.tag)}
-                />
-              ))}
-            </FilterSection>
-            <FilterSection
-              title="Resolution"
-              defaultOpen={false}
-              activeCount={effectiveResolutions.length}
-              onAll={() => setFilters((p) => ({ ...p, resolutions: ALL_RESOLUTION_TAGS }))}
-              onNone={() => setFilters((p) => ({ ...p, resolutions: [] }))}
-            >
-              {WE_RESOLUTION_GROUPS.map((group) => {
-                return (
-                  <div key={group.label} className="mt-2">
-                    <div className="flex items-center justify-between mb-0.5 pl-0.5">
-                      <p className="text-xs text-gray-600">{group.label}</p>
-                      <div className="flex gap-1.5">
-                        <button
-                          onClick={() =>
-                            setFilters((p) => ({ ...p, resolutions: setGroupSelected(p.resolutions, group, true) }))
-                          }
-                          className="text-[10px] text-gray-600 hover:text-gray-400"
-                        >
-                          all
-                        </button>
-                        <button
-                          onClick={() =>
-                            setFilters((p) => ({ ...p, resolutions: setGroupSelected(p.resolutions, group, false) }))
-                          }
-                          className="text-[10px] text-gray-600 hover:text-gray-400"
-                        >
-                          none
-                        </button>
-                      </div>
-                    </div>
-                    {group.items.map((item) => (
-                      <CheckItem
-                        key={item.tag}
-                        label={item.label}
-                        checked={filters.resolutions.includes(item.tag)}
-                        onChange={() => update('resolutions', item.tag)}
-                      />
-                    ))}
-                  </div>
-                )
-              })}
-            </FilterSection>
-            <FilterSection
+              options={WE_AGE_RATINGS}
+              selected={filters.ageRatings}
+              activeCount={effective.ageRatings.length}
+              onChange={(tags) => setFilter('ageRatings', tags)}
+            />
+            <ResolutionFilterSection
+              selected={filters.resolutions}
+              allTags={ALL_RESOLUTION_TAGS}
+              activeCount={effective.resolutions.length}
+              onChange={(tags) => setFilter('resolutions', tags)}
+            />
+            <TagFilterSection
               title="Genre"
               defaultOpen={false}
-              activeCount={effectiveGenres.length}
-              onAll={() => setFilters((p) => ({ ...p, genres: ALL_GENRES }))}
-              onNone={() => setFilters((p) => ({ ...p, genres: [] }))}
-            >
-              {WE_GENRES.map((item) => (
-                <CheckItem
-                  key={item.tag}
-                  label={item.label}
-                  checked={filters.genres.includes(item.tag)}
-                  onChange={() => update('genres', item.tag)}
-                />
-              ))}
-            </FilterSection>
-          </div>
+              options={WE_GENRES}
+              selected={filters.genres}
+              activeCount={effective.genres.length}
+              onChange={(tags) => setFilter('genres', tags)}
+            />
+          </FilterPanel>
         )}
 
-        <div
-          ref={gridRef}
-          className="relative flex-1 overflow-y-auto p-4 select-none"
-          onMouseDown={handleMarqueeStart}
-          onMouseMove={handleMarqueeMove}
-          onMouseUp={handleMarqueeEnd}
-          onMouseLeave={handleMarqueeEnd}
-        >
-          {isLoading && (
-            <div className="flex h-40 items-center justify-center text-gray-500">
-              <Loader2 size={24} className="animate-spin" />
-            </div>
-          )}
+        <div {...containerProps} className="relative flex-1 overflow-y-auto p-4 select-none">
+          {isLoading && <LoadingSpinner />}
           {error && (
             <div className="rounded-lg bg-red-900/20 p-4 text-sm text-red-400">
               <p className="font-medium">Failed to load workshop</p>
@@ -939,33 +599,17 @@ export default function WorkshopBrowser({
                 voteError={failedVotes[item.publishedFileId]}
                 showVoteBorder={voteBordersEnabled}
                 canPlay={playableSet.has(item.publishedFileId)}
-                lweInstalled={lweStatus?.installed ?? false}
+                lweInstalled={lweInstalled}
                 subscribeState={subscribeEntries.get(item.publishedFileId)?.state}
                 downloadPercentage={subscribeEntries.get(item.publishedFileId)?.percentage}
                 onSelect={(e) => handleCardSelect(item.publishedFileId, e)}
                 onContextMenu={(e) => openCtxMenu(e, item.publishedFileId)}
-                onLiked={() => {
-                  const votedId = item.publishedFileId
-                  queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
-                    old ? [...old, votedId] : [votedId]
-                  )
-                }}
-                onPlay={() => handlePlay(item.publishedFileId)}
+                onPlay={() => applyWallpaper(item.publishedFileId)}
                 onSubscribe={() => enqueueSubscribe([item.publishedFileId])}
               />
             ))}
           </div>
-          {marqueeRect && marqueeRect.width > 3 && marqueeRect.height > 3 && (
-            <div
-              className="pointer-events-none absolute z-20 border border-indigo-500 bg-indigo-500/15"
-              style={{
-                left: marqueeRect.left,
-                top: marqueeRect.top,
-                width: marqueeRect.width,
-                height: marqueeRect.height
-              }}
-            />
-          )}
+          <MarqueeOverlay rect={marqueeRect} />
           {isFetchingNextPage && (
             <div className="mt-4 flex justify-center text-gray-500">
               <Loader2 size={20} className="animate-spin" />
@@ -992,32 +636,21 @@ export default function WorkshopBrowser({
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="rounded bg-[#1a1a1a] px-2 py-1 text-gray-300 outline-none [&>option]:bg-[#1a1a1a] [&>option]:text-gray-300"
+                  className="rounded bg-[#1a1a1a] px-2 py-1 text-gray-300 outline-none"
                 >
                   <option value={50}>50</option>
                   <option value={100}>100</option>
                   <option value={200}>200</option>
                 </select>
               </div>
-              <div className="flex items-center gap-2 text-xs text-gray-400">
-                <button
-                  disabled={safePage <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="rounded bg-white/5 px-2.5 py-1 text-gray-300 hover:bg-white/10 disabled:opacity-40"
-                >
-                  Prev
-                </button>
-                <span>
-                  Page {safePage} of {totalPages} ({totalFiltered} items{totalResults > totalFiltered ? ` of ~${totalResults}` : ''})
-                </span>
-                <button
-                  disabled={safePage >= totalPages && !hasNextPage}
-                  onClick={() => setPage((p) => p + 1)}
-                  className="rounded bg-white/5 px-2.5 py-1 text-gray-300 hover:bg-white/10 disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
+              <Pagination
+                page={safePage}
+                totalPages={totalPages}
+                canNext={safePage < totalPages || !!hasNextPage}
+                onPage={setPage}
+              >
+                Page {safePage} of {totalPages} ({totalFiltered} items{totalResults > totalFiltered ? ` of ~${totalResults}` : ''})
+              </Pagination>
             </div>
           )}
         </div>
@@ -1029,154 +662,18 @@ export default function WorkshopBrowser({
             fallbackPreviewUrl={detailItem.previewUrl}
             fallbackTags={detailItem.tags}
             fallbackAuthorSteamId={detailItem.creatorSteamId}
-            isSubscribed={detailSubscribed}
-            isLiked={votedSet.has(detailId)}
+            isSubscribed={detailItem.isSubscribed || isSubscribedState(subscribeEntries.get(detailId)?.state)}
             canPlay={playableSet.has(detailId)}
-            lweInstalled={lweStatus?.installed ?? false}
             onClose={() => setDetailId(null)}
             onSubscribe={() => enqueueSubscribe([detailId])}
             onUnsubscribe={() => unsubscribeIds([detailId])}
-            onLiked={() => {
-              queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
-                old ? [...old, detailId] : [detailId]
-              )
-            }}
-            onPlay={(screen) => handlePlay(detailId, screen)}
+            onPlay={(screen) => applyWallpaper(detailId, screen)}
             onBrowseCreator={onBrowseCreator}
           />
         )}
       </div>
 
-      {ctxMenu && (
-        <div
-          ref={ctxRef}
-          className="fixed z-50 min-w-[180px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
-          style={{ left: ctxPos?.x ?? ctxMenu.x, top: ctxPos?.y ?? ctxMenu.y }}
-        >
-          {ctxMenu.ids.length > 1 && (
-            <div className="px-3 py-1 text-xs text-gray-600 border-b border-white/5 mb-1">
-              {ctxMenu.ids.length} items selected
-            </div>
-          )}
-          {ctxMenu.ids.length === 1 && playableSet.has(ctxMenu.ids[0]) && (
-            <>
-              <button
-                onClick={ctxPlay}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-              >
-                <Play size={12} /> Play wallpaper
-              </button>
-              <div className="my-1 border-t border-white/5" />
-            </>
-          )}
-          <button
-            onClick={ctxSubscribe}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-          >
-            Subscribe
-          </button>
-          <button
-            onClick={ctxUnsubscribe}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-          >
-            Unsubscribe
-          </button>
-          <div className="my-1 border-t border-white/5" />
-          <button
-            onClick={() => ctxVote(true)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-          >
-            Like
-          </button>
-          <button
-            onClick={() => ctxVote(false)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-          >
-            Dislike
-          </button>
-          <div className="my-1 border-t border-white/5" />
-          <button
-            onClick={ctxOpenInSteam}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-          >
-            Open in Steam Workshop
-          </button>
-          {ctxMenu.ids.length === 1 && (
-            <button
-              onClick={ctxBrowseCreator}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              <User size={12} /> Browse wallpapers from this creator
-            </button>
-          )}
-          {ctxLibraryIds.length > 0 && (
-            <>
-              <div className="my-1 border-t border-white/5" />
-              <div className="relative">
-                <button
-                  onClick={() =>
-                    setCtxMenu((prev) => (prev ? { ...prev, showFolderSub: !prev.showFolderSub } : null))
-                  }
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-                >
-                  <FolderInput size={12} /> Move to folder
-                  <ChevronRight size={12} className="ml-auto" />
-                </button>
-                {ctxMenu.showFolderSub && (
-                  <div
-                    ref={folderSubRef}
-                    className={clsx(
-                      'absolute top-0 min-w-[160px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl',
-                      folderSubSide === 'left' ? 'right-full mr-1' : 'left-full ml-1'
-                    )}
-                  >
-                    {ctxMoveTargets.length === 0 && (
-                      <div className="px-3 py-1.5 text-gray-500">No other folders</div>
-                    )}
-                    {ctxMoveTargets.map((f) => (
-                      <button
-                        key={f.id}
-                        onClick={() => ctxMoveToFolder(f.id)}
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-                      >
-                        <Folder size={12} /> {f.title}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {ctxHasFolder && (
-                <button
-                  onClick={ctxRemoveFromFolder}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
-                >
-                  <Trash2 size={12} /> Remove from folder
-                </button>
-              )}
-            </>
-          )}
-          {ctxMenu.ids.length === 1 && (() => {
-            const ctxItem = allItems.find((i) => i.publishedFileId === ctxMenu.ids[0])
-            const ctxCreatorIgnored = ctxItem ? ignoredCreatorSet.has(ctxItem.creatorSteamId) : false
-            return (
-              <button
-                onClick={ctxToggleIgnoreCreator}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-              >
-                {ctxCreatorIgnored ? (
-                  <>
-                    <Eye size={12} /> Unignore this creator
-                  </>
-                ) : (
-                  <>
-                    <EyeOff size={12} /> Ignore this creator
-                  </>
-                )}
-              </button>
-            )
-          })()}
-        </div>
-      )}
+      {ctxMenu && renderCtxMenu(ctxMenu)}
     </div>
   )
 }

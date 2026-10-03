@@ -317,6 +317,9 @@ const api = {
       cornerColor?: string
       imageAdjustments?: ImageAdjustments
       speed?: number
+      videoStart?: number | null
+      videoEnd?: number | null
+      videoSeek?: number
       propertyOverrides?: Record<string, string>
       audioScreen?: string
       ambientVolume?: number
@@ -328,6 +331,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LWE_LIST_PROPERTIES, wallpaperPath),
     listScreens: (): Promise<string[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_SCREENS),
+    videoDuration: (wallpaperPath: string, projectFile?: string): Promise<number | null> =>
+      ipcRenderer.invoke(IpcChannels.LWE_VIDEO_DURATION, wallpaperPath, projectFile),
     listAudioObjects: (wallpaperPath: string): Promise<LweAudioObject[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_AUDIO_OBJECTS, wallpaperPath),
     listEffects: (wallpaperPath: string): Promise<LweSceneEffect[]> =>

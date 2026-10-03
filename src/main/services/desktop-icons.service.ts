@@ -18,9 +18,7 @@ function getOverlayScriptPath(): string {
   // In dev: __dirname is out/main, project root is two levels up
   // In prod: script is copied to resources/
   const candidates = [
-    // Dev: source tree
     path.join(__dirname, '..', '..', 'src', 'main', 'services', 'desktop-icons-overlay.py'),
-    // Prod: bundled in resources
     path.join(process.resourcesPath ?? '', 'desktop-icons-overlay.py'),
     // Fallback: next to compiled output
     path.join(__dirname, 'desktop-icons-overlay.py')
@@ -123,7 +121,6 @@ export function initDesktopIcons(): void {
   }
 }
 
-/** Call on app quit to clean up overlay processes. */
 export function cleanupDesktopIcons(): void {
   stopDesktopIconsOverlay()
 }

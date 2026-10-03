@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   X,
@@ -36,17 +36,20 @@ import {
   Music2,
   Terminal,
   Sparkles,
-  CloudFog
+  CloudFog,
+  type LucideIcon
 } from 'lucide-react'
 import clsx from 'clsx'
 import { openWorkshopPage, openProfilePage, isWorkshopId } from '../../utils/steam'
 import { WE_TYPES, WE_AGE_RATINGS, canonicalResolutionTag, resolutionsFromTags } from '../../constants/weFilters'
 import { formatFileSize } from '../../utils/format'
-import { useToast } from './Toast'
+import { useVoteAction, useVotedIds } from '../../hooks/useVotes'
+import { useLweInstalled } from '../../hooks/queries'
 import ScreenSelect from './ScreenSelect'
 import { getPreviewSrc } from '../../utils/preview'
 import EngineFlagsSection from './sidebar/EngineFlagsSection'
 import ImageAdjustmentsSection from './sidebar/ImageAdjustmentsSection'
+import VideoTrimSection from './sidebar/VideoTrimSection'
 import CompatSection from './sidebar/CompatSection'
 import ThumbnailSection from './sidebar/ThumbnailSection'
 import { ShortcutRow } from './ShortcutRow'
@@ -274,7 +277,7 @@ function PropertyRow({
           value={value}
           disabled={busy}
           onChange={(e) => onCommit(e.target.value)}
-          className="rounded bg-white/5 px-1.5 py-0.5 text-xs text-gray-300 outline-none disabled:opacity-50 [&>option]:bg-[#1a1a1a]"
+          className="rounded bg-white/5 px-1.5 py-0.5 text-xs text-gray-300 outline-none disabled:opacity-50"
         >
           {property.options?.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -376,6 +379,18 @@ function SoundTrackRow({
   )
 }
 
+function SidebarButton({ icon: Icon, onClick, children }: { icon: LucideIcon; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center justify-center gap-1.5 rounded-lg bg-white/5 py-1.5 text-xs text-gray-300 transition-colors hover:bg-white/10"
+    >
+      <Icon size={12} />
+      {children}
+    </button>
+  )
+}
+
 interface DetailSidebarProps {
   id: string
   fallbackTitle: string
@@ -384,13 +399,10 @@ interface DetailSidebarProps {
   fallbackAuthorSteamId?: string
   localFileSize?: number
   isSubscribed: boolean
-  isLiked: boolean
   canPlay: boolean
-  lweInstalled: boolean
   onClose: () => void
   onSubscribe: () => void
   onUnsubscribe: () => void | Promise<void>
-  onLiked: () => void
   onPlay: (screen?: ScreenTarget) => void | Promise<void>
   onBrowseCreator?: (steamId: string) => void
 }
@@ -403,21 +415,18 @@ export default function DetailSidebar({
   fallbackAuthorSteamId,
   localFileSize,
   isSubscribed,
-  isLiked: cachedLiked,
   canPlay,
-  lweInstalled,
   onClose,
   onSubscribe,
   onUnsubscribe,
-  onLiked,
   onPlay,
   onBrowseCreator
 }: DetailSidebarProps) {
   const workshopId = isWorkshopId(id)
   const queryClient = useQueryClient()
-  const { showToast } = useToast()
-  const [isLiking, setIsLiking] = useState(false)
-  const [isDisliking, setIsDisliking] = useState(false)
+  const lweInstalled = useLweInstalled()
+  const cachedLiked = useVotedIds().has(id)
+  const { vote, isLiking, isDisliking } = useVoteAction()
   const [isApplying, setIsApplying] = useState(false)
   const [unsubConfirm, setUnsubConfirm] = useState(false)
   const [isUnsubscribing, setIsUnsubscribing] = useState(false)
@@ -539,6 +548,14 @@ export default function DetailSidebar({
   const soundObjects = objects.filter((o) => o.type === 'sound')
   const soundVolume = libraryMeta?.soundVolume ?? {}
 
+  const { data: videoDuration = null } = useQuery({
+    queryKey: ['video-duration', localPath],
+    queryFn: () => window.electronAPI.lwe.videoDuration(localPath!, libraryMeta?.file),
+    enabled: !!localPath && libraryMeta?.type === 'video',
+    staleTime: Infinity,
+    retry: false
+  })
+
   // Persists a settings patch and, if this wallpaper is currently playing, pushes it live via
   // the control-file hotswap (no process restart). Falls back to a full stop+relaunch if the
   // push fails, e.g. an older linux-wallpaperengine build without the extended protocol.
@@ -564,6 +581,9 @@ export default function DetailSidebar({
             cornerColor: patch.cornerColor,
             imageAdjustments: patch.imageAdjustments,
             speed: patch.playbackSpeed,
+            // undefined in a patch that has the key clears that side of the trim
+            videoStart: 'videoStart' in patch ? (patch.videoStart ?? null) : undefined,
+            videoEnd: 'videoEnd' in patch ? (patch.videoEnd ?? null) : undefined,
             propertyOverrides: patch.propertyOverrides,
             audioSensitivity: patch.audioSensitivity,
             soundVolume: patch.soundVolume
@@ -595,6 +615,9 @@ export default function DetailSidebar({
     offsetY?: number
     speed?: number
     imageAdjustments?: ImageAdjustments
+    videoStart?: number | null
+    videoEnd?: number | null
+    videoSeek?: number
   }) {
     if (!isActive) return
     if (livePreviewTimer.current) clearTimeout(livePreviewTimer.current)
@@ -861,36 +884,9 @@ export default function DetailSidebar({
   // size (item.fileSize) - they can differ once extracted, and the local number is exact.
   const fileSizeLabel = formatFileSize(libraryMeta?.fileSize ?? item?.fileSize ?? localFileSize)
 
-  async function handleLike() {
-    if (isLiked || isLiking || unavailable) return
-    setIsLiking(true)
-    try {
-      const { confirmed } = await window.electronAPI.steam.vote(id, true)
-      if (confirmed) {
-        queryClient.setQueryData(['steam-vote', id], true)
-        onLiked()
-      } else {
-        showToast('Could not confirm the like on Steam - try again')
-      }
-    } catch (err) {
-      showToast((err as Error).message)
-    } finally {
-      setIsLiking(false)
-    }
-  }
-
-  async function handleDislike() {
-    if (isDisliking || unavailable) return
-    setIsDisliking(true)
-    try {
-      const { confirmed } = await window.electronAPI.steam.vote(id, false)
-      if (confirmed) queryClient.setQueryData(['steam-vote', id], false)
-      if (!confirmed) showToast('Could not confirm the dislike on Steam - try again')
-    } catch (err) {
-      showToast((err as Error).message)
-    } finally {
-      setIsDisliking(false)
-    }
+  function handleVote(up: boolean) {
+    if (unavailable || (up && isLiked)) return
+    void vote(id, up)
   }
 
   async function handlePlay() {
@@ -1079,7 +1075,7 @@ export default function DetailSidebar({
               value={scalingMode}
               disabled={isCommittingScaling}
               onChange={(e) => commitScaling(e.target.value as ScalingMode)}
-              className="w-full rounded bg-white/5 px-1.5 py-1 text-xs text-gray-300 outline-none disabled:opacity-50 [&>option]:bg-[#1a1a1a]"
+              className="w-full rounded bg-white/5 px-1.5 py-1 text-xs text-gray-300 outline-none disabled:opacity-50"
             >
               {SCALING_MODE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -1269,6 +1265,19 @@ export default function DetailSidebar({
               className="w-full accent-indigo-500 disabled:opacity-50"
             />
           </div>
+        )}
+
+        {localPath && lweInstalled && libraryMeta?.type === 'video' && (
+          <VideoTrimSection
+            start={libraryMeta.videoStart}
+            end={libraryMeta.videoEnd}
+            duration={videoDuration}
+            live={isActive}
+            onCommit={({ start, end }) => persistAndMaybeRelaunch({ videoStart: start, videoEnd: end })}
+            onPreview={({ start, end }, seek) =>
+              previewLive({ videoStart: start ?? null, videoEnd: end ?? null, videoSeek: seek })
+            }
+          />
         )}
 
         {localPath && lweInstalled && (libraryMeta?.type === 'scene' || libraryMeta?.type === 'video') && (
@@ -1553,7 +1562,6 @@ export default function DetailSidebar({
               onUpdated={(updated) => {
                 queryClient.setQueryData(['library-item', id], updated)
                 queryClient.invalidateQueries({ queryKey: ['library'] })
-                queryClient.invalidateQueries({ queryKey: ['library-all'] })
               }}
             />
           </>
@@ -1562,8 +1570,8 @@ export default function DetailSidebar({
         <div className="flex flex-col gap-1.5 border-t border-white/5 pt-3">
           <div className="flex gap-1.5">
             <button
-              onClick={handleLike}
-              disabled={isLiked || isLiking || unavailable}
+              onClick={() => handleVote(true)}
+              disabled={isLiked || isLiking || isDisliking || unavailable}
               title={unavailable ? 'Removed from the Steam Workshop - voting is no longer possible' : undefined}
               className={clsx(
                 'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs transition-colors disabled:cursor-not-allowed',
@@ -1578,8 +1586,8 @@ export default function DetailSidebar({
               {isLiked ? 'Liked' : 'Like'}
             </button>
             <button
-              onClick={handleDislike}
-              disabled={isDisliking || unavailable}
+              onClick={() => handleVote(false)}
+              disabled={isLiking || isDisliking || unavailable}
               title={unavailable ? 'Removed from the Steam Workshop - voting is no longer possible' : undefined}
               className={clsx(
                 'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs transition-colors disabled:cursor-not-allowed',
@@ -1625,42 +1633,26 @@ export default function DetailSidebar({
               {unsubConfirm ? 'Click again to confirm' : 'Unsubscribe'}
             </button>
           ) : (
-            <button
-              onClick={onSubscribe}
-              className="flex items-center justify-center gap-1.5 rounded-lg bg-white/5 py-1.5 text-xs text-gray-300 transition-colors hover:bg-white/10"
-            >
-              <Download size={12} />
+            <SidebarButton icon={Download} onClick={onSubscribe}>
               Subscribe
-            </button>
+            </SidebarButton>
           )}
 
           {workshopId && (
             <>
-              <button
-                onClick={() => window.electronAPI.steam.openWorkshopItem(id)}
-                className="flex items-center justify-center gap-1.5 rounded-lg bg-white/5 py-1.5 text-xs text-gray-300 transition-colors hover:bg-white/10"
-              >
-                <MessageCircle size={12} />
+              <SidebarButton icon={MessageCircle} onClick={() => window.electronAPI.steam.openWorkshopItem(id)}>
                 Comment
-              </button>
-              <button
-                onClick={() => openWorkshopPage(id)}
-                className="flex items-center justify-center gap-1.5 rounded-lg bg-white/5 py-1.5 text-xs text-gray-300 transition-colors hover:bg-white/10"
-              >
-                <ExternalLink size={12} />
+              </SidebarButton>
+              <SidebarButton icon={ExternalLink} onClick={() => openWorkshopPage(id)}>
                 Open in Steam Workshop
-              </button>
+              </SidebarButton>
             </>
           )}
 
           {creatorSteamId && (
-            <button
-              onClick={() => openProfilePage(creatorSteamId)}
-              className="flex items-center justify-center gap-1.5 rounded-lg bg-white/5 py-1.5 text-xs text-gray-300 transition-colors hover:bg-white/10"
-            >
-              <User size={12} />
+            <SidebarButton icon={User} onClick={() => openProfilePage(creatorSteamId)}>
               View creator's Steam profile
-            </button>
+            </SidebarButton>
           )}
         </div>
       </div>

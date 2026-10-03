@@ -25,8 +25,6 @@ gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk4LayerShell, Gtk, Gdk, Gio, GLib
 
 
-# --- KDE desktop config parsing ---
-
 def get_desktop_dir():
     try:
         result = subprocess.run(
@@ -184,8 +182,6 @@ def get_mime_icon(path):
     return 'folder' if os.path.isdir(path) else 'text-x-generic'
 
 
-# --- KDE settings auto-detection ---
-
 # Kirigami icon size table (index to pixels), matching FolderTools.js
 _ICON_SIZE_TABLE = [22, 32, 48, 64, 96, 128, 256]
 
@@ -254,7 +250,6 @@ def detect_kde_settings():
                     pass
                 try:
                     kde_weight = int(parts[4])
-                    # Find closest CSS weight
                     closest = min(_KDE_WEIGHT_MAP.keys(),
                                   key=lambda k: abs(k - kde_weight))
                     settings['font_weight'] = _KDE_WEIGHT_MAP[closest]
@@ -274,8 +269,6 @@ def detect_kde_settings():
 
     return settings
 
-
-# --- Layout ---
 
 _kde = detect_kde_settings()
 ICON_SIZE = _kde['icon_size']
@@ -353,7 +346,6 @@ def main():
         Gtk4LayerShell.set_layer(window, Gtk4LayerShell.Layer.BOTTOM)
         Gtk4LayerShell.set_namespace(window, 'desktop')
 
-        # Target monitor
         if monitor_name:
             display = Gdk.Display.get_default()
             monitors = display.get_monitors()
@@ -371,7 +363,6 @@ def main():
         Gtk4LayerShell.set_exclusive_zone(window, -1)
         Gtk4LayerShell.set_keyboard_mode(window, Gtk4LayerShell.KeyboardMode.NONE)
 
-        # CSS built from the auto-detected font settings
         font_style = 'italic' if _kde['font_italic'] else 'normal'
         font_weight = _kde['font_weight']
         css = Gtk.CssProvider()
@@ -392,7 +383,6 @@ def main():
 
         build_icons()
 
-        # Watch ~/Desktop for changes
         desktop_file = Gio.File.new_for_path(desktop_dir)
         file_monitor = desktop_file.monitor_directory(
             Gio.FileMonitorFlags.NONE, None
@@ -408,7 +398,6 @@ def main():
         if not window:
             return
 
-        # Get monitor resolution
         display = Gdk.Display.get_default()
         monitors = display.get_monitors()
         screen_w, screen_h = 2560, 1440
@@ -421,10 +410,8 @@ def main():
             screen_h = geo.height
             break
 
-        # Get panel offset
         panel_left, panel_right, panel_top, panel_bottom = get_panel_offset()
 
-        # Parse KDE positions
         screen_key = f'{screen_w}x{screen_h}'
         kde_positions, grid_cols, grid_rows = parse_kde_positions(screen_key)
 

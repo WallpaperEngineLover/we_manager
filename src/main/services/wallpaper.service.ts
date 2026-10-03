@@ -240,6 +240,8 @@ export async function lweOptionsFor(
     cornerColor: wallpaper.cornerColor,
     imageAdjustments: wallpaper.imageAdjustments,
     speed: wallpaper.playbackSpeed,
+    videoStart: wallpaper.type === 'video' ? wallpaper.videoStart : undefined,
+    videoEnd: wallpaper.type === 'video' ? wallpaper.videoEnd : undefined,
     audioSensitivity: wallpaper.audioSensitivity,
     soundVolume: wallpaper.soundVolume,
     customArgs: wallpaper.customArgs

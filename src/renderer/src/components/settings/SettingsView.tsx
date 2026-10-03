@@ -606,7 +606,7 @@ export default function SettingsView() {
                 <select
                   value={audioScreen ?? ''}
                   onChange={(e) => handleAudioScreenChange(e.target.value || null)}
-                  className="w-56 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 [&>option]:bg-[#1a1a1a] [&>option]:text-gray-200"
+                  className="w-56 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
                 >
                   <option value="">All screens (default)</option>
                   {screens.map((s) => (
@@ -1097,7 +1097,7 @@ export default function SettingsView() {
               <select
                 value={autostartPlaylistId ?? ''}
                 onChange={(e) => saveAutostart({ playlistId: e.target.value || null })}
-                className="w-56 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 [&>option]:bg-[#1a1a1a] [&>option]:text-gray-200"
+                className="w-56 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
               >
                 <option value="">None</option>
                 {playlists.map((p) => (

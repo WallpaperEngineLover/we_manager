@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { Wifi, WifiOff, ListVideo, Play, Pause, SkipForward } from 'lucide-react'
-import type { PlaylistPlaybackState } from '@shared/types'
 import { screenLabel } from '../../utils/screens'
+import { usePlaybackStates, usePlaylists } from '../../hooks/queries'
 
 export default function StatusBar() {
   const [steamRunning, setSteamRunning] = useState(false)
-  const [players, setPlayers] = useState<PlaylistPlaybackState[]>([])
 
   useEffect(() => {
     window.electronAPI.steam.isRunning().then(setSteamRunning).catch(() => setSteamRunning(false))
@@ -15,15 +13,8 @@ export default function StatusBar() {
     return unsub
   }, [])
 
-  useEffect(() => {
-    window.electronAPI.playlist.getState().then(setPlayers)
-    return window.electronAPI.on.playlistStateChanged(setPlayers)
-  }, [])
-
-  const { data: playlists } = useQuery({
-    queryKey: ['playlists'],
-    queryFn: () => window.electronAPI.playlist.getAll()
-  })
+  const players = usePlaybackStates()
+  const playlists = usePlaylists()
 
   const active = players.filter((p) => p.playlistId)
 

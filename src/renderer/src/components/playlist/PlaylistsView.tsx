@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   ListVideo,
   Plus,
@@ -12,28 +12,17 @@ import {
   SkipBack,
   Shuffle,
   Film,
-  ArrowDownWideNarrow,
-  ExternalLink,
-  FolderOpen,
-  FolderInput,
-  Folder,
-  ChevronRight,
-  Eye,
-  ThumbsUp,
-  ThumbsDown,
-  Archive,
-  User
+  ArrowDownWideNarrow
 } from 'lucide-react'
 import clsx from 'clsx'
-import type { Playlist, PlaylistPlaybackState, PlaylistSettings, ScreenTarget } from '@shared/types'
+import type { PlaylistSettings, ScreenTarget } from '@shared/types'
 import PlaylistItemRow from './PlaylistItemRow'
 import WallpaperPickerModal from './WallpaperPickerModal'
 import DetailSidebar from '../common/DetailSidebar'
-import { useClickOutside } from '../../hooks/useClickOutside'
-import { useClampedPosition, useFlipSide } from '../../hooks/useContextMenuPosition'
-import { openWorkshopPage, isWorkshopId } from '../../utils/steam'
-import { useToast } from '../common/Toast'
-import { getPreviewSrc } from '../../utils/preview'
+import WallpaperContextMenu from '../common/WallpaperContextMenu'
+import { useAllWallpapers, usePlaybackStates, usePlaylists } from '../../hooks/queries'
+import { useApplyWallpaper, useSubscribe, useUnsubscribe } from '../../hooks/useWallpaperActions'
+import { detailSidebarProps } from '../../utils/wallpaper'
 import ScreenSelect from '../common/ScreenSelect'
 import { useDisplayTargets } from '../../hooks/useDisplayTargets'
 import { screenLabel } from '../../utils/screens'
@@ -50,7 +39,6 @@ interface PlaylistsViewProps {
 
 export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
   const queryClient = useQueryClient()
-  const { showToast } = useToast()
   const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
@@ -62,71 +50,17 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
   const [error, setError] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
 
-  const [ctxMenu, setCtxMenu] = useState<{
-    x: number
-    y: number
-    wallpaperId: string
-    showFolderSub: boolean
-  } | null>(null)
-  const ctxMenuRef = useRef<HTMLDivElement>(null)
-  const folderSubRef = useRef<HTMLDivElement>(null)
-  useClickOutside(ctxMenuRef, () => setCtxMenu(null), !!ctxMenu)
-  const ctxPos = useClampedPosition(ctxMenuRef, ctxMenu)
-  const folderSubSide = useFlipSide(folderSubRef, !!ctxMenu?.showFolderSub)
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; wallpaperId: string } | null>(null)
 
-  const { data: playlists = [] } = useQuery({
-    queryKey: ['playlists'],
-    queryFn: () => window.electronAPI.playlist.getAll()
-  })
-
-  const { data: wallpapers = [] } = useQuery({
-    queryKey: ['library-all'],
-    queryFn: () => window.electronAPI.library.getAll()
-  })
+  const playlists = usePlaylists()
+  const wallpapers = useAllWallpapers()
   const wallpaperById = useMemo(() => new Map(wallpapers.map((w) => [w.id, w])), [wallpapers])
-
-  const { data: folders = [], refetch: refetchFolders } = useQuery({
-    queryKey: ['folders'],
-    queryFn: () => window.electronAPI.folders.getAll()
-  })
-  const folderOfItem = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const f of folders) {
-      for (const id of f.items) map.set(id, f.id)
-    }
-    return map
-  }, [folders])
-
-  const { data: config } = useQuery({
-    queryKey: ['config'],
-    queryFn: () => window.electronAPI.config.get()
-  })
-  const isBackupConfigured = config?.isBackupConfigured ?? false
-
-  const { data: playbackStates = [] } = useQuery({
-    queryKey: ['playlist-playback-state'],
-    queryFn: () => window.electronAPI.playlist.getState()
-  })
+  const playbackStates = usePlaybackStates()
   const { targets, perScreen } = useDisplayTargets()
   const [screen, setScreen] = useState<ScreenTarget>('*')
-
-  const { data: lweStatus } = useQuery({
-    queryKey: ['lwe-status'],
-    queryFn: () => window.electronAPI.lwe.status()
-  })
-
-  const { data: votedIds } = useQuery({
-    queryKey: ['steam-voted-ids'],
-    queryFn: () => window.electronAPI.steam.getVotedIds(),
-    staleTime: Infinity
-  })
-  const votedSet = useMemo(() => new Set(votedIds ?? []), [votedIds])
-
-  useEffect(() => {
-    return window.electronAPI.on.playlistStateChanged((states: PlaylistPlaybackState[]) => {
-      queryClient.setQueryData(['playlist-playback-state'], states)
-    })
-  }, [queryClient])
+  const applyWallpaper = useApplyWallpaper()
+  const subscribe = useSubscribe()
+  const unsubscribe = useUnsubscribe()
 
   const activePlaylist = playlists.find((p) => p.id === activePlaylistId) ?? null
 
@@ -193,119 +127,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
 
   function openItemCtxMenu(e: React.MouseEvent, wallpaperId: string) {
     e.preventDefault()
-    setCtxMenu({ x: e.clientX, y: e.clientY, wallpaperId, showFolderSub: false })
-  }
-
-  function closeCtxMenu() {
-    setCtxMenu(null)
-  }
-
-  const ctxWallpaper = ctxMenu ? wallpaperById.get(ctxMenu.wallpaperId) : undefined
-  const ctxHasVideo = Boolean(ctxWallpaper?.type === 'video' && ctxWallpaper.file)
-  const ctxHasBackupable = ctxWallpaper?.source === 'workshop'
-  const ctxFolderId = ctxMenu ? folderOfItem.get(ctxMenu.wallpaperId) : undefined
-  const ctxMoveTargets = folders.filter((f) => f.id !== ctxFolderId)
-
-  async function ctxUnsubscribe() {
-    if (!ctxMenu) return
-    await window.electronAPI.steam.unsubscribe(ctxMenu.wallpaperId)
-    closeCtxMenu()
-    queryClient.invalidateQueries({ queryKey: ['library-all'] })
-    refetchFolders()
-  }
-
-  async function unsubscribeWallpaper(wallpaperId: string) {
-    await window.electronAPI.steam.unsubscribe(wallpaperId)
-    queryClient.invalidateQueries({ queryKey: ['library-all'] })
-    refetchFolders()
-  }
-
-  async function handleApplyDetail(wallpaperId: string, target?: ScreenTarget) {
-    try {
-      await window.electronAPI.wallpaper.apply({ wallpaperId, screen: target })
-      queryClient.invalidateQueries({ queryKey: ['library-all'] })
-    } catch (err) {
-      showToast((err as Error).message)
-    }
-  }
-
-  async function ctxVote(up: boolean) {
-    if (!ctxMenu) return
-    const wallpaperId = ctxMenu.wallpaperId
-    closeCtxMenu()
-    try {
-      const { confirmed } = await window.electronAPI.steam.vote(wallpaperId, up)
-      if (!confirmed) {
-        showToast(`Could not confirm the ${up ? 'like' : 'dislike'} on Steam - try again`)
-        return
-      }
-      if (up) {
-        queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
-          old ? [...new Set([...old, wallpaperId])] : [wallpaperId]
-        )
-      }
-    } catch (err) {
-      showToast((err as Error).message)
-    }
-  }
-
-  function ctxOpenInSteam() {
-    if (!ctxMenu) return
-    openWorkshopPage(ctxMenu.wallpaperId)
-    closeCtxMenu()
-  }
-
-  async function ctxBrowseCreator() {
-    if (!ctxMenu) return
-    const wallpaperId = ctxMenu.wallpaperId
-    closeCtxMenu()
-    let creatorSteamId = ctxWallpaper?.authorSteamId
-    if (!creatorSteamId && isWorkshopId(wallpaperId)) {
-      try {
-        const item = await window.electronAPI.workshop.getItem(wallpaperId)
-        creatorSteamId = item?.creatorSteamId
-      } catch {
-        creatorSteamId = undefined
-      }
-    }
-    if (creatorSteamId) {
-      onBrowseCreator?.(creatorSteamId)
-    } else {
-      showToast('Could not find creator info for this wallpaper')
-    }
-  }
-
-  async function ctxBackup() {
-    if (!ctxMenu) return
-    closeCtxMenu()
-    await window.electronAPI.backup.item(ctxMenu.wallpaperId)
-    queryClient.invalidateQueries({ queryKey: ['library-all'] })
-  }
-
-  async function ctxOpenLocally() {
-    if (!ctxMenu || !ctxWallpaper?.localPath) return closeCtxMenu()
-    await window.electronAPI.shell.openPath(ctxWallpaper.localPath)
-    closeCtxMenu()
-  }
-
-  async function ctxPreviewVideo() {
-    if (!ctxWallpaper?.localPath || !ctxWallpaper.file) return closeCtxMenu()
-    await window.electronAPI.shell.openWithDefault(ctxWallpaper.localPath + '/' + ctxWallpaper.file)
-    closeCtxMenu()
-  }
-
-  async function ctxMoveToFolder(folderId: string) {
-    if (!ctxMenu) return
-    await window.electronAPI.folders.addItems(folderId, [ctxMenu.wallpaperId])
-    refetchFolders()
-    closeCtxMenu()
-  }
-
-  async function ctxRemoveFromFolder() {
-    if (!ctxMenu || !ctxFolderId) return
-    await window.electronAPI.folders.removeItems(ctxFolderId, [ctxMenu.wallpaperId])
-    refetchFolders()
-    closeCtxMenu()
+    setCtxMenu({ x: e.clientX, y: e.clientY, wallpaperId })
   }
 
   function handleDragStart(index: number) {
@@ -377,6 +199,8 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
   const isThisPlaylistActive = thisStates.length > 0
   const isPlaying = thisStates.some((s) => s.isPlaying)
   const currentItemIds = new Set(thisStates.map((s) => s.currentItemId))
+  const ctxWallpaper = ctxMenu ? wallpaperById.get(ctxMenu.wallpaperId) : undefined
+  const detailWallpaper = detailId ? wallpaperById.get(detailId) : undefined
   const existingIds = useMemo(
     () => new Set(activePlaylist?.items.map((i) => i.wallpaperId) ?? []),
     [activePlaylist]
@@ -577,7 +401,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                       onChange={(e) =>
                         updateSettings({ sortBy: e.target.value as PlaylistSettings['sortBy'] })
                       }
-                      className="rounded bg-white/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 [&>option]:bg-[#1a1a1a]"
+                      className="rounded bg-white/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
                     >
                       {SORT_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>
@@ -684,37 +508,14 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
         )}
       </div>
 
-      {detailId && wallpaperById.get(detailId) && (
+      {detailWallpaper && (
         <DetailSidebar
-          id={detailId}
-          fallbackTitle={wallpaperById.get(detailId)!.title}
-          fallbackPreviewUrl={getPreviewSrc(wallpaperById.get(detailId))}
-          fallbackTags={[
-            ...wallpaperById.get(detailId)!.tags,
-            ...(wallpaperById.get(detailId)!.resolutions ?? [])
-          ]}
-          fallbackAuthorSteamId={wallpaperById.get(detailId)!.authorSteamId}
-          localFileSize={wallpaperById.get(detailId)!.fileSize}
-          isSubscribed={wallpaperById.get(detailId)!.subscribed}
-          isLiked={votedSet.has(detailId)}
-          canPlay={
-            !!wallpaperById.get(detailId)!.localPath &&
-            !wallpaperById.get(detailId)!.downloading &&
-            !wallpaperById.get(detailId)!.downloadFailed
-          }
-          lweInstalled={lweStatus?.installed ?? false}
+          id={detailWallpaper.id}
+          {...detailSidebarProps(detailWallpaper)}
           onClose={() => setDetailId(null)}
-          onSubscribe={async () => {
-            await window.electronAPI.steam.subscribe(detailId)
-            queryClient.invalidateQueries({ queryKey: ['library-all'] })
-          }}
-          onUnsubscribe={() => unsubscribeWallpaper(detailId)}
-          onLiked={() => {
-            queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
-              old ? [...old, detailId] : [detailId]
-            )
-          }}
-          onPlay={(target) => handleApplyDetail(detailId, target)}
+          onSubscribe={() => subscribe(detailWallpaper.id)}
+          onUnsubscribe={() => unsubscribe([detailWallpaper.id])}
+          onPlay={(target) => applyWallpaper(detailWallpaper.id, target)}
           onBrowseCreator={onBrowseCreator}
         />
       )}
@@ -729,120 +530,14 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
       )}
 
       {ctxMenu && (
-        <div
-          ref={ctxMenuRef}
-          className="fixed z-50 min-w-[200px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
-          style={{ left: ctxPos?.x ?? ctxMenu.x, top: ctxPos?.y ?? ctxMenu.y }}
-        >
-          {ctxHasBackupable && isBackupConfigured && (
-            <button
-              onClick={ctxBackup}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              <Archive size={12} /> Backup
-            </button>
-          )}
-
-          <button
-            onClick={ctxUnsubscribe}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
-          >
-            Unsubscribe
-          </button>
-
-          <div className="my-1 border-t border-white/5" />
-
-          <button
-            onClick={() => ctxVote(true)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-          >
-            <ThumbsUp size={12} /> Like
-          </button>
-          <button
-            onClick={() => ctxVote(false)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-          >
-            <ThumbsDown size={12} /> Dislike
-          </button>
-
-          <div className="my-1 border-t border-white/5" />
-
-          <button
-            onClick={ctxOpenInSteam}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-          >
-            <ExternalLink size={12} /> Open in Steam Workshop
-          </button>
-          <button
-            onClick={ctxOpenLocally}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-          >
-            <FolderOpen size={12} /> Open wallpaper locally
-          </button>
-
-          {ctxHasVideo && (
-            <button
-              onClick={ctxPreviewVideo}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              <Eye size={12} /> Preview in media player
-            </button>
-          )}
-
-          {ctxWallpaper &&
-            ctxWallpaper.source !== 'local' &&
-            (ctxWallpaper.authorSteamId || isWorkshopId(ctxWallpaper.id)) && (
-            <button
-              onClick={ctxBrowseCreator}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              <User size={12} /> Browse wallpapers from this creator
-            </button>
-          )}
-
-          <div className="my-1 border-t border-white/5" />
-
-          <div className="relative">
-            <button
-              onClick={() => setCtxMenu((prev) => prev ? { ...prev, showFolderSub: !prev.showFolderSub } : null)}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              <FolderInput size={12} /> Move to folder
-              <ChevronRight size={12} className="ml-auto" />
-            </button>
-            {ctxMenu.showFolderSub && (
-              <div
-                ref={folderSubRef}
-                className={clsx(
-                  'absolute top-0 min-w-[160px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl',
-                  folderSubSide === 'left' ? 'right-full mr-1' : 'left-full ml-1'
-                )}
-              >
-                {ctxMoveTargets.length === 0 && (
-                  <div className="px-3 py-1.5 text-gray-500">No other folders</div>
-                )}
-                {ctxMoveTargets.map((f) => (
-                  <button
-                    key={f.id}
-                    onClick={() => ctxMoveToFolder(f.id)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-                  >
-                    <Folder size={12} /> {f.title}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {ctxFolderId && (
-            <button
-              onClick={ctxRemoveFromFolder}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
-            >
-              <Trash2 size={12} /> Remove from folder
-            </button>
-          )}
-        </div>
+        <WallpaperContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          ids={[ctxMenu.wallpaperId]}
+          wallpapers={ctxWallpaper ? [ctxWallpaper] : []}
+          onClose={() => setCtxMenu(null)}
+          onBrowseCreator={onBrowseCreator}
+        />
       )}
     </div>
   )

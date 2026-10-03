@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Loader2, Monitor, MonitorSmartphone } from 'lucide-react'
 import type { DisplayMode } from '@shared/types'
+import { useConfig } from '../../hooks/queries'
 
 const MODES: { mode: DisplayMode; label: string; icon: typeof Monitor }[] = [
   { mode: 'shared', label: 'Same on every screen', icon: Monitor },
@@ -10,10 +11,7 @@ const MODES: { mode: DisplayMode; label: string; icon: typeof Monitor }[] = [
 
 export default function DisplaySettings({ screens }: { screens: string[] }) {
   const queryClient = useQueryClient()
-  const { data: config } = useQuery({
-    queryKey: ['config'],
-    queryFn: () => window.electronAPI.config.get()
-  })
+  const config = useConfig()
   const [switching, setSwitching] = useState(false)
   const current = config?.displayMode ?? 'shared'
 

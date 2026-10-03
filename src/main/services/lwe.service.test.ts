@@ -12,7 +12,7 @@ vi.mock('./config.service', () => ({
   getDisablePuppetAnimation: () => false
 }))
 
-const { buildCleanBuildEnv, buildHotswapLines, parseCustomArgs } = await import('./lwe.service')
+const { buildCleanBuildEnv, buildHotswapLines, nodeDevelPackage, parseCustomArgs } = await import('./lwe.service')
 
 describe('parseCustomArgs', () => {
   it('splits on whitespace and keeps quoted values together', () => {
@@ -33,6 +33,14 @@ describe('buildHotswapLines', () => {
   it('writes only the fields that were given', () => {
     expect(buildHotswapLines({ volume: 40, xray: false })).toEqual(['volume=40', 'xray=off'])
     expect(buildHotswapLines({})).toEqual([])
+  })
+
+  it('clears a side of the video trim with none and seeks after setting the range', () => {
+    expect(buildHotswapLines({ videoStart: 180, videoEnd: null, videoSeek: 237 })).toEqual([
+      'video-start=180',
+      'video-end=none',
+      'video-seek=237'
+    ])
   })
 
   it('replaces the layer lists when either one is present, even empty', () => {
@@ -83,5 +91,21 @@ describe('buildCleanBuildEnv', () => {
     } finally {
       process.env = saved
     }
+  })
+})
+
+describe('nodeDevelPackage', () => {
+  it('takes the headers of the installed libnode', () => {
+    expect(nodeDevelPackage(['nodejs24-libs', ''])).toBe('nodejs24-devel')
+    expect(nodeDevelPackage(['nodejs-libs'])).toBe('nodejs-devel')
+  })
+
+  it('picks the newest of several installed versions', () => {
+    expect(nodeDevelPackage(['nodejs22-libs', 'nodejs24-libs', 'nodejs20-libs'])).toBe('nodejs24-devel')
+  })
+
+  it('leaves the choice to dnf without an installed libnode', () => {
+    expect(nodeDevelPackage([])).toBe('nodejs-devel')
+    expect(nodeDevelPackage(['nodejs24-docs'])).toBe('nodejs-devel')
   })
 })

@@ -45,24 +45,10 @@ export async function queryWorkshop(params: WorkshopQueryParams): Promise<Worksh
     13, // UGCType.All, since WE items span multiple subtypes
     appId,
     appId,
-    {
-      searchText: params.searchText,
-      requiredTags: params.tags,
-      excludedTags: params.excludedTags,
-      includeLongDescription: true
-    }
+    queryConfig(params)
   )
 
-  const subscribedSet = new Set(await getSubscribedItems())
-
-  const items = result.items.filter(Boolean).map((item) => transformItem(item!, subscribedSet))
-  await attachFileSizes(items)
-
-  return {
-    items,
-    page,
-    totalResults: result.totalResults
-  }
+  return toQueryResult(result, page)
 }
 
 export async function getWorkshopItem(publishedFileId: string): Promise<WorkshopItem | null> {
@@ -103,24 +89,26 @@ export async function queryWorkshopByCreator(
     13, // UGCType.All
     sortOrder,
     { consumer: WE_APP_ID },
-    {
-      searchText: params.searchText,
-      requiredTags: params.tags,
-      excludedTags: params.excludedTags,
-      includeLongDescription: true
-    }
+    queryConfig(params)
   )
 
-  const subscribedSet = new Set(await getSubscribedItems())
+  return toQueryResult(result, page)
+}
 
+function queryConfig(params: CreatorWorkshopQueryParams): workshop.WorkshopItemQueryConfig {
+  return {
+    searchText: params.searchText,
+    requiredTags: params.tags,
+    excludedTags: params.excludedTags,
+    includeLongDescription: true
+  }
+}
+
+async function toQueryResult(result: WorkshopPage, page: number): Promise<WorkshopQueryResult> {
+  const subscribedSet = new Set(await getSubscribedItems())
   const items = result.items.filter(Boolean).map((item) => transformItem(item!, subscribedSet))
   await attachFileSizes(items)
-
-  return {
-    items,
-    page,
-    totalResults: result.totalResults
-  }
+  return { items, page, totalResults: result.totalResults }
 }
 
 // A details query only fetches its first result page, and Steam pages those at 50 items -
@@ -139,39 +127,27 @@ async function getItemsBatched(publishedFileIds: string[]) {
   return items
 }
 
-export async function getWorkshopTimesUpdated(
-  publishedFileIds: string[]
-): Promise<Map<string, number>> {
-  const map = new Map<string, number>()
-  if (publishedFileIds.length === 0) return map
-
-  for (const item of await getItemsBatched(publishedFileIds)) {
-    map.set(item.publishedFileId.toString(), item.timeUpdated)
-  }
-  return map
+export interface WorkshopDetails {
+  timeUpdated: number
+  // Steam tags an item's type ("Video", "Scene", ...) and age rating ("Everyone", ...)
+  // alongside its genre/resolution tags, so this works even for items that never
+  // finished downloading and have no local project.json to read that from.
+  tags: string[]
+  authorSteamId: string
 }
 
-// Steam tags an item's type ("Video", "Scene", ...) and age rating ("Everyone", ...)
-// alongside its genre/resolution tags, so this works even for items that never
-// finished downloading and have no local project.json to read that from.
-export async function getWorkshopTags(publishedFileIds: string[]): Promise<Map<string, string[]>> {
-  const map = new Map<string, string[]>()
+// One details query serves everything the library backfills (update time, live tags, author),
+// ids Steam no longer resolves are simply missing from the map
+export async function getWorkshopDetails(publishedFileIds: string[]): Promise<Map<string, WorkshopDetails>> {
+  const map = new Map<string, WorkshopDetails>()
   if (publishedFileIds.length === 0) return map
 
   for (const item of await getItemsBatched(publishedFileIds)) {
-    map.set(item.publishedFileId.toString(), item.tags ?? [])
-  }
-  return map
-}
-
-// Used to backfill authorSteamId on library items imported before this field existed
-// (and on items that never finished downloading, since they have no project.json).
-export async function getWorkshopAuthors(publishedFileIds: string[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>()
-  if (publishedFileIds.length === 0) return map
-
-  for (const item of await getItemsBatched(publishedFileIds)) {
-    map.set(item.publishedFileId.toString(), item.owner.steamId64.toString())
+    map.set(item.publishedFileId.toString(), {
+      timeUpdated: item.timeUpdated,
+      tags: item.tags ?? [],
+      authorSteamId: item.owner.steamId64.toString()
+    })
   }
   return map
 }
@@ -182,13 +158,8 @@ export async function getWorkshopAuthors(publishedFileIds: string[]): Promise<Ma
 // propagate rather than swallowing it here - the caller decides what "we
 // couldn't tell" should mean, instead of this silently reporting "all clear".
 export async function getUnavailableWorkshopItems(publishedFileIds: string[]): Promise<Set<string>> {
-  const unavailable = new Set(publishedFileIds)
-  if (publishedFileIds.length === 0) return unavailable
-
-  for (const item of await getItemsBatched(publishedFileIds)) {
-    unavailable.delete(item.publishedFileId.toString())
-  }
-  return unavailable
+  const details = await getWorkshopDetails(publishedFileIds)
+  return new Set(publishedFileIds.filter((id) => !details.has(id)))
 }
 
 // steamworks.js's UGC query bindings don't surface a file's size (the underlying Steamworks SDK

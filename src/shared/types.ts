@@ -86,6 +86,12 @@ export interface WallpaperMeta {
    * linux-wallpaperengine --speed (1 = normal speed, less than 1 = slower)
    */
   playbackSpeed?: number
+  /**
+   * Video wallpapers only: loop just this part of the video (seconds, either side open), via
+   * linux-wallpaperengine --video-start/--video-end
+   */
+  videoStart?: number
+  videoEnd?: number
   backedUp?: boolean
   backupDir?: string
   /** The workshop copy no longer matches the backup (file list or sizes), e.g. the author published an update */

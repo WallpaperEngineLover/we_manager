@@ -8,6 +8,7 @@ import ScreenSelect from '../common/ScreenSelect'
 import { useDisplayTargets } from '../../hooks/useDisplayTargets'
 import { screenLabel } from '../../utils/screens'
 import { useToast } from '../common/Toast'
+import { useAllWallpapers, usePlaylists } from '../../hooks/queries'
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -42,14 +43,8 @@ export default function ScheduleSettings() {
     queryKey: ['schedule'],
     queryFn: () => window.electronAPI.schedule.getAll()
   })
-  const { data: wallpapers = [] } = useQuery({
-    queryKey: ['library-all'],
-    queryFn: () => window.electronAPI.library.getAll()
-  })
-  const { data: playlists = [] } = useQuery({
-    queryKey: ['playlists'],
-    queryFn: () => window.electronAPI.playlist.getAll()
-  })
+  const wallpapers = useAllWallpapers()
+  const playlists = usePlaylists()
 
   const wallpaperTitle = (id: string) => wallpapers.find((w) => w.id === id)?.title ?? 'missing wallpaper'
   const playlistTitle = (id: string) => playlists.find((p) => p.id === id)?.title ?? 'missing playlist'

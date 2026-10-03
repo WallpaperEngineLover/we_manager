@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { isEditingText } from '../utils/dom'
 
 export interface MarqueeRect {
   left: number
@@ -149,8 +150,7 @@ export function useSelectableGrid({ ids, dataAttr, onOpenDetail }: UseSelectable
         return
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-        const active = document.activeElement
-        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
+        if (isEditingText()) return
         e.preventDefault()
         setSelectedIds(new Set(ids))
       }
@@ -158,6 +158,21 @@ export function useSelectableGrid({ ids, dataAttr, onOpenDetail }: UseSelectable
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [ids])
+
+  // right-clicking a card outside the selection makes it the selection, like a file manager
+  const selectForContextMenu = useCallback(
+    (id: string): string[] => {
+      if (selectedIds.has(id)) return [...selectedIds]
+      setSelectedIds(new Set([id]))
+      return [id]
+    },
+    [selectedIds]
+  )
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set())
+    setLastClickedId(null)
+  }, [])
 
   const marqueeRect: MarqueeRect | null = marquee
     ? {
@@ -171,13 +186,17 @@ export function useSelectableGrid({ ids, dataAttr, onOpenDetail }: UseSelectable
   return {
     selectedIds,
     setSelectedIds,
-    lastClickedId,
-    setLastClickedId,
-    gridRef,
+    clearSelection,
+    selectForContextMenu,
     handleCardSelect,
-    handleMarqueeStart,
-    handleMarqueeMove,
-    handleMarqueeEnd,
+    // spread onto the scrolling grid container
+    containerProps: {
+      ref: gridRef,
+      onMouseDown: handleMarqueeStart,
+      onMouseMove: handleMarqueeMove,
+      onMouseUp: handleMarqueeEnd,
+      onMouseLeave: handleMarqueeEnd
+    },
     marqueeRect
   }
 }

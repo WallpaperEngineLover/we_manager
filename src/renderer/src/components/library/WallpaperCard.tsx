@@ -1,33 +1,39 @@
 import { useState, useEffect } from 'react'
-import { Play, Loader2, Check, X, ThumbsUp, Trash2, ExternalLink, Download, Archive, AlertTriangle, RotateCw, Plus, FolderOpen, WifiOff } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { Loader2, Check, X, Trash2, Download, Archive, AlertTriangle, RotateCw, Plus, FolderOpen, WifiOff } from 'lucide-react'
 import type { WallpaperMeta } from '@shared/types'
 import clsx from 'clsx'
 import CompatBadge from '../common/CompatBadge'
 import { getPreviewSrc } from '../../utils/preview'
-import { openWorkshopPage } from '../../utils/steam'
+import { hasBackup } from '../../utils/wallpaper'
 import { useToast } from '../common/Toast'
 import type { PreviewSize } from '../../hooks/usePreviewSize'
-import { voteBorderClass } from '../../hooks/useVoteBorders'
+import {
+  CardAction,
+  CardOverlay,
+  CardPreview,
+  CornerBadge,
+  GridCard,
+  LikeAction,
+  PlayButton,
+  ProgressBar,
+  SteamAction
+} from '../common/GridCard'
 
 interface WallpaperCardProps {
   wallpaper: WallpaperMeta
-  selected?: boolean
-  isDetailOpen?: boolean
-  lweInstalled?: boolean
-  isLiked?: boolean
+  selected: boolean
+  isDetailOpen: boolean
+  lweInstalled: boolean
+  isLiked: boolean
   voteError?: string
-  showVoteBorder?: boolean
-  currentPlaylistId?: string | null
-  isInCurrentPlaylist?: boolean
-  previewSize?: PreviewSize
-  backupProgress?: { percentage: number; status: 'copying' | 'verifying' } | null
-  onApplied?: () => void
-  onLiked?: () => void
-  onUnsubscribed?: () => void
-  onAddedToPlaylist?: () => void
-  onRedownloaded?: () => void
-  onSelect?: (e: React.MouseEvent) => void
-  onContextMenu?: (e: React.MouseEvent) => void
+  showVoteBorder: boolean
+  currentPlaylistId: string | null
+  isInCurrentPlaylist: boolean
+  previewSize: PreviewSize
+  backupProgress: { percentage: number; status: 'copying' | 'verifying' } | null
+  onSelect: (e: React.MouseEvent) => void
+  onContextMenu: (e: React.MouseEvent) => void
 }
 
 export default function WallpaperCard({
@@ -35,24 +41,19 @@ export default function WallpaperCard({
   selected,
   isDetailOpen,
   lweInstalled,
-  isLiked = false,
+  isLiked,
   voteError,
-  showVoteBorder = false,
-  currentPlaylistId = null,
-  isInCurrentPlaylist = false,
-  previewSize = 'normal',
-  backupProgress = null,
-  onApplied,
-  onLiked,
-  onUnsubscribed,
-  onAddedToPlaylist,
-  onRedownloaded,
+  showVoteBorder,
+  currentPlaylistId,
+  isInCurrentPlaylist,
+  previewSize,
+  backupProgress,
   onSelect,
   onContextMenu
 }: WallpaperCardProps) {
   const { showToast } = useToast()
+  const queryClient = useQueryClient()
   const [isApplying, setIsApplying] = useState(false)
-  const [isLiking, setIsLiking] = useState(false)
   const [unsubState, setUnsubState] = useState<'idle' | 'confirm' | 'pending'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [fpsInput, setFpsInput] = useState(wallpaper.fpsOverride != null ? String(wallpaper.fpsOverride) : '')
@@ -72,10 +73,14 @@ export default function WallpaperCard({
       } else {
         setDownloadPercentage(null)
         setIsRedownloading(false)
-        onRedownloaded?.()
+        queryClient.invalidateQueries({ queryKey: ['library'] })
       }
     })
-  }, [wallpaper.downloading, wallpaper.id, onRedownloaded])
+  }, [wallpaper.downloading, wallpaper.id, queryClient])
+
+  function refreshLibrary() {
+    queryClient.invalidateQueries({ queryKey: ['library'] })
+  }
 
   async function handleRedownload(e: React.MouseEvent) {
     e.stopPropagation()
@@ -84,42 +89,23 @@ export default function WallpaperCard({
     setError(null)
     try {
       await window.electronAPI.steam.redownload(wallpaper.id)
-      onRedownloaded?.()
+      refreshLibrary()
     } catch (err) {
       setError((err as Error).message)
       setIsRedownloading(false)
     }
   }
 
-  async function handleApply(e: React.MouseEvent) {
-    e.stopPropagation()
+  async function handleApply() {
     setIsApplying(true)
     setError(null)
     try {
       await window.electronAPI.wallpaper.apply({ wallpaperId: wallpaper.id })
-      onApplied?.()
+      refreshLibrary()
     } catch (err) {
       setError((err as Error).message)
     } finally {
       setIsApplying(false)
-    }
-  }
-
-  async function handleLike(e: React.MouseEvent) {
-    e.stopPropagation()
-    if (isLiked || isLiking || wallpaper.unavailable) return
-    setIsLiking(true)
-    try {
-      const { confirmed } = await window.electronAPI.steam.vote(wallpaper.id, true)
-      if (confirmed) {
-        onLiked?.()
-      } else {
-        setError('Could not confirm the like on Steam - try again')
-      }
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setIsLiking(false)
     }
   }
 
@@ -132,15 +118,14 @@ export default function WallpaperCard({
     window.electronAPI.library.update(wallpaper.id, { fpsOverride: parsed })
   }
 
-  async function handleAddToPlaylist(e: React.MouseEvent) {
-    e.stopPropagation()
+  async function handleAddToPlaylist() {
     if (!currentPlaylistId || isAddingToPlaylist || isInCurrentPlaylist) return
     setIsAddingToPlaylist(true)
     setError(null)
     try {
       await window.electronAPI.playlist.addItems(currentPlaylistId, [wallpaper.id])
       showToast('Added to current playlist')
-      onAddedToPlaylist?.()
+      queryClient.invalidateQueries({ queryKey: ['playlists'] })
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -155,15 +140,15 @@ export default function WallpaperCard({
     setUnsubState('pending')
     try {
       await window.electronAPI.steam.unsubscribe(wallpaper.id)
-      onUnsubscribed?.()
+      refreshLibrary()
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
     } catch (err) {
       setError((err as Error).message)
       setUnsubState('idle')
     }
   }
 
-  async function handleOpenLocally(e: React.MouseEvent) {
-    e.stopPropagation()
+  async function handleOpenLocally() {
     if (!wallpaper.localPath) return
     await window.electronAPI.shell.openPath(wallpaper.localPath)
   }
@@ -171,9 +156,16 @@ export default function WallpaperCard({
   const previewSrc = getPreviewSrc(wallpaper)
   const compact = previewSize !== 'big'
 
+  const playBlocked = !lweInstalled || !!wallpaper.downloading || !!wallpaper.downloadFailed
+
   return (
-    <div
+    <GridCard
       data-wallpaper-id={wallpaper.id}
+      selected={selected}
+      isDetailOpen={isDetailOpen}
+      isLiked={isLiked}
+      voteError={voteError}
+      showVoteBorder={showVoteBorder}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData('text/wallpaper-id', wallpaper.id)
@@ -182,58 +174,21 @@ export default function WallpaperCard({
       }}
       onClick={onSelect}
       onContextMenu={onContextMenu}
-      title={showVoteBorder ? voteError : undefined}
-      className={clsx(
-        'group relative overflow-hidden rounded-lg bg-[#1a1a1a] transition-all cursor-pointer select-none',
-        isDetailOpen
-          ? 'ring-2 ring-sky-400'
-          : selected
-            ? 'ring-2 ring-indigo-500'
-            : 'hover:ring-1 hover:ring-indigo-500/50',
-        showVoteBorder && voteBorderClass(voteError, isLiked)
-      )}
     >
-      <div
-        className={clsx(
-          'absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border transition-all',
-          selected
-            ? 'border-indigo-500 bg-indigo-600 text-white opacity-100'
-            : 'border-white/30 bg-black/50 text-transparent opacity-0 group-hover:opacity-100'
-        )}
-      >
-        <Check size={12} />
-      </div>
-
-      <div className="aspect-video overflow-hidden bg-[#111] relative">
-        {previewSrc ? (
-          <img
-            src={previewSrc}
-            alt={wallpaper.title}
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-            loading="lazy"
-            draggable={false}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-gray-600">No preview</div>
-        )}
+      <CardPreview src={previewSrc} alt={wallpaper.title}>
         {wallpaper.downloading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/70 px-4">
+          <CardOverlay>
             <Download size={20} className="text-indigo-400 animate-bounce" />
             <span className="text-xs text-gray-300">
               {downloadPercentage != null ? `Downloading... ${downloadPercentage}%` : 'Downloading...'}
             </span>
             {downloadPercentage != null && (
-              <div className="h-1 w-full max-w-[140px] overflow-hidden rounded-full bg-white/10">
-                <div
-                  className="h-full bg-indigo-500 transition-[width]"
-                  style={{ width: `${downloadPercentage}%` }}
-                />
-              </div>
+              <ProgressBar percentage={downloadPercentage} className="h-1 w-full max-w-[140px] rounded-full bg-white/10" />
             )}
-          </div>
+          </CardOverlay>
         )}
         {wallpaper.downloadFailed && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/70 px-4 text-center">
+          <CardOverlay>
             <AlertTriangle size={20} className="text-red-400" />
             <span className="text-xs text-gray-300">Download failed</span>
             <button
@@ -244,23 +199,18 @@ export default function WallpaperCard({
               {isRedownloading ? <Loader2 size={11} className="animate-spin" /> : <RotateCw size={11} />}
               Redownload
             </button>
-          </div>
+          </CardOverlay>
         )}
         {backupProgress != null && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/70 px-4">
+          <CardOverlay>
             <Archive size={20} className="text-indigo-400 animate-pulse" />
             <span className="text-xs text-gray-300">
               {backupProgress.status === 'verifying'
                 ? `Verifying... ${backupProgress.percentage}%`
                 : `Backing up... ${backupProgress.percentage}%`}
             </span>
-            <div className="h-1 w-full max-w-[140px] overflow-hidden rounded-full bg-white/10">
-              <div
-                className="h-full bg-indigo-500 transition-[width]"
-                style={{ width: `${backupProgress.percentage}%` }}
-              />
-            </div>
-          </div>
+            <ProgressBar percentage={backupProgress.percentage} className="h-1 w-full max-w-[140px] rounded-full bg-white/10" />
+          </CardOverlay>
         )}
         {wallpaper.hdr && (
           <span
@@ -274,27 +224,24 @@ export default function WallpaperCard({
             HDR
           </span>
         )}
-        {backupProgress == null && (wallpaper.backedUp || wallpaper.source === 'backup') && (
-          <div
-            className="absolute bottom-2 right-2 flex h-5 w-5 items-center justify-center rounded bg-black/60 text-indigo-300"
-            title="Backed up locally"
-          >
+        {backupProgress == null && hasBackup(wallpaper) && (
+          <CornerBadge className="bottom-2 right-2 bg-black/60 text-indigo-300" title="Backed up locally">
             <Archive size={12} />
-          </div>
+          </CornerBadge>
         )}
         {wallpaper.unavailable && (
-          <div
-            className="absolute bottom-2 left-2 flex h-5 w-5 items-center justify-center rounded bg-amber-600/80 text-white"
+          <CornerBadge
+            className="bottom-2 left-2 bg-amber-600/80 text-white"
             title="Removed from the Steam Workshop - back it up before it's lost"
           >
             <WifiOff size={12} />
-          </div>
+          </CornerBadge>
         )}
         <CompatBadge
           compat={wallpaper.compat}
           className={clsx('absolute bottom-2', wallpaper.unavailable ? 'left-8' : 'left-2')}
         />
-      </div>
+      </CardPreview>
 
       <div className="p-3">
         <h3 className="truncate text-sm font-medium text-gray-200" title={wallpaper.title}>
@@ -325,31 +272,19 @@ export default function WallpaperCard({
         </div>
         {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
         <div className={clsx('mt-2 flex items-center', compact ? 'gap-1' : 'gap-2')}>
-          <button
-            onClick={handleLike}
-            disabled={isLiked || isLiking || wallpaper.unavailable}
-            title={
-              wallpaper.unavailable
-                ? 'Removed from the Steam Workshop - voting is no longer possible'
-                : isLiked
-                  ? 'Already liked on Steam'
-                  : 'Like on Steam'
-            }
-            className={clsx(
-              'flex items-center gap-1 rounded text-xs transition-colors disabled:cursor-not-allowed',
-              compact ? 'p-1.5' : 'px-2 py-1',
-              wallpaper.unavailable
-                ? 'bg-white/5 text-gray-600 opacity-50'
-                : isLiked
-                  ? 'bg-green-600/30 text-green-300'
-                  : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200'
-            )}
-          >
-            {isLiking ? <Loader2 size={11} className="animate-spin" /> : <ThumbsUp size={11} />}
-            {!compact && (isLiked ? 'Liked' : 'Like')}
-          </button>
-          <button
-            onClick={handleAddToPlaylist}
+          <LikeAction
+            id={wallpaper.id}
+            isLiked={isLiked}
+            unavailable={wallpaper.unavailable}
+            compact={compact}
+            onError={setError}
+          />
+          <CardAction
+            icon={isInCurrentPlaylist ? Check : Plus}
+            label={isInCurrentPlaylist ? 'Added' : 'Add'}
+            busy={isAddingToPlaylist}
+            compact={compact}
+            tone={isInCurrentPlaylist ? 'active' : 'default'}
             disabled={!currentPlaylistId || isAddingToPlaylist || isInCurrentPlaylist}
             title={
               !currentPlaylistId
@@ -358,23 +293,8 @@ export default function WallpaperCard({
                   ? 'Already in current playlist'
                   : 'Add to current playlist (+)'
             }
-            className={clsx(
-              'flex items-center gap-1 rounded text-xs transition-colors disabled:cursor-not-allowed',
-              compact ? 'p-1.5' : 'px-2 py-1',
-              isInCurrentPlaylist
-                ? 'bg-green-600/30 text-green-300'
-                : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200 disabled:opacity-50'
-            )}
-          >
-            {isAddingToPlaylist ? (
-              <Loader2 size={11} className="animate-spin" />
-            ) : isInCurrentPlaylist ? (
-              <Check size={11} />
-            ) : (
-              <Plus size={11} />
-            )}
-            {!compact && (isInCurrentPlaylist ? 'Added' : 'Add')}
-          </button>
+            onClick={handleAddToPlaylist}
+          />
           {unsubState === 'confirm' ? (
             <div className="flex items-center gap-1">
               {!compact && <span className="text-xs text-gray-400">Sure?</span>}
@@ -394,52 +314,34 @@ export default function WallpaperCard({
               </button>
             </div>
           ) : (
-            <button
-              onClick={handleUnsubscribeClick}
+            <CardAction
+              icon={Trash2}
+              label="Unsub"
+              busy={unsubState === 'pending'}
+              compact={compact}
+              tone="danger"
               disabled={unsubState === 'pending'}
               title="Unsubscribe and delete files"
-              className={clsx(
-                'flex items-center gap-1 rounded bg-white/5 text-xs text-gray-400 transition-colors hover:bg-red-500/20 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50',
-                compact ? 'p-1.5' : 'px-2 py-1'
-              )}
-            >
-              {unsubState === 'pending' ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
-              {!compact && 'Unsub'}
-            </button>
+              onClick={handleUnsubscribeClick}
+            />
           )}
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              openWorkshopPage(wallpaper.id)
-            }}
-            title="Open in Steam Workshop"
-            className={clsx(
-              'flex items-center gap-1 rounded bg-white/5 text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-200',
-              compact ? 'p-1.5' : 'px-2 py-1'
-            )}
-          >
-            <ExternalLink size={11} />
-            {!compact && 'Steam'}
-          </button>
-          <button
-            onClick={handleOpenLocally}
+          <SteamAction id={wallpaper.id} compact={compact} />
+          <CardAction
+            icon={FolderOpen}
+            label="Open"
+            compact={compact}
             disabled={!wallpaper.localPath}
             title={wallpaper.localPath ? 'Open wallpaper folder' : 'Local files not found'}
-            className={clsx(
-              'flex items-center gap-1 rounded bg-white/5 text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50',
-              compact ? 'p-1.5' : 'px-2 py-1'
-            )}
-          >
-            <FolderOpen size={11} />
-            {!compact && 'Open'}
-          </button>
+            onClick={handleOpenLocally}
+          />
         </div>
       </div>
 
       <div className="absolute right-2 top-2">
-        <button
-          onClick={handleApply}
-          disabled={isApplying || !lweInstalled || wallpaper.downloading || wallpaper.downloadFailed}
+        <PlayButton
+          busy={isApplying}
+          ready={!playBlocked}
+          disabled={isApplying || playBlocked}
           title={
             wallpaper.downloading
               ? 'Wallpaper is still downloading'
@@ -449,16 +351,9 @@ export default function WallpaperCard({
                   ? 'Install linux-wallpaperengine in Settings first'
                   : 'Play wallpaper'
           }
-          className={clsx(
-            'flex h-7 w-7 items-center justify-center rounded-full transition-opacity disabled:cursor-not-allowed',
-            !lweInstalled || wallpaper.downloading || wallpaper.downloadFailed
-              ? 'bg-black/60 text-gray-500 opacity-0 group-hover:opacity-100'
-              : 'bg-black/60 text-white opacity-0 hover:bg-indigo-600 group-hover:opacity-100'
-          )}
-        >
-          {isApplying ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-        </button>
+          onClick={handleApply}
+        />
       </div>
-    </div>
+    </GridCard>
   )
 }

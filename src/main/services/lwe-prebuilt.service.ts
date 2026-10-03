@@ -14,12 +14,12 @@ import { buildCleanBuildEnv, readPrebuiltRelease, resetLweDetection } from './lw
 
 const execFileAsync = promisify(execFile)
 
-type PrebuiltDistro = 'ubuntu-24.04' | 'fedora-44' | 'arch'
+// Arch builds are paused: V8 (libnode) is only in the AUR there, so the release CI can't build them
+type PrebuiltDistro = 'ubuntu-24.04' | 'fedora-44'
 
 const DISTRO_LABELS: Record<PrebuiltDistro, string> = {
   'ubuntu-24.04': 'Ubuntu 24.04',
-  'fedora-44': 'Fedora 44',
-  arch: 'Arch'
+  'fedora-44': 'Fedora 44'
 }
 
 // Libraries the engine and CEF load from the system. Fedora installs missing ones by soname instead
@@ -30,13 +30,9 @@ const RUNTIME_DEPS_UBUNTU = [
   'libdbus-1-3', 'libfreetype6', 'libglfw3', 'libharfbuzz0b', 'liblz4-1', 'libmpv2', 'libpulse0',
   'libwayland-client0', 'libwayland-cursor0', 'libwayland-egl1', 'libegl1', 'libgl1',
   'libnss3', 'libatk1.0-0t64', 'libatk-bridge2.0-0t64', 'libcups2t64', 'libxcomposite1', 'libxdamage1',
-  'libgbm1', 'libxkbcommon0', 'libasound2t64', 'libpango-1.0-0', 'libcairo2'
-]
-
-const RUNTIME_DEPS_ARCH = [
-  'glew', 'sdl2-compat', 'libx11', 'libxrandr', 'ffmpeg', 'dbus', 'freetype2', 'glfw', 'harfbuzz', 'lz4',
-  'mpv', 'libpulse', 'wayland', 'mesa', 'libglvnd', 'nss', 'at-spi2-core', 'libcups', 'libxcomposite',
-  'libxdamage', 'libxkbcommon', 'alsa-lib', 'pango', 'cairo'
+  'libgbm1', 'libxkbcommon0', 'libasound2t64', 'libpango-1.0-0', 'libcairo2',
+  // V8 for scene scripts
+  'libnode109'
 ]
 
 function readOsRelease(): Record<string, string> {
@@ -53,7 +49,6 @@ function readOsRelease(): Record<string, string> {
 function detectPrebuiltDistro(): PrebuiltDistro | undefined {
   const release = readOsRelease()
   const ids = [release.ID, ...(release.ID_LIKE ?? '').split(/\s+/)].filter(Boolean)
-  if (ids.includes('arch')) return 'arch'
   // Mint 22 and Pop!_OS 24.04 are built on noble and carry its libraries
   if (release.UBUNTU_CODENAME === 'noble' || (release.ID === 'ubuntu' && release.VERSION_ID === '24.04')) {
     return 'ubuntu-24.04'
@@ -72,10 +67,14 @@ export function getPrebuiltTarget(): LwePrebuiltTarget {
   }
   const distro = detectPrebuiltDistro()
   if (!distro) {
-    const name = readOsRelease().PRETTY_NAME ?? 'this distribution'
+    const release = readOsRelease()
+    const isArch = [release.ID, ...(release.ID_LIKE ?? '').split(/\s+/)].includes('arch')
+    const name = release.PRETTY_NAME ?? 'this distribution'
     return {
       supported: false,
-      reason: `There is no prebuilt build for ${name} (only Ubuntu 24.04, Fedora 44 and Arch), build from source instead.`
+      reason: isArch
+        ? 'There is no prebuilt build for Arch for now (V8 is only in the AUR there), build from source instead.'
+        : `There is no prebuilt build for ${name} (only Ubuntu 24.04 and Fedora 44), build from source instead.`
     }
   }
   const variant = isKdeSession() ? 'kde' : 'generic'
@@ -140,9 +139,6 @@ async function installMissingLibraries(distro: PrebuiltDistro, missing: string[]
   switch (distro) {
     case 'fedora-44':
       command = ['dnf', 'install', '-y', ...missing.map(soname => `${soname}()(64bit)`)]
-      break
-    case 'arch':
-      command = ['pacman', '-S', '--noconfirm', '--needed', ...RUNTIME_DEPS_ARCH]
       break
     case 'ubuntu-24.04':
       command = ['apt-get', 'install', '-y', ...RUNTIME_DEPS_UBUNTU]

@@ -5,12 +5,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { randomUUID } from 'crypto'
 import { cleanupPlaylists } from './playlist.service'
-import {
-  getWorkshopTimesUpdated,
-  getWorkshopTags,
-  getWorkshopAuthors,
-  getUnavailableWorkshopItems
-} from './workshop.service'
+import { getWorkshopDetails, getUnavailableWorkshopItems, type WorkshopDetails } from './workshop.service'
 import { findAndMutate } from '../utils/collections'
 import { resolutionsFromTags } from '@shared/resolutions'
 import { detectHdr } from '../utils/hdr'
@@ -268,17 +263,9 @@ function stricterRating(a: ContentRating, b?: ContentRating): ContentRating {
   return RATING_RESTRICTIVENESS[b] > RATING_RESTRICTIVENESS[a] ? b : a
 }
 
-async function safeGetWorkshopTags(ids: string[]): Promise<Map<string, string[]>> {
+async function safeGetWorkshopDetails(ids: string[]): Promise<Map<string, WorkshopDetails>> {
   try {
-    return await getWorkshopTags(ids)
-  } catch {
-    return new Map()
-  }
-}
-
-async function safeGetWorkshopAuthors(ids: string[]): Promise<Map<string, string>> {
-  try {
-    return await getWorkshopAuthors(ids)
+    return await getWorkshopDetails(ids)
   } catch {
     return new Map()
   }
@@ -297,14 +284,6 @@ export function getDirSize(dirPath: string): number {
     }
   } catch { /* skip unreadable dirs */ }
   return total
-}
-
-async function safeGetWorkshopTimesUpdated(ids: string[]): Promise<Map<string, number>> {
-  try {
-    return await getWorkshopTimesUpdated(ids)
-  } catch {
-    return new Map()
-  }
 }
 
 function buildMeta(
@@ -398,27 +377,16 @@ export async function importWallpaperById(workshopId: string): Promise<Wallpaper
   if (!fs.existsSync(localPath)) return null
 
   const existing = getWallpaper(workshopId) ?? undefined
-  const authorSteamId =
-    existing?.authorSteamId ?? (await safeGetWorkshopAuthors([workshopId])).get(workshopId)
+  const details = (await safeGetWorkshopDetails([workshopId])).get(workshopId)
+  const authorSteamId = existing?.authorSteamId ?? details?.authorSteamId
   const pj = readProjectJson(localPath)
   if (!pj) {
-    const tags = await safeGetWorkshopTags([workshopId])
-    const meta = await buildIncompleteMeta(workshopId, localPath, existing, tags.get(workshopId), authorSteamId)
+    const meta = await buildIncompleteMeta(workshopId, localPath, existing, details?.tags, authorSteamId)
     upsertWallpaper(meta)
     return meta
   }
 
-  const timesUpdated = await safeGetWorkshopTimesUpdated([workshopId])
-  const liveTags = await safeGetWorkshopTags([workshopId])
-  const meta = buildMeta(
-    workshopId,
-    localPath,
-    pj,
-    existing,
-    timesUpdated.get(workshopId),
-    authorSteamId,
-    liveTags.get(workshopId)
-  )
+  const meta = buildMeta(workshopId, localPath, pj, existing, details?.timeUpdated, authorSteamId, details?.tags)
   upsertWallpaper(meta)
   // a preset waiting on this item as its dependency can be decided now
   hdrUndecided.clear()
@@ -491,18 +459,20 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     incomplete.push({ id, localPath: path.join(workshopPath, id) })
   }
 
-  // Author never changes once known, so only fetch it for items that don't have it yet
-  const missingAuthorIds = [
+  const details = await safeGetWorkshopDetails([
     ...incomplete.map((i) => i.id),
     ...toRebuild.map(({ entry }) => entry.name),
     ...cacheHits
-  ].filter((id) => !wallpapers[id]?.authorSteamId)
-  const authors = await safeGetWorkshopAuthors(missingAuthorIds)
+  ])
+  // Author never changes once known, only take Steam's for items that don't have it yet
+  const authors = new Map<string, string>()
+  for (const [id, d] of details) {
+    if (!wallpapers[id]?.authorSteamId) authors.set(id, d.authorSteamId)
+  }
 
-  const incompleteTags = await safeGetWorkshopTags(incomplete.map((i) => i.id))
   for (const { id, localPath } of incomplete) {
     const existing = wallpapers[id]
-    const meta = await buildIncompleteMeta(id, localPath, existing, incompleteTags.get(id), authors.get(id))
+    const meta = await buildIncompleteMeta(id, localPath, existing, details.get(id)?.tags, authors.get(id))
     if (!existing) {
       wallpapers[id] = meta
       imported++
@@ -531,32 +501,23 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     }
   }
 
-  const timesUpdated = await safeGetWorkshopTimesUpdated([
-    ...toRebuild.map(({ entry }) => entry.name),
-    ...cacheHits
-  ])
-  const liveTags = await safeGetWorkshopTags([
-    ...toRebuild.map(({ entry }) => entry.name),
-    ...cacheHits
-  ])
-
   for (const { entry, localPath, pj } of toRebuild) {
     wallpapers[entry.name] = buildMeta(
       entry.name,
       localPath,
       pj,
       wallpapers[entry.name] ?? undefined,
-      timesUpdated.get(entry.name),
+      details.get(entry.name)?.timeUpdated,
       authors.get(entry.name),
-      liveTags.get(entry.name)
+      details.get(entry.name)?.tags
     )
     imported++
   }
 
   for (const id of cacheHits) {
-    const seconds = timesUpdated.get(id)
+    const seconds = details.get(id)?.timeUpdated
     const authorId = authors.get(id)
-    const live = liveTags.get(id)
+    const live = details.get(id)?.tags
 
     // A time_updated bump means the author changed something on the Workshop side
     // (tags, content rating, a republish) - re-read project.json instead of just
@@ -613,7 +574,6 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
 
   console.log(`[Library] Scan complete: ${imported} imported, ${skipped} skipped, ${removed} removed`)
 
-  // Auto-cleanup folder/playlist items that reference non-existent wallpapers
   cleanupFolders()
   cleanupPlaylists(new Set(Object.keys(wallpapers)))
   queueHdrCheck()
@@ -673,10 +633,10 @@ export async function backfillResolutions(): Promise<boolean> {
     .filter((w) => w.source === 'workshop' && (rederive || w.resolutions === undefined))
     .map((w) => w.id)
 
-  let tags = new Map<string, string[]>()
+  let details = new Map<string, WorkshopDetails>()
   if (ids.length > 0) {
     try {
-      tags = await getWorkshopTags(ids)
+      details = await getWorkshopDetails(ids)
     } catch {
       return false
     }
@@ -688,7 +648,7 @@ export async function backfillResolutions(): Promise<boolean> {
   for (const id of ids) {
     const w = wallpapers[id]
     if (!w) continue
-    const live = tags.get(id)
+    const live = details.get(id)?.tags
     // Steam no longer returns removed or private items, record "none" instead of asking every tick
     const resolutions = live ? resolutionsFromTags(live) : (w.resolutions ?? [])
     if (sameTags(w.resolutions, resolutions)) continue
@@ -698,7 +658,7 @@ export async function backfillResolutions(): Promise<boolean> {
   if (changed) store.set('wallpapers', wallpapers)
   store.set('resolutionsVersion', RESOLUTIONS_VERSION)
   if (ids.length > 0) {
-    console.log(`[Library] Resolution tags fetched for ${tags.size} of ${ids.length} items`)
+    console.log(`[Library] Resolution tags fetched for ${details.size} of ${ids.length} items`)
   }
   return changed
 }

@@ -1,58 +1,55 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Search,
   Loader2,
   RefreshCw,
-  SlidersHorizontal,
-  X,
-  ChevronDown,
-  ChevronRight,
   FolderPlus,
   Folder,
   FolderOpen,
   Upload,
   Pencil,
   Trash2,
-  ExternalLink,
-  FolderInput,
-  Eye,
-  ThumbsUp,
-  ThumbsDown,
   Eraser,
   Archive,
-  ArchiveRestore,
-  AlertTriangle,
-  Heart,
-  User,
   WifiOff,
-  ShieldAlert
+  ShieldAlert,
+  ChevronLeft
 } from 'lucide-react'
 import WallpaperCard from './WallpaperCard'
 import PreviewSizeToggle from '../common/PreviewSizeToggle'
 import DetailSidebar from '../common/DetailSidebar'
+import WallpaperContextMenu from '../common/WallpaperContextMenu'
+import { ContextMenu, MenuItem } from '../common/ContextMenu'
+import {
+  FiltersToggle,
+  LoadingSpinner,
+  MarqueeOverlay,
+  Pagination,
+  PanelToggle,
+  ResetFiltersButton,
+  SearchInput,
+  ToolbarButton
+} from '../common/GridControls'
+import { CheckItem, FilterPanel, FilterSection, ResolutionFilterSection, TagFilterSection } from '../common/FilterPanel'
 import { useToast } from '../common/Toast'
-import type { LibraryFilters, WallpaperFolder, WallpaperMeta, LweStatus, ScreenTarget } from '@shared/types'
+import type { LibraryFilters, WallpaperFolder } from '@shared/types'
 import clsx from 'clsx'
 import {
   WE_TYPES,
   WE_LIBRARY_AGE_RATINGS,
-  WE_RESOLUTION_GROUPS,
-  isGroupSelected,
-  setGroupSelected,
+  ALL_RESOLUTION_TAGS,
   migrateResolutionSelection
 } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
+import { usePersistentState } from '../../hooks/usePersistentState'
 import { useVoteBorders } from '../../hooks/useVoteBorders'
+import { useVotedIds } from '../../hooks/useVotes'
+import { useConfig, useFolders, useLweInstalled, usePlaybackStates, usePlaylists } from '../../hooks/queries'
+import { useApplyWallpaper, useSubscribe, useUnsubscribe } from '../../hooks/useWallpaperActions'
 import { useSelectableGrid } from '../../hooks/useSelectableGrid'
-import { useClickOutside } from '../../hooks/useClickOutside'
-import { useClampedPosition, useFlipSide } from '../../hooks/useContextMenuPosition'
 import { toggle } from '../../utils/array'
-import { forEachIgnoringErrors } from '../../utils/async'
-import { openWorkshopPage, isWorkshopId } from '../../utils/steam'
-import { getPreviewSrc } from '../../utils/preview'
-
-const STORAGE_KEY = 'we-library-filters'
+import { isEditingText } from '../../utils/dom'
+import { backupSummary, detailSidebarProps, isBackupOutdated } from '../../utils/wallpaper'
 
 interface LibraryFilterState {
   types: string[]
@@ -78,6 +75,11 @@ const DEFAULT_STATE: LibraryFilterState = {
   outdatedBackupOnly: false
 }
 
+function loadFilters(stored: unknown): LibraryFilterState {
+  const parsed = stored as Partial<LibraryFilterState>
+  return { ...DEFAULT_STATE, ...parsed, resolutions: migrateResolutionSelection(parsed.resolutions) }
+}
+
 const TYPE_MAP: Record<string, string> = {
   Scene: 'scene',
   Video: 'video',
@@ -95,24 +97,6 @@ const SOURCE_MAP: Record<string, string> = {
   Backup: 'backup'
 }
 
-// removed items can't be updated anymore, those belong to the Unavailable filter
-function isBackupOutdated(w: WallpaperMeta): boolean {
-  return w.source === 'workshop' && !!w.backedUp && !!w.backupOutdated && !w.unavailable
-}
-
-function loadFilters(): LibraryFilterState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return DEFAULT_STATE
-    const parsed = JSON.parse(raw)
-    return { ...DEFAULT_STATE, ...parsed, resolutions: migrateResolutionSelection(parsed.resolutions) }
-  } catch {
-    return DEFAULT_STATE
-  }
-}
-
-const SORT_STORAGE_KEY = 'we-library-sort'
-
 interface SortState {
   sortBy: LibraryFilters['sortBy']
   sortDir: 'asc' | 'desc'
@@ -120,40 +104,13 @@ interface SortState {
 
 const DEFAULT_SORT: SortState = { sortBy: 'updatedAt', sortDir: 'desc' }
 
-function loadSort(): SortState {
-  try {
-    const raw = localStorage.getItem(SORT_STORAGE_KEY)
-    return raw ? { ...DEFAULT_SORT, ...JSON.parse(raw) } : DEFAULT_SORT
-  } catch {
-    return DEFAULT_SORT
-  }
-}
+const BACKUP_FOLDER_HINT = 'Configure a backup folder in Settings first'
 
-function Chip({
-  label,
-  active,
-  onClick
-}: {
-  label: string
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={clsx(
-        'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-        active
-          ? 'bg-indigo-600 text-white'
-          : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
-      )}
-    >
-      {label}
-    </button>
-  )
-}
+const LIBRARY_TYPES = WE_TYPES.filter((t) => t.tag in TYPE_MAP)
+const SOURCES = Object.keys(SOURCE_MAP).map((tag) => ({ tag, label: tag }))
 
-function TagDropdown({
+// genre/custom tags, too many to list without a search box
+function TagsFilterSection({
   available,
   selected,
   onChange
@@ -162,281 +119,101 @@ function TagDropdown({
   selected: string[]
   onChange: (tags: string[]) => void
 }) {
-  const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
-  const ref = useRef<HTMLDivElement>(null)
-
-  useClickOutside(ref, () => setOpen(false))
-
-  const filtered = available.filter((t) =>
-    t.toLowerCase().includes(search.toLowerCase())
-  )
-
-  function toggleTag(tag: string) {
-    onChange(
-      selected.includes(tag) ? selected.filter((t) => t !== tag) : [...selected, tag]
-    )
-  }
+  const filtered = available.filter((t) => t.toLowerCase().includes(search.toLowerCase()))
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className={clsx(
-          'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors',
-          selected.length > 0
-            ? 'bg-indigo-600 text-white'
-            : 'bg-white/5 text-gray-300 hover:bg-white/10'
-        )}
-      >
-        Tags
-        {selected.length > 0 && (
-          <span className="rounded-full bg-white/20 px-1.5">{selected.length}</span>
-        )}
-        <ChevronDown size={12} />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-white/10 bg-[#1a1a1a] shadow-xl">
-          <div className="p-2">
-            <input
-              type="text"
-              placeholder="Search tags..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded bg-white/5 px-2 py-1 text-xs text-gray-200 outline-none"
-            />
-          </div>
-          <div className="max-h-52 overflow-y-auto">
-            {filtered.length === 0 && (
-              <p className="px-3 py-2 text-xs text-gray-500">No tags found</p>
-            )}
-            {filtered.map((tag) => (
-              <label
-                key={tag}
-                className="flex cursor-pointer items-center gap-2 px-3 py-1 hover:bg-white/5"
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.includes(tag)}
-                  onChange={() => toggleTag(tag)}
-                  className="accent-indigo-500"
-                />
-                <span className="text-xs text-gray-300">{tag}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+    <FilterSection title="Tags" defaultOpen={false} activeCount={selected.length}>
+      <input
+        type="text"
+        placeholder="Search tags..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="mb-1 w-full rounded bg-white/5 px-2 py-1 text-xs text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+      />
+      <div className="max-h-64 overflow-y-auto">
+        {filtered.length === 0 && <p className="py-1 text-xs text-gray-600">No tags found</p>}
+        {filtered.map((tag) => (
+          <CheckItem
+            key={tag}
+            label={tag}
+            checked={selected.includes(tag)}
+            onChange={() => onChange(toggle(selected, tag))}
+          />
+        ))}
+      </div>
+    </FilterSection>
   )
 }
 
-function ResolutionDropdown({
-  counts,
-  selected,
-  onChange
-}: {
-  counts: Map<string, number>
-  selected: string[]
-  onChange: (resolutions: string[]) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useClickOutside(ref, () => setOpen(false))
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className={clsx(
-          'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors',
-          selected.length > 0
-            ? 'bg-indigo-600 text-white'
-            : 'bg-white/5 text-gray-300 hover:bg-white/10'
-        )}
-      >
-        Resolution
-        {selected.length > 0 && (
-          <span className="rounded-full bg-white/20 px-1.5">{selected.length}</span>
-        )}
-        <ChevronDown size={12} />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-60 rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl">
-          <div className="max-h-80 overflow-y-auto">
-            {WE_RESOLUTION_GROUPS.map((group) => {
-              const allChecked = isGroupSelected(selected, group)
-              return (
-                <div key={group.label}>
-                  <label className="flex cursor-pointer items-center gap-2 px-3 pb-1 pt-2 hover:bg-white/5">
-                    <input
-                      type="checkbox"
-                      checked={allChecked}
-                      onChange={() => onChange(setGroupSelected(selected, group, !allChecked))}
-                      className="accent-indigo-500"
-                    />
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                      {group.label}
-                    </span>
-                  </label>
-                  {group.items.map((item) => {
-                    const count = counts.get(item.tag) ?? 0
-                    return (
-                      <label
-                        key={item.tag}
-                        className="flex cursor-pointer items-center gap-2 py-1 pl-6 pr-3 hover:bg-white/5"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected.includes(item.tag)}
-                          onChange={() => onChange(toggle(selected, item.tag))}
-                          className="accent-indigo-500"
-                        />
-                        <span className={clsx('flex-1 text-xs', count > 0 ? 'text-gray-300' : 'text-gray-600')}>
-                          {item.label}
-                        </span>
-                        <span className="text-[11px] text-gray-600">{count}</span>
-                      </label>
-                    )
-                  })}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-    </div>
+function folderRowClass(active: boolean): string {
+  return clsx(
+    'flex items-center gap-2 px-3 py-1.5 text-xs',
+    active ? 'bg-white/5 text-white' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
   )
 }
 
-function FolderMenu({
-  x,
-  y,
-  onClose,
-  onRename,
-  onDelete
-}: {
-  x: number
-  y: number
-  onClose: () => void
-  onRename: () => void
-  onDelete: () => void
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-
-  useClickOutside(ref, onClose)
-  const pos = useClampedPosition(ref, { x, y })
-
-  return (
-    <div
-      ref={ref}
-      className="fixed z-50 min-w-[140px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
-      style={{ left: pos?.x ?? x, top: pos?.y ?? y }}
-    >
-      <button
-        onClick={onRename}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-      >
-        <Pencil size={12} /> Rename
-      </button>
-      <button
-        onClick={onDelete}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
-      >
-        <Trash2 size={12} /> Delete
-      </button>
-    </div>
-  )
+function dropWallpaperId(e: React.DragEvent): string {
+  return e.dataTransfer.getData('text/wallpaper-id')
 }
+
+type BackgroundTask = 'backup-selection' | 'scan-backups' | 'check-unavailable' | 'backup-unavailable'
 
 interface LibraryViewProps {
   onBrowseCreator?: (creatorSteamId: string) => void
 }
 
-function backupSummary(result: { backedUp: number; alreadyBackedUp: number; failed: number; unsubscribed: number }) {
-  return `Backed up ${result.backedUp}${result.alreadyBackedUp > 0 ? `, ${result.alreadyBackedUp} already up to date` : ''}${result.unsubscribed > 0 ? ` (${result.unsubscribed} unsubscribed)` : ''}${result.failed > 0 ? `, ${result.failed} failed` : ''}`
-}
-
 export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   const queryClient = useQueryClient()
+  const { showToast } = useToast()
   const [search, setSearch] = useState('')
-  const [sortBy, setSortBy] = useState<LibraryFilters['sortBy']>(() => loadSort().sortBy)
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => loadSort().sortDir)
-  const [filterState, setFilterState] = useState<LibraryFilterState>(loadFilters)
-  const [showFilters, setShowFilters] = useState(true)
+  const [sort, setSort] = usePersistentState('we-library-sort', DEFAULT_SORT)
+  const [filterState, setFilterState] = usePersistentState('we-library-filters', DEFAULT_STATE, loadFilters)
+  const [showFilters, setShowFilters] = usePersistentState('we-library-show-filters', true, (v) => v !== false)
+  const [showFolders, setShowFolders] = usePersistentState('we-library-show-folders', true, (v) => v !== false)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
-  const [scanResult, setScanResult] = useState<{
-    imported: number
-    skipped: number
-    removed: number
-  } | null>(null)
+  const [scanResult, setScanResult] = useState<{ imported: number; skipped: number; removed: number } | null>(null)
 
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [previewSize, setPreviewSize] = usePreviewSize()
 
   const [activeFolder, setActiveFolder] = useState<string | null>(null) // null = "All"
-  const [folderMenu, setFolderMenu] = useState<{
-    folder: WallpaperFolder
-    x: number
-    y: number
-  } | null>(null)
+  const [folderMenu, setFolderMenu] = useState<{ folder: WallpaperFolder; x: number; y: number } | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
 
-  const [ctxMenu, setCtxMenu] = useState<{
-    x: number
-    y: number
-    ids: string[]
-    showFolderSub: boolean
-  } | null>(null)
-  const ctxMenuRef = useRef<HTMLDivElement>(null)
-  const folderSubRef = useRef<HTMLDivElement>(null)
+  const votedSet = useVotedIds()
+  const { enabled: voteBordersEnabled, failed: failedVotes } = useVoteBorders()
+  const lweInstalled = useLweInstalled()
+  const isBackupConfigured = useConfig()?.isBackupConfigured ?? false
+  const { folders, refetchFolders, moveToFolder } = useFolders()
+  const applyWallpaper = useApplyWallpaper()
+  const subscribe = useSubscribe()
+  const unsubscribe = useUnsubscribe()
 
-  useClickOutside(ctxMenuRef, () => setCtxMenu(null), !!ctxMenu)
-  const ctxPos = useClampedPosition(ctxMenuRef, ctxMenu)
-  const folderSubSide = useFlipSide(folderSubRef, !!ctxMenu?.showFolderSub)
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(filterState))
-  }, [filterState])
-
-  useEffect(() => {
-    localStorage.setItem(SORT_STORAGE_KEY, JSON.stringify({ sortBy, sortDir }))
-  }, [sortBy, sortDir])
-
-  function updateFilter<K extends 'types' | 'ageRatings' | 'genres' | 'sources'>(key: K, tag: string) {
-    setFilterState((prev) => ({ ...prev, [key]: toggle(prev[key], tag) }))
+  function setFilter<K extends keyof LibraryFilterState>(key: K, value: LibraryFilterState[K]) {
+    setFilterState((prev) => ({ ...prev, [key]: value }))
   }
 
-  function toggleFailedOnly() {
-    setFilterState((prev) => ({ ...prev, failedOnly: !prev.failedOnly }))
+  function toggleFlag(key: 'failedOnly' | 'likedOnly' | 'unavailableOnly' | 'outdatedBackupOnly') {
+    setFilterState((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
-  function toggleLikedOnly() {
-    setFilterState((prev) => ({ ...prev, likedOnly: !prev.likedOnly }))
-  }
-
-  function toggleUnavailableOnly() {
-    setFilterState((prev) => ({ ...prev, unavailableOnly: !prev.unavailableOnly }))
-  }
-
-  function toggleOutdatedBackupOnly() {
-    setFilterState((prev) => ({ ...prev, outdatedBackupOnly: !prev.outdatedBackupOnly }))
-  }
-
+  const flagCount =
+    (filterState.failedOnly ? 1 : 0) +
+    (filterState.likedOnly ? 1 : 0) +
+    (filterState.unavailableOnly ? 1 : 0) +
+    (filterState.outdatedBackupOnly ? 1 : 0)
   const activeCount =
     filterState.types.length +
     filterState.ageRatings.length +
     filterState.genres.length +
     filterState.resolutions.length +
     filterState.sources.length +
-    (filterState.failedOnly ? 1 : 0) +
-    (filterState.likedOnly ? 1 : 0) +
-    (filterState.unavailableOnly ? 1 : 0) +
-    (filterState.outdatedBackupOnly ? 1 : 0)
+    flagCount
 
   // Refresh the library once a background download (subscribe or redownload) settles,
   // so the downloading/downloadFailed badges stay in sync without a manual Scan.
@@ -449,8 +226,8 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   }, [queryClient])
 
   const filters: LibraryFilters = {
-    sortBy,
-    sortDir,
+    sortBy: sort.sortBy,
+    sortDir: sort.sortDir,
     searchText: search || undefined,
     type:
       filterState.types.length === 1
@@ -467,42 +244,18 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     queryFn: () => window.electronAPI.library.getAll(filters)
   })
 
-  const { data: folders = [], refetch: refetchFolders } = useQuery({
-    queryKey: ['folders'],
-    queryFn: () => window.electronAPI.folders.getAll()
-  })
-
-  const { data: votedIds } = useQuery({
-    queryKey: ['steam-voted-ids'],
-    queryFn: () => window.electronAPI.steam.getVotedIds(),
-    staleTime: Infinity
-  })
-  const votedSet = useMemo(() => new Set(votedIds ?? []), [votedIds])
-  const { enabled: voteBordersEnabled, failed: failedVotes } = useVoteBorders()
-
   // Client-side OR filtering for multiple types / ratings / genres
   const filtered = useMemo(() => {
+    const types = filterState.types.map((t) => TYPE_MAP[t]).filter(Boolean)
+    const ratings = filterState.ageRatings.map((r) => RATING_MAP[r]).filter(Boolean)
+    const sources = filterState.sources.map((s) => SOURCE_MAP[s]).filter(Boolean)
     return allWallpapers.filter((w) => {
-      if (filterState.types.length > 1) {
-        const types = filterState.types.map((t) => TYPE_MAP[t]).filter(Boolean)
-        if (!types.includes(w.type)) return false
-      }
-      if (filterState.ageRatings.length > 1) {
-        const ratings = filterState.ageRatings
-          .map((r) => RATING_MAP[r])
-          .filter(Boolean)
-        if (!ratings.includes(w.contentRating ?? 'uncategorized')) return false
-      }
-      if (filterState.genres.length > 0) {
-        if (!filterState.genres.some((g) => w.tags.includes(g))) return false
-      }
-      if (filterState.resolutions.length > 0) {
-        if (!filterState.resolutions.some((r) => w.resolutions?.includes(r))) return false
-      }
-      if (filterState.sources.length > 0) {
-        const sources = filterState.sources.map((s) => SOURCE_MAP[s]).filter(Boolean)
-        if (!sources.includes(w.source)) return false
-      }
+      if (filterState.types.length > 1 && !types.includes(w.type)) return false
+      if (filterState.ageRatings.length > 1 && !ratings.includes(w.contentRating ?? 'uncategorized')) return false
+      if (filterState.genres.length > 0 && !filterState.genres.some((g) => w.tags.includes(g))) return false
+      if (filterState.resolutions.length > 0 && !filterState.resolutions.some((r) => w.resolutions?.includes(r)))
+        return false
+      if (filterState.sources.length > 0 && !sources.includes(w.source)) return false
       if (filterState.failedOnly && !w.downloadFailed) return false
       if (filterState.likedOnly && !votedSet.has(w.id)) return false
       if (filterState.unavailableOnly && !w.unavailable) return false
@@ -511,24 +264,16 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     })
   }, [allWallpapers, filterState, votedSet])
 
-  const existingIds = useMemo(
-    () => new Set(allWallpapers.map((w) => w.id)),
-    [allWallpapers]
-  )
+  const existingIds = useMemo(() => new Set(allWallpapers.map((w) => w.id)), [allWallpapers])
 
-  const failedCount = useMemo(
-    () => allWallpapers.filter((w) => w.downloadFailed).length,
-    [allWallpapers]
-  )
-
-  const unavailableCount = useMemo(
-    () => allWallpapers.filter((w) => w.unavailable).length,
-    [allWallpapers]
-  )
-
-  const outdatedBackupCount = useMemo(
-    () => allWallpapers.filter(isBackupOutdated).length,
-    [allWallpapers]
+  const statusCounts = useMemo(
+    () => ({
+      failed: allWallpapers.filter((w) => w.downloadFailed).length,
+      liked: allWallpapers.filter((w) => votedSet.has(w.id)).length,
+      unavailable: allWallpapers.filter((w) => w.unavailable).length,
+      outdatedBackup: allWallpapers.filter(isBackupOutdated).length
+    }),
+    [allWallpapers, votedSet]
   )
 
   // Removed-from-workshop items with local content that hasn't been backed up yet
@@ -548,15 +293,6 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     return set
   }, [folders, existingIds])
 
-  // Each wallpaper lives in at most one folder; map wallpaper id -> its folder id
-  const folderOfItem = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const f of folders) {
-      for (const id of f.items) map.set(id, f.id)
-    }
-    return map
-  }, [folders])
-
   // Real item count per folder (only items that exist in the library)
   const folderCounts = useMemo(() => {
     const map = new Map<string, number>()
@@ -566,18 +302,19 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     return map
   }, [folders, existingIds])
 
+  // Unsorted items, what the "Default" folder shows
+  const unsorted = useMemo(() => filtered.filter((w) => !allFolderItemIds.has(w.id)), [filtered, allFolderItemIds])
+
   // Folder filtering:
   // Default (null) = everything NOT inside any folder (unsorted)
-  // Specific folder = only that folder's items (wallpapers can be in multiple folders)
+  // Specific folder = only that folder's items
   const allWallpapersForView = useMemo(() => {
-    if (!activeFolder) {
-      return filtered.filter((w) => !allFolderItemIds.has(w.id))
-    }
+    if (!activeFolder) return unsorted
     const folder = folders.find((f) => f.id === activeFolder)
     if (!folder) return filtered
     const set = new Set(folder.items)
     return filtered.filter((w) => set.has(w.id))
-  }, [filtered, activeFolder, folders, allFolderItemIds])
+  }, [filtered, unsorted, activeFolder, folders])
 
   const totalItems = allWallpapersForView.length
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
@@ -587,30 +324,21 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     [allWallpapersForView, safePage, pageSize]
   )
 
-  useEffect(() => { setPage(1) }, [filterState, activeFolder, search, sortBy, sortDir, pageSize])
+  useEffect(() => { setPage(1) }, [filterState, activeFolder, search, sort, pageSize])
 
   const wallpaperIds = useMemo(() => wallpapers.map((w) => w.id), [wallpapers])
   const {
     selectedIds,
-    setSelectedIds,
-    setLastClickedId,
-    gridRef,
+    clearSelection,
+    selectForContextMenu,
     handleCardSelect,
-    handleMarqueeStart,
-    handleMarqueeMove,
-    handleMarqueeEnd,
+    containerProps,
     marqueeRect
   } = useSelectableGrid({
     ids: wallpaperIds,
     dataAttr: 'data-wallpaper-id',
     onOpenDetail: setDetailId
   })
-
-  // Count for "All" sidebar button: unsorted items only
-  const unsortedCount = useMemo(
-    () => filtered.filter((w) => !allFolderItemIds.has(w.id)).length,
-    [filtered, allFolderItemIds]
-  )
 
   const resolutionCounts = useMemo(() => {
     const counts = new Map<string, number>()
@@ -625,51 +353,25 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     queryFn: () => window.electronAPI.library.distinctTags()
   })
 
-  const { data: lweStatus } = useQuery({
-    queryKey: ['lwe-status'],
-    queryFn: () => window.electronAPI.lwe.status()
-  })
-
-  const { data: config } = useQuery({
-    queryKey: ['config'],
-    queryFn: () => window.electronAPI.config.get()
-  })
-  const isBackupConfigured = config?.isBackupConfigured ?? false
-
-  const { data: playbackState } = useQuery({
-    queryKey: ['playlist-playback-state'],
-    queryFn: () => window.electronAPI.playlist.getState()
-  })
+  const playbackStates = usePlaybackStates()
   // the playlist "add to current" goes to, the first one playing when several screens have their own
   const currentPlaylistId =
-    (playbackState?.find((s) => s.isPlaying) ?? playbackState?.find((s) => s.playlistId))?.playlistId ?? null
+    (playbackStates.find((s) => s.isPlaying) ?? playbackStates.find((s) => s.playlistId))?.playlistId ?? null
 
-  useEffect(() => {
-    return window.electronAPI.on.playlistStateChanged((state) => {
-      queryClient.setQueryData(['playlist-playback-state'], state)
-    })
-  }, [queryClient])
-
-  const { data: playlists } = useQuery({
-    queryKey: ['playlists'],
-    queryFn: () => window.electronAPI.playlist.getAll()
-  })
+  const playlists = usePlaylists()
   const currentPlaylistItemIds = useMemo(() => {
-    const playlist = playlists?.find((p) => p.id === currentPlaylistId)
+    const playlist = playlists.find((p) => p.id === currentPlaylistId)
     return new Set(playlist?.items.map((item) => item.wallpaperId) ?? [])
   }, [playlists, currentPlaylistId])
 
-  const { showToast } = useToast()
-
-  async function addToCurrentPlaylist(wallpaperIds: string[]) {
-    if (!currentPlaylistId || wallpaperIds.length === 0) return
-    await window.electronAPI.playlist.addItems(currentPlaylistId, wallpaperIds)
+  async function addToCurrentPlaylist(ids: string[]) {
+    if (!currentPlaylistId || ids.length === 0) return
+    await window.electronAPI.playlist.addItems(currentPlaylistId, ids)
     queryClient.invalidateQueries({ queryKey: ['playlists'] })
     showToast('Added to current playlist')
   }
 
-  const [backingUpSelection, setBackingUpSelection] = useState(false)
-  const [backupScanning, setBackupScanning] = useState(false)
+  const [runningTasks, setRunningTasks] = useState<Set<BackgroundTask>>(new Set())
   const [backupStatus, setBackupStatus] = useState<string | null>(null)
   const [backupProgress, setBackupProgress] = useState<
     Map<string, { percentage: number; status: 'copying' | 'verifying' }>
@@ -690,72 +392,56 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
         showToast(`Backup failed: ${progress.message ?? 'verification error'}`)
       }
     })
-  }, [])
+  }, [showToast])
 
-  async function handleBackupSelection() {
+  // backup and availability checks report into the status line and can change any wallpaper's flags
+  async function runTask(task: BackgroundTask, work: () => Promise<string>) {
+    setRunningTasks((prev) => new Set(prev).add(task))
+    setBackupStatus(null)
+    try {
+      setBackupStatus(await work())
+    } finally {
+      setRunningTasks((prev) => {
+        const next = new Set(prev)
+        next.delete(task)
+        return next
+      })
+      queryClient.invalidateQueries({ queryKey: ['library'] })
+    }
+  }
+
+  function handleBackupSelection() {
     if (selectedIds.size === 0) return
     const toBackUp = wallpapers.filter((w) => selectedIds.has(w.id) && w.source === 'workshop')
     if (toBackUp.length === 0) {
       setBackupStatus('No workshop wallpapers selected.')
       return
     }
-
-    setBackingUpSelection(true)
-    setBackupStatus(null)
-    try {
-      const result = await window.electronAPI.backup.selection(toBackUp.map((w) => w.id))
-      setBackupStatus(`${backupSummary(result)}.`)
-    } finally {
-      setBackingUpSelection(false)
-      queryClient.invalidateQueries({ queryKey: ['library'] })
-    }
+    void runTask('backup-selection', async () =>
+      `${backupSummary(await window.electronAPI.backup.selection(toBackUp.map((w) => w.id)))}.`
+    )
   }
 
-  async function handleScanBackups() {
-    setBackupScanning(true)
-    setBackupStatus(null)
-    try {
+  function handleScanBackups() {
+    void runTask('scan-backups', async () => {
       const result = await window.electronAPI.backup.scan()
       const dropped = result.removed + result.unlinked
-      setBackupStatus(
-        `Backup scan: ${result.imported} imported, ${result.linked} linked${dropped > 0 ? `, ${dropped} broken removed` : ''}${result.corrupted.length > 0 ? `, ${result.corrupted.length} corrupted folder${result.corrupted.length === 1 ? '' : 's'} skipped (${result.corrupted.join(', ')})` : ''}.`
-      )
-    } finally {
-      setBackupScanning(false)
-      queryClient.invalidateQueries({ queryKey: ['library'] })
-    }
+      return `Backup scan: ${result.imported} imported, ${result.linked} linked${dropped > 0 ? `, ${dropped} broken removed` : ''}${result.corrupted.length > 0 ? `, ${result.corrupted.length} corrupted folder${result.corrupted.length === 1 ? '' : 's'} skipped (${result.corrupted.join(', ')})` : ''}.`
+    })
   }
 
-  const [checkingUnavailable, setCheckingUnavailable] = useState(false)
-  const [backingUpUnavailable, setBackingUpUnavailable] = useState(false)
-
-  async function handleCheckUnavailable() {
-    setCheckingUnavailable(true)
-    setBackupStatus(null)
-    try {
+  function handleCheckUnavailable() {
+    void runTask('check-unavailable', async () => {
       const result = await window.electronAPI.library.checkUnavailable()
-      setBackupStatus(
-        `Checked ${result.checked} workshop item(s): ${result.unavailable} no longer available on the workshop.`
-      )
-    } finally {
-      setCheckingUnavailable(false)
-      queryClient.invalidateQueries({ queryKey: ['library'] })
-    }
+      return `Checked ${result.checked} workshop item(s): ${result.unavailable} no longer available on the workshop.`
+    })
   }
 
-  async function handleBackupAllUnavailable() {
+  function handleBackupAllUnavailable() {
     if (unavailableNotBackedUp.length === 0) return
-    setBackingUpUnavailable(true)
-    setBackupStatus(null)
-    try {
-      const result = await window.electronAPI.backup.selection(
-        unavailableNotBackedUp.map((w) => w.id)
-      )
-      setBackupStatus(`${backupSummary(result)}.`)
-    } finally {
-      setBackingUpUnavailable(false)
-      queryClient.invalidateQueries({ queryKey: ['library'] })
-    }
+    void runTask('backup-unavailable', async () =>
+      `${backupSummary(await window.electronAPI.backup.selection(unavailableNotBackedUp.map((w) => w.id)))}.`
+    )
   }
 
   async function handleScan() {
@@ -771,6 +457,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   // Folder creation uses an inline input instead of prompt()
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
+  const [importStatus, setImportStatus] = useState<string | null>(null)
 
   async function handleCreateFolderSubmit() {
     if (!newFolderName.trim()) {
@@ -790,15 +477,11 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       const result = await window.electronAPI.config.importWE(filePath)
       refetchFolders()
       queryClient.invalidateQueries({ queryKey: ['library'] })
-      setImportStatus(
-        `Imported ${result.folders} folders and ${result.playlists} playlists.`
-      )
+      setImportStatus(`Imported ${result.folders} folders and ${result.playlists} playlists.`)
     } catch (err) {
       setImportStatus(`Import failed: ${(err as Error).message}`)
     }
   }
-
-  const [importStatus, setImportStatus] = useState<string | null>(null)
 
   async function handleCleanupFolders() {
     const { removed } = await window.electronAPI.folders.cleanup()
@@ -824,267 +507,50 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     refetchFolders()
   }
 
-  const handleDrop = useCallback(
-    async (folderId: string, wallpaperId: string) => {
-      const ids = selectedIds.has(wallpaperId)
-        ? Array.from(selectedIds)
-        : [wallpaperId]
-      await window.electronAPI.folders.addItems(folderId, ids)
-      refetchFolders()
-    },
-    [refetchFolders, selectedIds]
-  )
+  // dragging a selected card moves the whole selection
+  function handleDrop(folderId: string, wallpaperId: string) {
+    if (!wallpaperId) return
+    void moveToFolder(folderId, selectedIds.has(wallpaperId) ? [...selectedIds] : [wallpaperId])
+  }
+
+  function openFolderMenu(e: React.MouseEvent, folder: WallpaperFolder) {
+    e.preventDefault()
+    setFolderMenu({ folder, x: e.clientX, y: e.clientY })
+  }
 
   useEffect(() => {
-    setSelectedIds(new Set())
-    setLastClickedId(null)
-  }, [activeFolder])
+    clearSelection()
+  }, [activeFolder, clearSelection])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === '+' && selectedIds.size > 0) {
-        const active = document.activeElement
-        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
-        addToCurrentPlaylist(Array.from(selectedIds))
+      if (e.key === '+' && selectedIds.size > 0 && !isEditingText()) {
+        addToCurrentPlaylist([...selectedIds])
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedIds, currentPlaylistId])
+  })
 
-  const openWallpaperCtxMenu = useCallback(
-    (e: React.MouseEvent, wallpaperId: string) => {
-      e.preventDefault()
-      const ids = selectedIds.has(wallpaperId) ? Array.from(selectedIds) : [wallpaperId]
-      // Also select the right-clicked item if not already selected
-      if (!selectedIds.has(wallpaperId)) {
-        setSelectedIds(new Set(ids))
-      }
-      setCtxMenu({ x: e.clientX, y: e.clientY, ids, showFolderSub: false })
-    },
-    [selectedIds]
-  )
-
-  function closeCtxMenu() {
-    setCtxMenu(null)
+  function openWallpaperCtxMenu(e: React.MouseEvent, wallpaperId: string) {
+    e.preventDefault()
+    setCtxMenu({ x: e.clientX, y: e.clientY, ids: selectForContextMenu(wallpaperId) })
   }
 
-  const ctxWallpapers = useMemo(() => {
-    if (!ctxMenu) return []
-    const idSet = new Set(ctxMenu.ids)
-    return wallpapers.filter((w) => idSet.has(w.id))
-  }, [ctxMenu, wallpapers])
-
-  async function unsubscribeIds(ids: string[]) {
-    await forEachIgnoringErrors(ids, (id) => window.electronAPI.steam.unsubscribe(id))
-    queryClient.invalidateQueries({ queryKey: ['library'] })
-    refetchFolders()
-  }
-
-  async function ctxUnsubscribe() {
-    if (!ctxMenu) return
-    const ids = ctxMenu.ids
-    closeCtxMenu()
-    await unsubscribeIds(ids)
-  }
-
-  async function handleApplyDetail(id: string, screen?: ScreenTarget) {
-    try {
-      await window.electronAPI.wallpaper.apply({ wallpaperId: id, screen })
-      queryClient.invalidateQueries({ queryKey: ['library'] })
-    } catch (err) {
-      showToast((err as Error).message)
-    }
-  }
-
-  async function ctxVote(up: boolean) {
-    if (!ctxMenu) return
-    const ids = ctxMenu.ids
-    closeCtxMenu()
-    if (ids.length > 1) showToast(`${up ? 'Liking' : 'Disliking'} ${ids.length} wallpapers on Steam...`)
-
-    const results = await Promise.allSettled(ids.map((id) => window.electronAPI.steam.vote(id, up)))
-    const confirmedIds = ids.filter((_, i) => {
-      const r = results[i]
-      return r.status === 'fulfilled' && r.value.confirmed
-    })
-
-    if (confirmedIds.length > 0) {
-      const confirmedSet = new Set(confirmedIds)
-      queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
-        up ? [...new Set([...(old ?? []), ...confirmedIds])] : (old ?? []).filter((id) => !confirmedSet.has(id))
-      )
-    }
-
-    const failed = ids.length - confirmedIds.length
-    showToast(
-      failed === 0
-        ? `${up ? 'Liked' : 'Disliked'} ${confirmedIds.length} on Steam`
-        : `${up ? 'Liked' : 'Disliked'} ${confirmedIds.length}, ${failed} could not be confirmed`
-    )
-  }
-
-  function ctxOpenInSteam() {
-    if (!ctxMenu) return
-    for (const id of ctxMenu.ids) openWorkshopPage(id)
-    closeCtxMenu()
-  }
-
-  async function ctxBrowseCreator() {
-    const wallpaper = ctxWallpapers[0]
-    if (!wallpaper) return
-    closeCtxMenu()
-    let creatorSteamId = wallpaper.authorSteamId
-    if (!creatorSteamId && isWorkshopId(wallpaper.id)) {
-      try {
-        const item = await window.electronAPI.workshop.getItem(wallpaper.id)
-        creatorSteamId = item?.creatorSteamId
-      } catch {
-        creatorSteamId = undefined
-      }
-    }
-    if (creatorSteamId) {
-      onBrowseCreator?.(creatorSteamId)
-    } else {
-      showToast('Could not find creator info for this wallpaper')
-    }
-  }
-
-  async function ctxBackup() {
-    if (!ctxMenu) return
-    const toBackUp = ctxWallpapers.filter((w) => w.source === 'workshop')
-    closeCtxMenu()
-    if (toBackUp.length === 0) return
-
-    try {
-      if (toBackUp.length === 1) {
-        const result = await window.electronAPI.backup.item(toBackUp[0].id)
-        const done = result.alreadyBackedUp ? 'Backup already up to date' : 'Backed up'
-        showToast(result.unsubscribed ? `${done}, unsubscribed` : done)
-      } else {
-        showToast(backupSummary(await window.electronAPI.backup.selection(toBackUp.map((w) => w.id))))
-      }
-    } catch (err) {
-      showToast(`Backup failed: ${(err as Error).message}`)
-    }
-    queryClient.invalidateQueries({ queryKey: ['library'] })
-  }
-
-  async function ctxRemoveBackup() {
-    if (!ctxMenu) return
-    const targets = ctxWallpapers.filter((w) => w.backedUp || w.source === 'backup')
-    closeCtxMenu()
-    if (targets.length === 0) return
-
-    const backupOnly = targets.filter((w) => w.source === 'backup').length
-    const what = targets.length === 1 ? `the backup of "${targets[0].title}"` : `${targets.length} backups`
-    const note =
-      backupOnly > 0
-        ? `\n\n${backupOnly === 1 && targets.length === 1 ? 'It is' : `${backupOnly} of them are`} not subscribed on Steam anymore and will be removed from the library.`
-        : ''
-    if (!confirm(`Delete ${what} from the backup folder?${note}`)) return
-
-    const result = await window.electronAPI.backup.remove(targets.map((w) => w.id))
-    showToast(
-      `Removed ${result.removed} backup${result.removed === 1 ? '' : 's'}${result.keptDirs.length > 0 ? ` (${result.keptDirs.length} outside the backup folder kept on disk)` : ''}${result.failed > 0 ? `, ${result.failed} failed` : ''}`
-    )
-    queryClient.invalidateQueries({ queryKey: ['library'] })
-    refetchFolders()
-  }
-
-  async function ctxOpenLocally() {
-    if (!ctxMenu) return
-    const paths = ctxWallpapers.filter((w) => w.localPath).map((w) => w.localPath!)
-    closeCtxMenu()
-    if (paths.length > 0) {
-      await window.electronAPI.shell.openPaths(paths)
-    }
-  }
-
-  async function ctxPreviewVideo() {
-    if (!ctxMenu) return
-    const w = ctxWallpapers[0]
-    if (w?.localPath && w.file) {
-      const videoPath = w.localPath + '/' + w.file
-      await window.electronAPI.shell.openWithDefault(videoPath)
-    }
-    closeCtxMenu()
-  }
-
-  async function ctxMoveToFolder(folderId: string) {
-    if (!ctxMenu) return
-    await window.electronAPI.folders.addItems(folderId, ctxMenu.ids)
-    refetchFolders()
-    closeCtxMenu()
-  }
-
-  async function ctxRemoveFromFolder() {
-    if (!ctxMenu) return
-    // Each wallpaper lives in at most one folder, so pull it out of whichever one it's in
-    for (const folder of folders) {
-      const overlap = ctxMenu.ids.filter((id) => folder.items.includes(id))
-      if (overlap.length > 0) {
-        await window.electronAPI.folders.removeItems(folder.id, overlap)
-      }
-    }
-    refetchFolders()
-    closeCtxMenu()
-  }
-
-  const ctxHasVideo = ctxWallpapers.some((w) => w.type === 'video' && w.file)
-  const ctxHasBackupable = ctxWallpapers.some((w) => w.source === 'workshop')
-  const ctxHasBackup = ctxWallpapers.some((w) => w.backedUp || w.source === 'backup')
-  const ctxCanBrowseCreator =
-    ctxWallpapers.length === 1 &&
-    ctxWallpapers[0]?.source !== 'local' &&
-    (!!ctxWallpapers[0]?.authorSteamId || isWorkshopId(ctxWallpapers[0]?.id ?? ''))
-
-  const ctxCurrentFolderIds = ctxMenu
-    ? new Set(ctxMenu.ids.map((id) => folderOfItem.get(id)).filter((id): id is string => !!id))
-    : new Set<string>()
-  const ctxHasFolder = ctxCurrentFolderIds.size > 0
-  // Only offer folders the selection isn't already fully inside as move targets
-  const ctxMoveTargets = folders.filter(
-    (f) => !(ctxCurrentFolderIds.size === 1 && ctxCurrentFolderIds.has(f.id))
-  )
-
+  const activeFolderTitle = activeFolder ? folders.find((f) => f.id === activeFolder)?.title : undefined
+  const ctxWallpapers = ctxMenu ? wallpapers.filter((w) => ctxMenu.ids.includes(w.id)) : []
   const detailWallpaper = detailId ? wallpapers.find((w) => w.id === detailId) : undefined
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
-        <button
-          onClick={() => setShowFilters((v) => !v)}
-          className={clsx(
-            'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
-            showFilters || activeCount > 0
-              ? 'bg-indigo-600 text-white'
-              : 'bg-white/5 text-gray-300 hover:bg-white/10'
-          )}
-        >
-          <SlidersHorizontal size={14} />
-          Filters
-          {activeCount > 0 && (
-            <span className="rounded-full bg-white/20 px-1.5 text-xs">{activeCount}</span>
-          )}
-        </button>
-        <div className="relative max-w-md flex-1">
-          <Search
-            size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
-          />
-          <input
-            type="text"
-            placeholder="Search library..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg bg-white/5 py-2 pl-9 pr-3 text-sm text-gray-200 placeholder-gray-500 outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-        </div>
+      <div className="flex flex-wrap items-center gap-3 border-b border-white/5 px-4 py-3">
+        <FiltersToggle open={showFilters} activeCount={activeCount} onClick={() => setShowFilters((v) => !v)} />
+        <PanelToggle icon={Folder} label="Folders" open={showFolders} onClick={() => setShowFolders((v) => !v)} />
+        <SearchInput value={search} placeholder="Search library..." onChange={setSearch} />
         <select
-          value={sortBy ?? 'updatedAt'}
-          onChange={(e) => setSortBy(e.target.value as LibraryFilters['sortBy'])}
-          className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 [&>option]:bg-[#1a1a1a] [&>option]:text-gray-200"
+          value={sort.sortBy ?? 'updatedAt'}
+          onChange={(e) => setSort((prev) => ({ ...prev, sortBy: e.target.value as LibraryFilters['sortBy'] }))}
+          className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
         >
           <option value="title">Name</option>
           <option value="updatedAt">Date Updated</option>
@@ -1094,217 +560,72 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
           <option value="appliedCount">Most Applied</option>
         </select>
         <button
-          onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
-          title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
+          onClick={() => setSort((prev) => ({ ...prev, sortDir: prev.sortDir === 'asc' ? 'desc' : 'asc' }))}
+          title={sort.sortDir === 'asc' ? 'Ascending' : 'Descending'}
           className="rounded-lg bg-white/5 px-2 py-2 text-sm text-gray-300 hover:bg-white/10"
         >
-          {sortDir === 'asc' ? '↑' : '↓'}
+          {sort.sortDir === 'asc' ? '↑' : '↓'}
         </button>
         <select
           value={pageSize}
           onChange={(e) => setPageSize(Number(e.target.value))}
-          className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 [&>option]:bg-[#1a1a1a] [&>option]:text-gray-200"
+          className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
         >
           <option value={50}>50 / page</option>
           <option value={100}>100 / page</option>
           <option value={200}>200 / page</option>
         </select>
         <PreviewSizeToggle value={previewSize} onChange={setPreviewSize} />
-        <button
-          onClick={handleScan}
+        {activeCount > 0 && <ResetFiltersButton onClick={() => setFilterState(DEFAULT_STATE)} />}
+        <div className="ml-auto" />
+        <ToolbarButton
+          icon={<RefreshCw size={14} />}
+          busy={scanning}
           disabled={scanning}
           title="Scan workshop folder"
-          className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
+          onClick={handleScan}
         >
-          {scanning ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <RefreshCw size={14} />
-          )}
           Scan
-        </button>
-        <button
+        </ToolbarButton>
+        <ToolbarButton
+          icon={<Archive size={14} />}
+          busy={runningTasks.has('scan-backups')}
+          disabled={runningTasks.has('scan-backups') || !isBackupConfigured}
+          title={isBackupConfigured ? 'Scan backup folder' : BACKUP_FOLDER_HINT}
           onClick={handleScanBackups}
-          disabled={backupScanning || !isBackupConfigured}
-          title={isBackupConfigured ? 'Scan backup folder' : 'Configure a backup folder in Settings first'}
-          className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
         >
-          {backupScanning ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Archive size={14} />
-          )}
           Scan backups
-        </button>
-        <button
-          onClick={handleCheckUnavailable}
-          disabled={checkingUnavailable}
+        </ToolbarButton>
+        <ToolbarButton
+          icon={<WifiOff size={14} />}
+          busy={runningTasks.has('check-unavailable')}
+          disabled={runningTasks.has('check-unavailable')}
           title="Check the workshop for wallpapers that have been removed"
-          className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
+          onClick={handleCheckUnavailable}
         >
-          {checkingUnavailable ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <WifiOff size={14} />
-          )}
           Check unavailable
-        </button>
+        </ToolbarButton>
       </div>
 
-      {showFilters && (
-      <div className="flex flex-wrap items-center gap-2 border-b border-white/5 px-4 py-2">
-        <div className="flex gap-0.5">
-          {WE_TYPES.filter((t) =>
-            ['Scene', 'Video', 'Web', 'Application'].includes(t.tag)
-          ).map((item) => (
-            <Chip
-              key={item.tag}
-              label={item.label}
-              active={filterState.types.includes(item.tag)}
-              onClick={() => updateFilter('types', item.tag)}
-            />
-          ))}
-        </div>
-
-        <div className="h-3 w-px bg-white/10" />
-
-        <div className="flex gap-0.5">
-          {WE_LIBRARY_AGE_RATINGS.map((item) => (
-            <Chip
-              key={item.tag}
-              label={item.label}
-              active={filterState.ageRatings.includes(item.tag)}
-              onClick={() => updateFilter('ageRatings', item.tag)}
-            />
-          ))}
-        </div>
-
-        <div className="h-3 w-px bg-white/10" />
-
-        <div className="flex gap-0.5">
-          {Object.keys(SOURCE_MAP).map((label) => (
-            <Chip
-              key={label}
-              label={label}
-              active={filterState.sources.includes(label)}
-              onClick={() => updateFilter('sources', label)}
-            />
-          ))}
-        </div>
-
-        <div className="h-3 w-px bg-white/10" />
-
-        <button
-          onClick={toggleFailedOnly}
-          title="Show only wallpapers whose download failed (e.g. disk ran out of space)"
-          className={clsx(
-            'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-            filterState.failedOnly
-              ? 'bg-red-600 text-white'
-              : failedCount > 0
-                ? 'text-red-400 hover:bg-white/5'
-                : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
-          )}
-        >
-          <AlertTriangle size={12} />
-          Failed
-          {failedCount > 0 && (
-            <span className="rounded-full bg-black/30 px-1.5">{failedCount}</span>
-          )}
-        </button>
-
-        <button
-          onClick={toggleLikedOnly}
-          title="Show only wallpapers you've liked on Steam"
-          className={clsx(
-            'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-            filterState.likedOnly
-              ? 'bg-pink-600 text-white'
-              : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
-          )}
-        >
-          <Heart size={12} />
-          Liked
-        </button>
-
-        <button
-          onClick={toggleUnavailableOnly}
-          title={
-            unavailableNotBackedUp.length > 0
-              ? `Show only wallpapers removed from the Steam Workshop (${unavailableNotBackedUp.length} of these have no backup yet)`
-              : 'Show only wallpapers removed from the Steam Workshop'
-          }
-          className={clsx(
-            'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-            filterState.unavailableOnly
-              ? 'bg-amber-600 text-white'
-              : unavailableCount > 0
-                ? 'text-amber-400 hover:bg-white/5'
-                : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
-          )}
-        >
-          <WifiOff size={12} />
-          Unavailable
-          {unavailableCount > 0 && (
-            <span className="rounded-full bg-black/30 px-1.5">{unavailableCount}</span>
-          )}
-        </button>
-
-        <button
-          onClick={toggleOutdatedBackupOnly}
-          title="Show only wallpapers whose backup is an older version than the one on the Steam Workshop"
-          className={clsx(
-            'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-            filterState.outdatedBackupOnly
-              ? 'bg-sky-600 text-white'
-              : outdatedBackupCount > 0
-                ? 'text-sky-400 hover:bg-white/5'
-                : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
-          )}
-        >
-          <ArchiveRestore size={12} />
-          Outdated backup
-          {outdatedBackupCount > 0 && (
-            <span className="rounded-full bg-black/30 px-1.5">{outdatedBackupCount}</span>
-          )}
-        </button>
-
-        <div className="h-3 w-px bg-white/10" />
-
-        <TagDropdown
-          available={availableTags}
-          selected={filterState.genres}
-          onChange={(tags) => setFilterState((prev) => ({ ...prev, genres: tags }))}
-        />
-
-        <ResolutionDropdown
-          counts={resolutionCounts}
-          selected={filterState.resolutions}
-          onChange={(resolutions) => setFilterState((prev) => ({ ...prev, resolutions }))}
-        />
-
-        {activeCount > 0 && (
-          <button
-            onClick={() => setFilterState(DEFAULT_STATE)}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-gray-500 hover:text-gray-300"
-          >
-            <X size={12} /> Clear
-          </button>
-        )}
-
+      <div className="flex min-h-10 items-center gap-2 border-b border-white/5 px-4 py-1.5">
+        <span className="text-xs text-gray-600">
+          {selectedIds.size > 0
+            ? `${selectedIds.size} selected / ${wallpapers.length} wallpapers`
+            : `${wallpapers.length} wallpapers`}
+        </span>
         <div className="ml-auto flex items-center gap-2">
           {unavailableNotBackedUp.length > 0 && (
             <button
               onClick={handleBackupAllUnavailable}
-              disabled={backingUpUnavailable || !isBackupConfigured}
+              disabled={runningTasks.has('backup-unavailable') || !isBackupConfigured}
               title={
                 isBackupConfigured
-                  ? `Back up the ${unavailableNotBackedUp.length} removed-from-workshop wallpaper(s) that don't have a backup yet (${unavailableCount - unavailableNotBackedUp.length} already do)`
-                  : 'Configure a backup folder in Settings first'
+                  ? `Back up the ${unavailableNotBackedUp.length} removed-from-workshop wallpaper(s) that don't have a backup yet (${statusCounts.unavailable - unavailableNotBackedUp.length} already do)`
+                  : BACKUP_FOLDER_HINT
               }
               className="flex items-center gap-1.5 rounded-lg bg-amber-600/80 px-3 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
             >
-              {backingUpUnavailable ? (
+              {runningTasks.has('backup-unavailable') ? (
                 <Loader2 size={12} className="animate-spin" />
               ) : (
                 <ShieldAlert size={12} />
@@ -1312,15 +633,14 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
               Backup all unavailable ({unavailableNotBackedUp.length})
             </button>
           )}
-
           {selectedIds.size > 0 && (
             <button
               onClick={handleBackupSelection}
-              disabled={backingUpSelection || !isBackupConfigured}
-              title={isBackupConfigured ? 'Back up selected wallpapers' : 'Configure a backup folder in Settings first'}
+              disabled={runningTasks.has('backup-selection') || !isBackupConfigured}
+              title={isBackupConfigured ? 'Back up selected wallpapers' : BACKUP_FOLDER_HINT}
               className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10 disabled:opacity-50"
             >
-              {backingUpSelection ? (
+              {runningTasks.has('backup-selection') ? (
                 <Loader2 size={12} className="animate-spin" />
               ) : (
                 <Archive size={12} />
@@ -1328,15 +648,8 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
               Backup selection
             </button>
           )}
-
-          <span className="text-xs text-gray-600">
-            {selectedIds.size > 0
-              ? `${selectedIds.size} selected / ${wallpapers.length} wallpapers`
-              : `${wallpapers.length} wallpapers`}
-          </span>
         </div>
       </div>
-      )}
 
       {scanResult && (
         <div className="border-b border-white/5 px-4 py-2 text-xs text-gray-400">
@@ -1366,7 +679,76 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex w-48 flex-col border-r border-white/5 overflow-y-auto">
+        {showFilters && (
+          <FilterPanel>
+            <FilterSection title="Status" activeCount={flagCount}>
+              <CheckItem
+                label="Download failed"
+                title="Show only wallpapers whose download failed (e.g. disk ran out of space)"
+                count={statusCounts.failed}
+                checked={filterState.failedOnly}
+                onChange={() => toggleFlag('failedOnly')}
+              />
+              <CheckItem
+                label="Liked"
+                title="Show only wallpapers you've liked on Steam"
+                count={statusCounts.liked}
+                checked={filterState.likedOnly}
+                onChange={() => toggleFlag('likedOnly')}
+              />
+              <CheckItem
+                label="Unavailable"
+                title={
+                  unavailableNotBackedUp.length > 0
+                    ? `Show only wallpapers removed from the Steam Workshop (${unavailableNotBackedUp.length} of these have no backup yet)`
+                    : 'Show only wallpapers removed from the Steam Workshop'
+                }
+                count={statusCounts.unavailable}
+                checked={filterState.unavailableOnly}
+                onChange={() => toggleFlag('unavailableOnly')}
+              />
+              <CheckItem
+                label="Outdated backup"
+                title="Show only wallpapers whose backup is an older version than the one on the Steam Workshop"
+                count={statusCounts.outdatedBackup}
+                checked={filterState.outdatedBackupOnly}
+                onChange={() => toggleFlag('outdatedBackupOnly')}
+              />
+            </FilterSection>
+            <TagFilterSection
+              title="Type"
+              options={LIBRARY_TYPES}
+              selected={filterState.types}
+              onChange={(tags) => setFilter('types', tags)}
+            />
+            <TagFilterSection
+              title="Age Rating"
+              options={WE_LIBRARY_AGE_RATINGS}
+              selected={filterState.ageRatings}
+              onChange={(tags) => setFilter('ageRatings', tags)}
+            />
+            <TagFilterSection
+              title="Source"
+              options={SOURCES}
+              selected={filterState.sources}
+              onChange={(tags) => setFilter('sources', tags)}
+            />
+            <ResolutionFilterSection
+              selected={filterState.resolutions}
+              allTags={ALL_RESOLUTION_TAGS}
+              counts={resolutionCounts}
+              onChange={(resolutions) => setFilter('resolutions', resolutions)}
+            />
+            <TagsFilterSection
+              available={availableTags}
+              selected={filterState.genres}
+              onChange={(tags) => setFilter('genres', tags)}
+            />
+          </FilterPanel>
+        )}
+
+        {showFolders && (
+        <div className="flex w-48 flex-shrink-0 flex-col border-r border-white/5 overflow-y-auto">
           <div className="flex items-center justify-between px-3 pt-3 pb-1">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
               Folders
@@ -1402,18 +784,10 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
             </div>
           )}
 
-          <button
-            onClick={() => setActiveFolder(null)}
-            className={clsx(
-              'flex items-center gap-2 px-3 py-1.5 text-xs',
-              activeFolder === null
-                ? 'bg-white/5 text-white'
-                : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
-            )}
-          >
+          <button onClick={() => setActiveFolder(null)} className={folderRowClass(activeFolder === null)}>
             <Folder size={14} />
             <span className="flex-1 text-left truncate">Default</span>
-            <span className="text-gray-600">{unsortedCount}</span>
+            <span className="text-gray-600">{unsorted.length}</span>
           </button>
 
           {creatingFolder && (
@@ -1438,27 +812,12 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
             <button
               key={folder.id}
               onClick={() => setActiveFolder(folder.id)}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                setFolderMenu({ folder, x: e.clientX, y: e.clientY })
-              }}
+              onContextMenu={(e) => openFolderMenu(e, folder)}
               onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                const wid = e.dataTransfer.getData('text/wallpaper-id')
-                if (wid) handleDrop(folder.id, wid)
-              }}
-              className={clsx(
-                'flex items-center gap-2 px-3 py-1.5 text-xs',
-                activeFolder === folder.id
-                  ? 'bg-white/5 text-white'
-                  : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
-              )}
+              onDrop={(e) => handleDrop(folder.id, dropWallpaperId(e))}
+              className={folderRowClass(activeFolder === folder.id)}
             >
-              {activeFolder === folder.id ? (
-                <FolderOpen size={14} />
-              ) : (
-                <Folder size={14} />
-              )}
+              {activeFolder === folder.id ? <FolderOpen size={14} /> : <Folder size={14} />}
               {renamingId === folder.id ? (
                 <input
                   autoFocus
@@ -1479,20 +838,22 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
             </button>
           ))}
         </div>
+        )}
 
-        <div
-          ref={gridRef}
-          className="relative flex-1 overflow-y-auto p-4 select-none"
-          onMouseDown={handleMarqueeStart}
-          onMouseMove={handleMarqueeMove}
-          onMouseUp={handleMarqueeEnd}
-          onMouseLeave={handleMarqueeEnd}
-        >
-          {isLoading && (
-            <div className="flex h-40 items-center justify-center text-gray-500">
-              <Loader2 size={24} className="animate-spin" />
+        <div {...containerProps} className="relative flex-1 overflow-y-auto p-4 select-none">
+          {!showFolders && activeFolderTitle && (
+            <div className="mb-3 flex items-center gap-1.5 text-xs text-gray-400">
+              <button
+                onClick={() => setActiveFolder(null)}
+                className="flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-gray-300 hover:bg-white/10"
+              >
+                <ChevronLeft size={12} /> Default
+              </button>
+              <FolderOpen size={12} className="ml-1 text-indigo-400" />
+              <span className="truncate text-gray-200">{activeFolderTitle}</span>
             </div>
           )}
+          {isLoading && <LoadingSpinner />}
           {!isLoading && wallpapers.length === 0 && (
             <div className="flex h-40 flex-col items-center justify-center gap-2 text-gray-500">
               <p>
@@ -1515,10 +876,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 <div
                   key={folder.id}
                   onClick={() => setActiveFolder(folder.id)}
-                  onContextMenu={(e) => {
-                    e.preventDefault()
-                    setFolderMenu({ folder, x: e.clientX, y: e.clientY })
-                  }}
+                  onContextMenu={(e) => openFolderMenu(e, folder)}
                   onDragOver={(e) => {
                     e.preventDefault()
                     e.currentTarget.classList.add('ring-2', 'ring-indigo-500')
@@ -1528,8 +886,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                   }}
                   onDrop={(e) => {
                     e.currentTarget.classList.remove('ring-2', 'ring-indigo-500')
-                    const wid = e.dataTransfer.getData('text/wallpaper-id')
-                    if (wid) handleDrop(folder.id, wid)
+                    handleDrop(folder.id, dropWallpaperId(e))
                   }}
                   className="group flex cursor-pointer items-center gap-3 rounded-lg bg-[#1a1a1a] p-4 transition-all hover:ring-1 hover:ring-indigo-500/50"
                 >
@@ -1554,7 +911,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 wallpaper={wallpaper}
                 selected={selectedIds.has(wallpaper.id)}
                 isDetailOpen={detailId === wallpaper.id}
-                lweInstalled={lweStatus?.installed ?? false}
+                lweInstalled={lweInstalled}
                 isLiked={votedSet.has(wallpaper.id)}
                 voteError={failedVotes[wallpaper.id]}
                 showVoteBorder={voteBordersEnabled}
@@ -1562,24 +919,6 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 isInCurrentPlaylist={currentPlaylistItemIds.has(wallpaper.id)}
                 previewSize={previewSize}
                 backupProgress={backupProgress.get(wallpaper.id) ?? null}
-                onApplied={() =>
-                  queryClient.invalidateQueries({ queryKey: ['library'] })
-                }
-                onAddedToPlaylist={() =>
-                  queryClient.invalidateQueries({ queryKey: ['playlists'] })
-                }
-                onLiked={() => {
-                  queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
-                    old ? [...old, wallpaper.id] : [wallpaper.id]
-                  )
-                }}
-                onUnsubscribed={() => {
-                  queryClient.invalidateQueries({ queryKey: ['library'] })
-                  refetchFolders()
-                }}
-                onRedownloaded={() =>
-                  queryClient.invalidateQueries({ queryKey: ['library'] })
-                }
                 onSelect={(e) => handleCardSelect(wallpaper.id, e)}
                 onContextMenu={(e) => openWallpaperCtxMenu(e, wallpaper.id)}
               />
@@ -1587,215 +926,61 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
           </div>
 
           {totalPages > 1 && (
-            <div className="mt-6 flex items-center justify-center gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={safePage <= 1}
-                className="rounded-lg bg-white/5 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-30"
-              >
-                Prev
-              </button>
-              <span className="text-xs text-gray-500">
+            <div className="mt-6 flex justify-center">
+              <Pagination page={safePage} totalPages={totalPages} onPage={setPage}>
                 Page {safePage} of {totalPages} ({totalItems} items)
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={safePage >= totalPages}
-                className="rounded-lg bg-white/5 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-30"
-              >
-                Next
-              </button>
+              </Pagination>
             </div>
           )}
 
-          {marqueeRect && marqueeRect.width > 3 && marqueeRect.height > 3 && (
-            <div
-              className="pointer-events-none absolute z-20 border border-indigo-500 bg-indigo-500/15"
-              style={{
-                left: marqueeRect.left,
-                top: marqueeRect.top,
-                width: marqueeRect.width,
-                height: marqueeRect.height
-              }}
-            />
-          )}
+          <MarqueeOverlay rect={marqueeRect} />
         </div>
 
         {detailId && detailWallpaper && (
           <DetailSidebar
             id={detailId}
-            fallbackTitle={detailWallpaper.title}
-            fallbackPreviewUrl={getPreviewSrc(detailWallpaper)}
-            fallbackTags={[...detailWallpaper.tags, ...(detailWallpaper.resolutions ?? [])]}
-            fallbackAuthorSteamId={detailWallpaper.authorSteamId}
-            localFileSize={detailWallpaper.fileSize}
-            isSubscribed={detailWallpaper.subscribed}
-            isLiked={votedSet.has(detailId)}
-            canPlay={
-              !!detailWallpaper.localPath &&
-              !detailWallpaper.downloading &&
-              !detailWallpaper.downloadFailed
-            }
-            lweInstalled={lweStatus?.installed ?? false}
+            {...detailSidebarProps(detailWallpaper)}
             onClose={() => setDetailId(null)}
-            onSubscribe={async () => {
-              await window.electronAPI.steam.subscribe(detailId)
-              queryClient.invalidateQueries({ queryKey: ['library'] })
-            }}
-            onUnsubscribe={() => unsubscribeIds([detailId])}
-            onLiked={() => {
-              queryClient.setQueryData<string[]>(['steam-voted-ids'], (old) =>
-                old ? [...old, detailId] : [detailId]
-              )
-            }}
-            onPlay={(screen) => handleApplyDetail(detailId, screen)}
+            onSubscribe={() => subscribe(detailId)}
+            onUnsubscribe={() => unsubscribe([detailId])}
+            onPlay={(screen) => applyWallpaper(detailId, screen)}
             onBrowseCreator={onBrowseCreator}
           />
         )}
       </div>
 
       {folderMenu && (
-        <FolderMenu
+        <ContextMenu
           x={folderMenu.x}
           y={folderMenu.y}
           onClose={() => setFolderMenu(null)}
-          onRename={() => {
-            setRenamingId(folderMenu.folder.id)
-            setRenameValue(folderMenu.folder.title)
-            setFolderMenu(null)
-          }}
-          onDelete={() => handleDeleteFolder(folderMenu.folder.id)}
-        />
+          className="min-w-[140px]"
+        >
+          <MenuItem
+            icon={Pencil}
+            onClick={() => {
+              setRenamingId(folderMenu.folder.id)
+              setRenameValue(folderMenu.folder.title)
+              setFolderMenu(null)
+            }}
+          >
+            Rename
+          </MenuItem>
+          <MenuItem icon={Trash2} danger onClick={() => handleDeleteFolder(folderMenu.folder.id)}>
+            Delete
+          </MenuItem>
+        </ContextMenu>
       )}
 
       {ctxMenu && (
-        <div
-          ref={ctxMenuRef}
-          className="fixed z-50 min-w-[200px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl text-sm"
-          style={{ left: ctxPos?.x ?? ctxMenu.x, top: ctxPos?.y ?? ctxMenu.y }}
-        >
-          {ctxMenu.ids.length > 1 && (
-            <div className="px-3 py-1 text-xs text-gray-600 border-b border-white/5 mb-1">
-              {ctxMenu.ids.length} items selected
-            </div>
-          )}
-
-          {ctxHasBackupable && isBackupConfigured && (
-            <button
-              onClick={ctxBackup}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              <Archive size={12} /> Backup
-            </button>
-          )}
-
-          {ctxHasBackup && (
-            <button
-              onClick={ctxRemoveBackup}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
-            >
-              <Trash2 size={12} /> Delete backup
-            </button>
-          )}
-
-          <button
-            onClick={ctxUnsubscribe}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
-          >
-            Unsubscribe
-          </button>
-
-          <div className="my-1 border-t border-white/5" />
-
-          <button
-            onClick={() => ctxVote(true)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-          >
-            <ThumbsUp size={12} /> Like
-          </button>
-          <button
-            onClick={() => ctxVote(false)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-          >
-            <ThumbsDown size={12} /> Dislike
-          </button>
-
-          <div className="my-1 border-t border-white/5" />
-
-          <button
-            onClick={ctxOpenInSteam}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-          >
-            <ExternalLink size={12} /> Open in Steam Workshop
-          </button>
-          <button
-            onClick={ctxOpenLocally}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-          >
-            <FolderOpen size={12} /> Open wallpaper locally
-          </button>
-
-          {ctxHasVideo && (
-            <button
-              onClick={ctxPreviewVideo}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              <Eye size={12} /> Preview in media player
-            </button>
-          )}
-
-          {ctxCanBrowseCreator && (
-            <button
-              onClick={ctxBrowseCreator}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              <User size={12} /> Browse wallpapers from this creator
-            </button>
-          )}
-
-          <div className="my-1 border-t border-white/5" />
-
-          <div className="relative">
-            <button
-              onClick={() => setCtxMenu((prev) => prev ? { ...prev, showFolderSub: !prev.showFolderSub } : null)}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-            >
-              <FolderInput size={12} /> Move to folder
-              <ChevronRight size={12} className="ml-auto" />
-            </button>
-            {ctxMenu.showFolderSub && (
-              <div
-                ref={folderSubRef}
-                className={clsx(
-                  'absolute top-0 min-w-[160px] rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl',
-                  folderSubSide === 'left' ? 'right-full mr-1' : 'left-full ml-1'
-                )}
-              >
-                {ctxMoveTargets.length === 0 && (
-                  <div className="px-3 py-1.5 text-gray-500">No other folders</div>
-                )}
-                {ctxMoveTargets.map((f) => (
-                  <button
-                    key={f.id}
-                    onClick={() => ctxMoveToFolder(f.id)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-                  >
-                    <Folder size={12} /> {f.title}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {ctxHasFolder && (
-            <button
-              onClick={ctxRemoveFromFolder}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-white/5"
-            >
-              <Trash2 size={12} /> Remove from folder
-            </button>
-          )}
-        </div>
+        <WallpaperContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          ids={ctxMenu.ids}
+          wallpapers={ctxWallpapers}
+          onClose={() => setCtxMenu(null)}
+          onBrowseCreator={onBrowseCreator}
+        />
       )}
     </div>
   )

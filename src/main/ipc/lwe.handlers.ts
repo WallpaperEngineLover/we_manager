@@ -8,6 +8,7 @@ import type { ScreenTarget } from '@shared/types'
 import { invalidateEnvCache } from '../services/wallpaper.service'
 import { getConnectedScreens } from '../utils/platform'
 import { listDesktopApplications } from '../services/shortcuts.service'
+import { findWallpaperVideoFile, getVideoDurationSec } from '../utils/video'
 
 export function registerLweHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.LWE_STATUS, () => {
@@ -78,6 +79,12 @@ export function registerLweHandlers(win: BrowserWindow): void {
   })
 
   ipcMain.handle(IpcChannels.LWE_LIST_APPLICATIONS, () => listDesktopApplications())
+
+  // null when there is no video file or no ffprobe to measure it
+  ipcMain.handle(IpcChannels.LWE_VIDEO_DURATION, async (_e, wallpaperPath: string, projectFile?: string) => {
+    const videoFile = findWallpaperVideoFile(wallpaperPath, projectFile)
+    return videoFile ? ((await getVideoDurationSec(videoFile)) ?? null) : null
+  })
 
   ipcMain.handle(IpcChannels.LWE_PICK_SHORTCUT_PATH, async (_e, kind: 'file' | 'directory') => {
     const result = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow() ?? win, {

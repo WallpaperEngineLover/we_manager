@@ -1,10 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
+import { useConfig } from './queries'
 
 export function useVoteBorders(): { enabled: boolean; failed: Record<string, string> } {
-  const { data: config } = useQuery({
-    queryKey: ['config'],
-    queryFn: () => window.electronAPI.config.get()
-  })
+  const config = useConfig()
   const { data: failed } = useQuery({
     queryKey: ['steam-failed-votes'],
     queryFn: () => window.electronAPI.steam.getFailedVotes()

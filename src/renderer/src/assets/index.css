@@ -5,6 +5,10 @@
     box-sizing: border-box;
   }
 
+  :root {
+    color-scheme: dark;
+  }
+
   html, body, #root {
     height: 100%;
     margin: 0;
@@ -18,7 +22,25 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Custom scrollbar */
+  select {
+    color-scheme: dark;
+    cursor: pointer;
+  }
+
+  select:disabled {
+    cursor: default;
+  }
+
+  select option,
+  select optgroup {
+    background-color: #1a1a1a;
+    color: #d1d5db;
+  }
+
+  select option:disabled {
+    color: #6b7280;
+  }
+
   ::-webkit-scrollbar {
     width: 6px;
   }
