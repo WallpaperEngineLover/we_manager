@@ -28,6 +28,12 @@ describe('engineFlagArgs', () => {
       'disabled'
     ])
     expect(engineFlagArgs({ postProcessing: 'enabled', volumetrics: 'medium', shadows: 'medium' })).toEqual([])
+    expect(engineFlagArgs({ msaa: 'x4' })).toEqual(['--msaa', 'x4'])
+    expect(engineFlagArgs({ msaa: 'none' })).toEqual([])
+    expect(engineFlagArgs({ ssaa: 'x2' })).toEqual(['--ssaa', 'x2'])
+    expect(engineFlagArgs({ ssaa: 'none' })).toEqual([])
+    expect(engineFlagArgs({ kdeBackgroundLayer: true })).toEqual(['--layer', 'background'])
+    expect(engineFlagArgs({ kdeBackgroundLayer: false })).toEqual([])
   })
 
   it('leaves disableAnimations to the caller, it needs its own capability probe', () => {

@@ -31,7 +31,8 @@ export const BUILT_IN_PRESETS: EngineFlagPreset[] = [
       silent: false,
       postProcessing: 'ultra',
       volumetrics: 'ultra',
-      shadows: 'ultra'
+      shadows: 'ultra',
+      msaa: 'x8'
     }
   },
   {
@@ -64,6 +65,9 @@ export function engineFlagArgs(flags: EngineFlags): string[] {
   if (flags.postProcessing && flags.postProcessing !== 'enabled') args.push('--post-processing', flags.postProcessing)
   if (flags.volumetrics && flags.volumetrics !== 'medium') args.push('--volumetrics', flags.volumetrics)
   if (flags.shadows && flags.shadows !== 'medium') args.push('--shadows', flags.shadows)
+  if (flags.msaa && flags.msaa !== 'none') args.push('--msaa', flags.msaa)
+  if (flags.ssaa && flags.ssaa !== 'none') args.push('--ssaa', flags.ssaa)
+  if (flags.kdeBackgroundLayer) args.push('--layer', 'background')
   return args
 }
 

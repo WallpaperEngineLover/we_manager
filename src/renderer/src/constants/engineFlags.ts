@@ -1,7 +1,8 @@
 import type { EngineFlags, FullscreenPauseMode } from '@shared/types'
 
-type ChoiceFlag = 'postProcessing' | 'volumetrics' | 'shadows'
-type BooleanFlag = Exclude<keyof EngineFlags, 'fullscreenPause' | ChoiceFlag>
+type ChoiceFlag = 'postProcessing' | 'volumetrics' | 'shadows' | 'msaa' | 'ssaa'
+// kdeBackgroundLayer is a global desktop setting with its own toggle, wallpapers don't override it
+type BooleanFlag = Exclude<keyof EngineFlags, 'fullscreenPause' | 'kdeBackgroundLayer' | ChoiceFlag>
 
 export const BOOLEAN_FLAGS: { key: BooleanFlag; label: string; hint: string }[] = [
   { key: 'disableParticles', label: 'Disable particles', hint: 'Skips particle systems (fog, sparks, rain), usually the biggest GPU cost' },
@@ -62,5 +63,29 @@ export const CHOICE_FLAGS: {
     hint: 'Shadow quality; for now it only changes how finely shadow casting lights sample their volumetrics',
     fallback: 'medium',
     options: LIGHTING_QUALITY
+  },
+  {
+    key: 'msaa',
+    label: 'Anti-aliasing (MSAA)',
+    hint: 'Smooths the edges of 3D models; like Wallpaper Engine it only applies to scenes that contain a model',
+    fallback: 'none',
+    options: [
+      { value: 'none', label: 'Off' },
+      { value: 'x2', label: '2x' },
+      { value: 'x4', label: '4x' },
+      { value: 'x8', label: '8x' }
+    ]
+  },
+  {
+    key: 'ssaa',
+    label: 'Supersampling (SSAA)',
+    hint: 'Renders scenes at 2-4x the screen resolution per axis and scales them down: smoother edges and finer detail everywhere, but the GPU cost grows with the square (4x = 16 times the pixels)',
+    fallback: 'none',
+    options: [
+      { value: 'none', label: 'Off' },
+      { value: 'x2', label: '2x' },
+      { value: 'x3', label: '3x' },
+      { value: 'x4', label: '4x' }
+    ]
   }
 ]

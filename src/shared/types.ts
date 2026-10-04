@@ -145,6 +145,12 @@ export type PostProcessingQuality = 'enabled' | 'ultra'
 /** Wallpaper Engine's volumetrics/shadow quality settings */
 export type LightingQuality = 'disabled' | 'low' | 'medium' | 'high' | 'ultra'
 
+/** Wallpaper Engine's anti-aliasing setting, only scenes with 3D models use it */
+export type MsaaQuality = 'none' | 'x2' | 'x4' | 'x8'
+
+/** Scene supersampling factor per axis, linux-wallpaperengine only */
+export type SsaaQuality = 'none' | 'x2' | 'x3' | 'x4'
+
 /** linux-wallpaperengine flags that only take effect on a fresh launch */
 export interface EngineFlags {
   disableParticles?: boolean
@@ -158,6 +164,10 @@ export interface EngineFlags {
   postProcessing?: PostProcessingQuality
   volumetrics?: LightingQuality
   shadows?: LightingQuality
+  msaa?: MsaaQuality
+  ssaa?: SsaaQuality
+  /** KDE only: --layer background, plasmashell's desktop window can cover the wallpaper there */
+  kdeBackgroundLayer?: boolean
 }
 
 export interface EngineFlagPreset {

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Plus, Save, Trash2 } from 'lucide-react'
 import type { EngineFlagPreset, EngineFlags, FullscreenPauseMode } from '@shared/types'
 import { BOOLEAN_FLAGS, CHOICE_FLAGS, FULLSCREEN_PAUSE_OPTIONS } from '../../constants/engineFlags'
@@ -46,6 +46,10 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
   const config = useConfig()
   const flags: EngineFlags = config?.engineFlags ?? {}
   const presets = config?.engineFlagPresets ?? []
+  const { data: environment } = useQuery({
+    queryKey: ['environment'],
+    queryFn: () => window.electronAPI.wallpaper.detectEnvironment()
+  })
   const [newName, setNewName] = useState('')
   const [appliedId, setAppliedId] = useState<string | null>(null)
 
@@ -100,6 +104,23 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
             <span className="text-sm text-gray-300">{label}</span>
           </label>
         ))}
+        {environment?.desktopEnv === 'kde' && (
+          <div>
+            <label className="flex cursor-pointer items-center gap-3">
+              <Toggle
+                on={!!flags.kdeBackgroundLayer}
+                onClick={() => saveFlags({ ...flags, kdeBackgroundLayer: !flags.kdeBackgroundLayer })}
+              />
+              <span className="text-sm text-gray-300">Use the KDE background layer</span>
+            </label>
+            <p className="ml-12 mt-1 text-xs text-gray-600">
+              Older versions always did this on KDE. It puts the wallpaper in the same layer as Plasma's own
+              desktop, and whichever of the two shows up last is drawn on top. At login Plasma's desktop often
+              starts after the wallpaper and hides it, so leave this off unless the default layer causes problems
+              for you, e.g. with "keep below others" windows.
+            </p>
+          </div>
+        )}
         <label className="flex items-center gap-3 text-sm text-gray-300">
           <span>Fullscreen apps</span>
           <select
