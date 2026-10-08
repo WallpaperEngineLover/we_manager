@@ -1,8 +1,11 @@
 import type { ImageAdjustments } from './imageAdjustments'
+import type { VideoSegment } from './videoTrim'
 
 export type { ImageAdjustments } from './imageAdjustments'
 
 export type WallpaperType = 'scene' | 'video' | 'web' | 'application'
+
+export type XrayMode = 'normal' | 'full' | 'disabled'
 
 /** Matches linux-wallpaperengine's --scaling choices */
 export type ScalingMode = 'default' | 'stretch' | 'fit' | 'fill' | 'center'
@@ -30,6 +33,11 @@ export type ContentRating = 'everyone' | 'questionable' | 'mature' | 'uncategori
 
 /** How this process identifies itself to Steam - see config.service.ts getSteamIdentity(). */
 export type SteamIdentity = 'wallpaper-engine' | 'standalone'
+
+export interface ExtraLibrary {
+  path: string
+  name: string
+}
 
 export interface WallpaperMeta {
   id: string
@@ -60,6 +68,7 @@ export interface WallpaperMeta {
   volumeOverride?: number
   /** Forces the "xray" scene effect's reveal spot to cover the whole masked area instead of following the mouse */
   xrayFullReveal?: boolean
+  xrayDisabled?: boolean
   /** How the wallpaper is scaled to fit the screen, applied via linux-wallpaperengine --scaling */
   scalingMode?: ScalingMode
   /** Manual zoom layered on top of scalingMode via linux-wallpaperengine --zoom (1 = no extra zoom) */
@@ -86,10 +95,9 @@ export interface WallpaperMeta {
    * linux-wallpaperengine --speed (1 = normal speed, less than 1 = slower)
    */
   playbackSpeed?: number
-  /**
-   * Video wallpapers only: loop just this part of the video (seconds, either side open), via
-   * linux-wallpaperengine --video-start/--video-end
-   */
+  /** --video-segments parts, empty plays the whole video */
+  videoSegments?: VideoSegment[]
+  /** Old single loop range, read through videoSegmentsOf */
   videoStart?: number
   videoEnd?: number
   backedUp?: boolean
@@ -408,6 +416,8 @@ export interface BackupProgressEvent {
   percentage: number
   status: 'copying' | 'verifying' | 'completed' | 'error'
   message?: string
+  /** Plain backup when unset */
+  action?: 'backup' | 'copy' | 'move'
 }
 
 export interface PlaylistItem {

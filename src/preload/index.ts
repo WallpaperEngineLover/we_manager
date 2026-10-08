@@ -6,6 +6,7 @@ import type {
   WorkshopItem,
   CreatorWorkshopQueryParams,
   WallpaperMeta,
+  XrayMode,
   WallpaperFolder,
   LibraryFilters,
   WorkshopAuthorInfo,
@@ -26,6 +27,7 @@ import type {
   PlaylistSettings,
   PlaylistPlaybackState,
   SteamIdentity,
+  ExtraLibrary,
   EngineFlags,
   ImageAdjustments,
   EngineFlagPreset,
@@ -35,6 +37,7 @@ import type {
   ScheduleRule,
   CrashEvent
 } from '../shared/types'
+import type { VideoSegment } from '../shared/videoTrim'
 
 const api = {
   workshop: {
@@ -100,13 +103,20 @@ const api = {
     resetFpsOverrides: (): Promise<{ count: number }> =>
       ipcRenderer.invoke(IpcChannels.LIBRARY_RESET_FPS_OVERRIDES),
     checkUnavailable: (): Promise<{ checked: number; unavailable: number; changed: boolean }> =>
-      ipcRenderer.invoke(IpcChannels.LIBRARY_CHECK_UNAVAILABLE)
+      ipcRenderer.invoke(IpcChannels.LIBRARY_CHECK_UNAVAILABLE),
+    transfer: (
+      ids: string[],
+      libraryPath: string,
+      mode: 'copy' | 'move'
+    ): Promise<{ done: number; alreadyThere: number; failed: { id: string; title: string; reason: string }[] }> =>
+      ipcRenderer.invoke(IpcChannels.LIBRARY_TRANSFER, ids, libraryPath, mode)
   },
 
   config: {
     get: (): Promise<{
       workshopPath: string | null
       defaultWorkshopPath: string
+      extraLibraries: ExtraLibrary[]
       isConfigured: boolean
       defaultFps: number | null
       recommendedFpsEnabled: boolean
@@ -144,6 +154,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DISPLAY_MODE, mode),
     setWorkshopPath: (p: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_WORKSHOP_PATH, p),
+    setExtraLibraries: (libraries: ExtraLibrary[]): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_EXTRA_LIBRARIES, libraries),
     setDefaultFps: (fps: number | null): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DEFAULT_FPS, fps),
     setRecommendedFpsEnabled: (enabled: boolean): Promise<{ ok: boolean }> =>
@@ -158,8 +170,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_BACKUP_PATH, p),
     setAutoUnsubscribeAfterBackup: (enabled: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_AUTO_UNSUBSCRIBE, enabled),
-    pickFolder: (): Promise<string | null> =>
-      ipcRenderer.invoke(IpcChannels.CONFIG_PICK_FOLDER),
+    pickFolder: (title?: string): Promise<string | null> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_PICK_FOLDER, title),
     pickFile: (): Promise<string | null> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_PICK_FILE),
     importWE: (sourcePath: string): Promise<{ folders: number; playlists: number; configPath: string }> =>
@@ -307,7 +319,7 @@ const api = {
       disabledObjects?: string[]
       enabledObjects?: string[]
       volume?: number
-      xray?: boolean
+      xray?: XrayMode
       scaling?: string
       zoom?: number
       offsetX?: number
@@ -317,8 +329,7 @@ const api = {
       cornerColor?: string
       imageAdjustments?: ImageAdjustments
       speed?: number
-      videoStart?: number | null
-      videoEnd?: number | null
+      videoSegments?: VideoSegment[]
       videoSeek?: number
       propertyOverrides?: Record<string, string>
       audioScreen?: string

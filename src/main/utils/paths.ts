@@ -3,10 +3,23 @@ import * as fs from 'fs'
 import * as os from 'os'
 import { app } from 'electron'
 import { WE_APP_ID } from '@shared/constants'
-import { getConfiguredWorkshopPath } from '../services/config.service'
+import { getConfiguredBackupPath, getConfiguredWorkshopPath, getExtraLibraries } from '../services/config.service'
 
 export function getWorkshopPath(): string {
   return getConfiguredWorkshopPath() ?? getDefaultWorkshopPath()
+}
+
+// workshop and backup folders have their own scans
+export function getExtraLibraryRoots(): string[] {
+  const skip = new Set(
+    [getWorkshopPath(), getConfiguredBackupPath()].filter((p): p is string => !!p).map((p) => path.resolve(p))
+  )
+  const roots: string[] = []
+  for (const library of getExtraLibraries()) {
+    const resolved = path.resolve(library.path)
+    if (!skip.has(resolved) && !roots.includes(resolved)) roots.push(resolved)
+  }
+  return roots
 }
 
 export function getDefaultWorkshopPath(): string {

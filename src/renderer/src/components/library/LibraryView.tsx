@@ -32,7 +32,7 @@ import {
 } from '../common/GridControls'
 import { CheckItem, FilterPanel, FilterSection, ResolutionFilterSection, TagFilterSection } from '../common/FilterPanel'
 import { useToast } from '../common/Toast'
-import type { LibraryFilters, WallpaperFolder } from '@shared/types'
+import type { BackupProgressEvent, LibraryFilters, WallpaperFolder } from '@shared/types'
 import clsx from 'clsx'
 import {
   WE_TYPES,
@@ -49,7 +49,7 @@ import { useApplyWallpaper, useSubscribe, useUnsubscribe } from '../../hooks/use
 import { useSelectableGrid } from '../../hooks/useSelectableGrid'
 import { toggle } from '../../utils/array'
 import { isEditingText } from '../../utils/dom'
-import { backupSummary, detailSidebarProps, isBackupOutdated } from '../../utils/wallpaper'
+import { backupSummary, detailSidebarProps, isBackupOutdated, progressVerb } from '../../utils/wallpaper'
 
 interface LibraryFilterState {
   types: string[]
@@ -94,7 +94,8 @@ const RATING_MAP: Record<string, string> = {
 }
 const SOURCE_MAP: Record<string, string> = {
   Workshop: 'workshop',
-  Backup: 'backup'
+  Backup: 'backup',
+  Local: 'local'
 }
 
 interface SortState {
@@ -374,7 +375,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   const [runningTasks, setRunningTasks] = useState<Set<BackgroundTask>>(new Set())
   const [backupStatus, setBackupStatus] = useState<string | null>(null)
   const [backupProgress, setBackupProgress] = useState<
-    Map<string, { percentage: number; status: 'copying' | 'verifying' }>
+    Map<string, { percentage: number; status: 'copying' | 'verifying'; action?: BackupProgressEvent['action'] }>
   >(new Map())
 
   useEffect(() => {
@@ -382,14 +383,15 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       setBackupProgress((prev) => {
         const next = new Map(prev)
         if (progress.status === 'copying' || progress.status === 'verifying') {
-          next.set(progress.itemId, { percentage: progress.percentage, status: progress.status })
+          next.set(progress.itemId, { percentage: progress.percentage, status: progress.status, action: progress.action })
         } else {
           next.delete(progress.itemId)
         }
         return next
       })
       if (progress.status === 'error') {
-        showToast(`Backup failed: ${progress.message ?? 'verification error'}`)
+        const what = progress.action === 'copy' ? 'Copy' : progress.action === 'move' ? 'Move' : 'Backup'
+        showToast(`${what} failed: ${progress.message ?? 'verification error'}`)
       }
     })
   }, [showToast])
@@ -659,7 +661,8 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
       {backupProgress.size > 0 && (
         <div className="border-b border-white/5 px-4 py-2 text-xs text-gray-400">
-          Backing up {backupProgress.size} wallpaper{backupProgress.size === 1 ? '' : 's'}
+          {progressVerb(Array.from(backupProgress.values()))} {backupProgress.size} wallpaper
+          {backupProgress.size === 1 ? '' : 's'}
           {Array.from(backupProgress.values()).some((p) => p.status === 'verifying')
             ? ' (verifying copies)'
             : ''}

@@ -82,6 +82,48 @@ export function VoteMenuItems({ onVote }: { onVote: (up: boolean) => void }) {
   )
 }
 
+export function SubMenu({
+  icon: Icon,
+  label,
+  empty,
+  children
+}: {
+  icon: LucideIcon
+  label: ReactNode
+  empty?: string
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  const subRef = useRef<HTMLDivElement>(null)
+  const side = useFlipSide(subRef, open)
+  const isEmpty = Array.isArray(children) ? children.length === 0 : !children
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+      >
+        <Icon size={12} /> {label}
+        <ChevronRight size={12} className="ml-auto" />
+      </button>
+      {open && (
+        <div
+          ref={subRef}
+          className={clsx(
+            'absolute top-0 min-w-[160px]',
+            POPUP_CLASS,
+            side === 'left' ? 'right-full mr-1' : 'left-full ml-1'
+          )}
+        >
+          {isEmpty && empty && <div className="px-3 py-1.5 text-gray-500">{empty}</div>}
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // "Move to folder" submenu plus "Remove from folder" when anything selected is in one
 export function FolderMenuItems({
   moveTargets,
@@ -94,38 +136,15 @@ export function FolderMenuItems({
   onMove: (folderId: string) => void
   onRemove: () => void
 }) {
-  const [open, setOpen] = useState(false)
-  const subRef = useRef<HTMLDivElement>(null)
-  const side = useFlipSide(subRef, open)
-
   return (
     <>
-      <div className="relative">
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
-        >
-          <FolderInput size={12} /> Move to folder
-          <ChevronRight size={12} className="ml-auto" />
-        </button>
-        {open && (
-          <div
-            ref={subRef}
-            className={clsx(
-              'absolute top-0 min-w-[160px]',
-              POPUP_CLASS,
-              side === 'left' ? 'right-full mr-1' : 'left-full ml-1'
-            )}
-          >
-            {moveTargets.length === 0 && <div className="px-3 py-1.5 text-gray-500">No other folders</div>}
-            {moveTargets.map((f) => (
-              <MenuItem key={f.id} icon={Folder} onClick={() => onMove(f.id)}>
-                {f.title}
-              </MenuItem>
-            ))}
-          </div>
-        )}
-      </div>
+      <SubMenu icon={FolderInput} label="Move to folder" empty="No other folders">
+        {moveTargets.map((f) => (
+          <MenuItem key={f.id} icon={Folder} onClick={() => onMove(f.id)}>
+            {f.title}
+          </MenuItem>
+        ))}
+      </SubMenu>
       {hasFolder && (
         <MenuItem icon={Trash2} danger onClick={onRemove}>
           Remove from folder

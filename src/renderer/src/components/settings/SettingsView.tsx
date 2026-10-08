@@ -5,6 +5,7 @@ import type { LweStatus, LwePrebuiltTarget, LweInstallProgress, LinuxDistro, Ste
 import PerformanceSettings from './PerformanceSettings'
 import DisplaySettings from './DisplaySettings'
 import VoteBorderSettings from './VoteBorderSettings'
+import LibraryFoldersSettings from './LibraryFoldersSettings'
 import ScheduleSettings from './ScheduleSettings'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
@@ -401,6 +402,8 @@ export default function SettingsView() {
             {saved ? 'Saved!' : 'Save'}
           </button>
         </div>
+
+        <LibraryFoldersSettings />
 
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">

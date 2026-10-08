@@ -1,10 +1,15 @@
-import { ipcMain } from 'electron'
+import { ipcMain, BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import * as library from '../services/library.service'
 import { checkOutdatedBackups } from '../services/backup.service'
+import { transferWallpapers, type TransferMode } from '../services/library-transfer.service'
 import type { LibraryFilters, WallpaperMeta } from '@shared/types'
 
-export function registerLibraryHandlers(): void {
+export function registerLibraryHandlers(win: BrowserWindow): void {
+  ipcMain.handle(IpcChannels.LIBRARY_TRANSFER, (_e, ids: string[], libraryPath: string, mode: TransferMode) => {
+    return transferWallpapers(ids, libraryPath, mode, win)
+  })
+
   ipcMain.handle(IpcChannels.LIBRARY_GET_ALL, (_e, filters?: LibraryFilters) => {
     return library.getAllWallpapers(filters)
   })

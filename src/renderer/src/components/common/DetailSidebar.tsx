@@ -50,6 +50,7 @@ import { getPreviewSrc } from '../../utils/preview'
 import EngineFlagsSection from './sidebar/EngineFlagsSection'
 import ImageAdjustmentsSection from './sidebar/ImageAdjustmentsSection'
 import VideoTrimSection from './sidebar/VideoTrimSection'
+import { videoSegmentsOf, type VideoSegment } from '@shared/videoTrim'
 import CompatSection from './sidebar/CompatSection'
 import ThumbnailSection from './sidebar/ThumbnailSection'
 import { ShortcutRow } from './ShortcutRow'
@@ -571,7 +572,9 @@ export default function DetailSidebar({
             disabledObjects: patch.disabledObjects,
             enabledObjects: patch.enabledObjects,
             volume: patch.volumeOverride,
-            xray: patch.xrayFullReveal,
+            xray: 'xrayFullReveal' in patch || 'xrayDisabled' in patch
+              ? patch.xrayDisabled ? 'disabled' : patch.xrayFullReveal ? 'full' : 'normal'
+              : undefined,
             scaling: patch.scalingMode,
             zoom: patch.zoom,
             offsetX: patch.offsetX,
@@ -581,9 +584,7 @@ export default function DetailSidebar({
             cornerColor: patch.cornerColor,
             imageAdjustments: patch.imageAdjustments,
             speed: patch.playbackSpeed,
-            // undefined in a patch that has the key clears that side of the trim
-            videoStart: 'videoStart' in patch ? (patch.videoStart ?? null) : undefined,
-            videoEnd: 'videoEnd' in patch ? (patch.videoEnd ?? null) : undefined,
+            videoSegments: 'videoSegments' in patch ? (patch.videoSegments ?? []) : undefined,
             propertyOverrides: patch.propertyOverrides,
             audioSensitivity: patch.audioSensitivity,
             soundVolume: patch.soundVolume
@@ -615,8 +616,7 @@ export default function DetailSidebar({
     offsetY?: number
     speed?: number
     imageAdjustments?: ImageAdjustments
-    videoStart?: number | null
-    videoEnd?: number | null
+    videoSegments?: VideoSegment[]
     videoSeek?: number
   }) {
     if (!isActive) return
@@ -731,13 +731,14 @@ export default function DetailSidebar({
   }
 
   const [isCommittingXray, setIsCommittingXray] = useState(false)
-  const xrayFullReveal = libraryMeta?.xrayFullReveal ?? false
+  const xrayDisabled = libraryMeta?.xrayDisabled ?? false
+  const xrayFullReveal = !xrayDisabled && (libraryMeta?.xrayFullReveal ?? false)
 
-  async function toggleXray() {
+  async function setXray(patch: Pick<WallpaperMeta, 'xrayFullReveal' | 'xrayDisabled'>) {
     if (isCommittingXray) return
     setIsCommittingXray(true)
     try {
-      await persistAndMaybeRelaunch({ xrayFullReveal: !xrayFullReveal })
+      await persistAndMaybeRelaunch(patch)
     } finally {
       setIsCommittingXray(false)
     }
@@ -1269,14 +1270,13 @@ export default function DetailSidebar({
 
         {localPath && lweInstalled && libraryMeta?.type === 'video' && (
           <VideoTrimSection
-            start={libraryMeta.videoStart}
-            end={libraryMeta.videoEnd}
+            segments={videoSegmentsOf(libraryMeta)}
             duration={videoDuration}
             live={isActive}
-            onCommit={({ start, end }) => persistAndMaybeRelaunch({ videoStart: start, videoEnd: end })}
-            onPreview={({ start, end }, seek) =>
-              previewLive({ videoStart: start ?? null, videoEnd: end ?? null, videoSeek: seek })
+            onCommit={(segments) =>
+              persistAndMaybeRelaunch({ videoSegments: segments, videoStart: undefined, videoEnd: undefined })
             }
+            onPreview={(segments, seek) => previewLive({ videoSegments: segments, videoSeek: seek })}
           />
         )}
 
@@ -1352,7 +1352,7 @@ export default function DetailSidebar({
         {localPath && lweInstalled && libraryMeta?.type === 'scene' && (
           <div className="border-t border-white/5 pt-3">
             <button
-              onClick={toggleXray}
+              onClick={() => setXray({ xrayFullReveal: !xrayFullReveal, xrayDisabled: false })}
               disabled={isCommittingXray}
               title="Force the xray effect's reveal spot to cover the whole scene instead of following the mouse"
               className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
@@ -1367,6 +1367,27 @@ export default function DetailSidebar({
               {isCommittingXray ? (
                 <Loader2 size={14} className="animate-spin text-gray-500" />
               ) : xrayFullReveal ? (
+                <ToggleRight size={14} className="text-indigo-400" />
+              ) : (
+                <ToggleLeft size={14} className="text-gray-600" />
+              )}
+            </button>
+            <button
+              onClick={() => setXray({ xrayDisabled: !xrayDisabled, xrayFullReveal: false })}
+              disabled={isCommittingXray}
+              title="Never reveal what the xray effect hides, the mouse no longer uncovers anything"
+              className="mt-1.5 flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
+            >
+              <EyeOff size={12} />
+              <span className="flex-1 text-left">Disable x-ray</span>
+              {isActive && (
+                <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
+                  live
+                </span>
+              )}
+              {isCommittingXray ? (
+                <Loader2 size={14} className="animate-spin text-gray-500" />
+              ) : xrayDisabled ? (
                 <ToggleRight size={14} className="text-indigo-400" />
               ) : (
                 <ToggleLeft size={14} className="text-gray-600" />

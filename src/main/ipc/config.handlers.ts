@@ -1,11 +1,14 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
-import type { DisplayMode, EngineFlagPreset, EngineFlags, SteamIdentity } from '@shared/types'
+import * as path from 'path'
+import type { DisplayMode, EngineFlagPreset, EngineFlags, ExtraLibrary, SteamIdentity } from '@shared/types'
 import { BUILT_IN_PRESETS } from '@shared/engineFlags'
 import {
   getConfiguredWorkshopPath,
   setConfiguredWorkshopPath,
   isWorkshopPathConfigured,
+  getExtraLibraries,
+  setExtraLibraries,
   getDefaultFps,
   setDefaultFps,
   getRecommendedFpsEnabled,
@@ -69,6 +72,7 @@ export function registerConfigHandlers(): void {
   ipcMain.handle(IpcChannels.CONFIG_GET, () => ({
     workshopPath: getConfiguredWorkshopPath(),
     defaultWorkshopPath: getDefaultWorkshopPath(),
+    extraLibraries: getExtraLibraries(),
     isConfigured: isWorkshopPathConfigured(),
     defaultFps: getDefaultFps(),
     recommendedFpsEnabled: getRecommendedFpsEnabled(),
@@ -227,11 +231,22 @@ export function registerConfigHandlers(): void {
     return { ok: true }
   })
 
-  ipcMain.handle(IpcChannels.CONFIG_PICK_FOLDER, async (_e) => {
+  ipcMain.handle(IpcChannels.CONFIG_SET_EXTRA_LIBRARIES, (_e, libraries: ExtraLibrary[]) => {
+    setExtraLibraries(
+      libraries
+        .map((l) => ({ path: l.path.trim(), name: l.name.trim() }))
+        .filter((l) => l.path)
+        .map((l) => ({ ...l, name: l.name || path.basename(l.path) || l.path }))
+    )
+    restartWatcher()
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_PICK_FOLDER, async (_e, title?: string) => {
     const win = BrowserWindow.getFocusedWindow()
     const result = await dialog.showOpenDialog(win!, {
       properties: ['openDirectory'],
-      title: 'Select Wallpaper Engine Workshop folder'
+      title: title ?? 'Select Wallpaper Engine Workshop folder'
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]

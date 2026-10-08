@@ -66,7 +66,7 @@ export async function findBackupProblem(dir: string): Promise<string | null> {
   return `${pj.file} is missing`
 }
 
-async function sameFileList(sourcePath: string, backupDir: string): Promise<boolean> {
+export async function sameFileList(sourcePath: string, backupDir: string): Promise<boolean> {
   const [src, dst] = await Promise.all([walkFiles(sourcePath), walkFiles(backupDir)])
   const dstSizes = new Map(dst.map((f) => [f.relPath, f.size]))
   return src.length === dst.length && src.every((f) => dstSizes.get(f.relPath) === f.size)
@@ -169,26 +169,54 @@ export async function backupMatchesSource(sourcePath: string, backupDir: string)
   return true
 }
 
+// fsync destDir, drop it from the page cache and re-hash every file against the source
+export async function verifyOnDisk(sourcePath: string, destDir: string): Promise<boolean> {
+  try {
+    for (const file of await walkFiles(destDir)) await fsyncPath(path.join(destDir, file.relPath))
+    for (const dir of await walkDirs(destDir)) await fsyncPath(dir)
+  } catch {
+    return false
+  }
+  await dropPageCache(destDir)
+  return backupMatchesSource(sourcePath, destDir)
+}
+
+export async function syncDir(dir: string): Promise<void> {
+  await fsyncPath(dir)
+}
+
 export async function backupWallpaper(
   id: string,
   sourcePath: string,
   win: BrowserWindow
 ): Promise<string> {
   const destDir = getBackupDir(id)
-  const backupRoot = path.dirname(destDir)
   if (path.resolve(sourcePath) === path.resolve(destDir)) {
     throw new Error('Wallpaper already lives in the backup folder')
   }
+  return copyWallpaperFolder(id, sourcePath, destDir, win, 'backup')
+}
+
+// staged, fsynced copy, hash-checked against the source before it replaces destDir
+export async function copyWallpaperFolder(
+  id: string,
+  sourcePath: string,
+  destDir: string,
+  win: BrowserWindow,
+  action: BackupProgressEvent['action']
+): Promise<string> {
+  const destRoot = path.dirname(destDir)
+  const name = path.basename(destDir)
 
   const files = await walkFiles(sourcePath)
   if (!files.some((f) => f.relPath === 'project.json')) {
-    throw new Error('Source folder has no project.json, refusing to back up an incomplete wallpaper')
+    throw new Error('Source folder has no project.json, refusing to copy an incomplete wallpaper')
   }
   const bytesTotal = files.reduce((sum, f) => sum + f.size, 0)
 
-  await fs.promises.mkdir(backupRoot, { recursive: true })
-  const stagingDir = path.join(backupRoot, `.${id}.partial`)
-  const oldDir = path.join(backupRoot, `.${id}.old`)
+  await fs.promises.mkdir(destRoot, { recursive: true })
+  const stagingDir = path.join(destRoot, `.${name}.partial`)
+  const oldDir = path.join(destRoot, `.${name}.old`)
   await fs.promises.rm(stagingDir, { recursive: true, force: true })
   await fs.promises.mkdir(stagingDir)
 
@@ -202,10 +230,10 @@ export async function backupWallpaper(
       try {
         srcStat = await fs.promises.stat(srcFile)
       } catch {
-        throw new Error(`Source file is gone, refusing to back up: ${file.relPath}`)
+        throw new Error(`Source file is gone, refusing to copy: ${file.relPath}`)
       }
       if (!srcStat.isFile() || srcStat.size !== file.size) {
-        throw new Error(`Source file changed since it was scanned, refusing to back up: ${file.relPath}`)
+        throw new Error(`Source file changed since it was scanned, refusing to copy: ${file.relPath}`)
       }
 
       await fs.promises.mkdir(path.dirname(destFile), { recursive: true })
@@ -214,6 +242,7 @@ export async function backupWallpaper(
       bytesDone += file.size
       sendProgress(win, {
         itemId: id,
+        action,
         bytesCopied: bytesDone,
         bytesTotal,
         percentage: percent(bytesDone, bytesTotal),
@@ -229,7 +258,7 @@ export async function backupWallpaper(
       const destSize = (await fs.promises.stat(destFile)).size
       if (destSize !== file.size) {
         throw new Error(
-          `Backup verification failed for ${file.relPath}: expected ${file.size} bytes, got ${destSize}`
+          `Verification failed for ${file.relPath}: expected ${file.size} bytes, got ${destSize}`
         )
       }
       const [srcHash, destHash] = await Promise.all([
@@ -237,11 +266,12 @@ export async function backupWallpaper(
         hashFile(destFile)
       ])
       if (srcHash !== destHash) {
-        throw new Error(`Backup verification failed for ${file.relPath}: hash mismatch`)
+        throw new Error(`Verification failed for ${file.relPath}: hash mismatch`)
       }
       bytesDone += file.size
       sendProgress(win, {
         itemId: id,
+        action,
         bytesCopied: bytesDone,
         bytesTotal,
         percentage: percent(bytesDone, bytesTotal),
@@ -253,12 +283,13 @@ export async function backupWallpaper(
     const hadOld = await exists(destDir)
     if (hadOld) await fs.promises.rename(destDir, oldDir)
     await fs.promises.rename(stagingDir, destDir)
-    await fsyncPath(backupRoot)
+    await fsyncPath(destRoot)
     if (hadOld) await fs.promises.rm(oldDir, { recursive: true, force: true })
   } catch (err) {
     await fs.promises.rm(stagingDir, { recursive: true, force: true }).catch(() => {})
     sendProgress(win, {
       itemId: id,
+      action,
       bytesCopied: bytesDone,
       bytesTotal,
       percentage: 0,
@@ -268,7 +299,7 @@ export async function backupWallpaper(
     throw err
   }
 
-  sendProgress(win, { itemId: id, bytesCopied: bytesTotal, bytesTotal, percentage: 100, status: 'completed' })
+  sendProgress(win, { itemId: id, action, bytesCopied: bytesTotal, bytesTotal, percentage: 100, status: 'completed' })
   return destDir
 }
 
@@ -288,7 +319,7 @@ export async function removeBackup(id: string): Promise<{ keptDir: string | null
 
   if (dir && (await exists(dir))) {
     const isWorkshopCopy =
-      wallpaper.source === 'workshop' && !!wallpaper.localPath && path.resolve(wallpaper.localPath) === path.resolve(dir)
+      wallpaper.source !== 'backup' && !!wallpaper.localPath && path.resolve(wallpaper.localPath) === path.resolve(dir)
     if (isWorkshopCopy || !isDeletableBackupDir(wallpaper, dir)) {
       keptDir = dir
       console.warn(`[Backup] Not deleting ${dir} for ${id}, only dropping the reference`)
@@ -390,7 +421,7 @@ export async function scanBackupFolder(): Promise<{
     }
     const existing = wallpapers.get(id)
 
-    if (existing?.source === 'workshop') {
+    if (existing?.source === 'workshop' || existing?.source === 'local') {
       if ((existing.backedUp && !dropped.has(id)) || existing.downloading) {
         result.skipped++
       } else {

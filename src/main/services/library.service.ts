@@ -1,6 +1,7 @@
 import Store from 'electron-store'
 import type { WallpaperMeta, WallpaperType, ContentRating, LibraryFilters, WallpaperFolder } from '@shared/types'
-import { getThumbnailsPath, getWorkshopPath } from '../utils/paths'
+import { getExtraLibraryRoots, getThumbnailsPath, getWorkshopPath } from '../utils/paths'
+import { findLocalWallpapers, localWallpaperId } from '../utils/localLibrary'
 import * as path from 'path'
 import * as fs from 'fs'
 import { randomUUID } from 'crypto'
@@ -286,6 +287,26 @@ export function getDirSize(dirPath: string): number {
   return total
 }
 
+// extra folders are often on HDDs, don't block the main process
+async function getDirSizeAsync(dirPath: string): Promise<number> {
+  let total = 0
+  let entries: fs.Dirent[]
+  try {
+    entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
+  } catch {
+    return 0
+  }
+  for (const entry of entries) {
+    const full = path.join(dirPath, entry.name)
+    if (entry.isDirectory()) {
+      total += await getDirSizeAsync(full)
+    } else if (entry.isFile()) {
+      try { total += (await fs.promises.stat(full)).size } catch { /* skip */ }
+    }
+  }
+  return total
+}
+
 function buildMeta(
   workshopId: string,
   localPath: string,
@@ -293,7 +314,8 @@ function buildMeta(
   existing?: WallpaperMeta,
   workshopTimeUpdated?: number,
   authorSteamId?: string,
-  liveWorkshopTags?: string[]
+  liveWorkshopTags?: string[],
+  fileSize?: number
 ): WallpaperMeta {
   const now = Date.now()
   const { downloading: _d, downloadFailed: _df, ...existingRest } = existing ?? { appliedCount: 0, categories: [] }
@@ -320,7 +342,7 @@ function buildMeta(
     previewUrl: undefined,
     localPath,
     file: pj?.file,
-    fileSize: getDirSize(localPath),
+    fileSize: fileSize ?? getDirSize(localPath),
     createdAt: existing?.createdAt ?? now,
     updatedAt: workshopTimeUpdated ? workshopTimeUpdated * 1000 : (existing?.updatedAt ?? now),
     subscribed: true,
@@ -394,11 +416,48 @@ export async function importWallpaperById(workshopId: string): Promise<Wallpaper
   return meta
 }
 
+async function buildLocalMeta(
+  id: string,
+  localPath: string,
+  existing?: WallpaperMeta,
+  details?: WorkshopDetails
+): Promise<WallpaperMeta | null> {
+  const pj = readProjectJson(localPath)
+  if (!pj) return null
+  const fileSize = await getDirSizeAsync(localPath)
+  const authorSteamId = existing?.authorSteamId ?? details?.authorSteamId
+  return {
+    ...buildMeta(id, localPath, pj, existing, details?.timeUpdated, authorSteamId, details?.tags, fileSize),
+    subscribed: false,
+    source: 'local'
+  }
+}
+
+export async function importLocalWallpaper(localPath: string): Promise<WallpaperMeta | null> {
+  const id = await localWallpaperId(localPath)
+  if (!id) return null
+  const existing = getWallpaper(id) ?? undefined
+  if (existing && existing.source !== 'local') return null
+  // the first library holding an id wins
+  if (existing?.localPath && existing.localPath !== localPath && fs.existsSync(path.join(existing.localPath, 'project.json'))) {
+    const roots = getExtraLibraryRoots()
+    const rank = (p: string): number => roots.indexOf(path.dirname(path.resolve(p)))
+    if (rank(existing.localPath) !== -1 && rank(existing.localPath) <= rank(localPath)) return null
+  }
+
+  const details = /^\d+$/.test(id) ? (await safeGetWorkshopDetails([id])).get(id) : undefined
+  const meta = await buildLocalMeta(id, localPath, existing, details)
+  if (!meta) return null
+  upsertWallpaper(meta)
+  queueHdrCheck()
+  return meta
+}
+
 export async function scanLibrary(): Promise<{ imported: number; skipped: number; removed: number }> {
   const workshopPath = getWorkshopPath()
-  if (!fs.existsSync(workshopPath)) return { imported: 0, skipped: 0, removed: 0 }
-
-  const entries = fs.readdirSync(workshopPath, { withFileTypes: true })
+  // unmounted drive must not empty the library
+  const workshopMounted = fs.existsSync(workshopPath)
+  const entries = workshopMounted ? fs.readdirSync(workshopPath, { withFileTypes: true }) : []
   const onDisk = new Set(entries.filter(e => e.isDirectory()).map(e => e.name))
   const subscribedIds = isSteamRunning()
     ? new Set(await getSubscribedItems().catch(() => []))
@@ -417,7 +476,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   // entries live under workshopPath - local imports and backups (source:'local'/'backup') are
   // never on disk here, so including them in this check would delete them on every scan.
   for (const id of Object.keys(wallpapers)) {
-    if (wallpapers[id].source !== 'workshop') continue
+    if (wallpapers[id].source !== 'workshop' || !workshopMounted) continue
     if (!onDisk.has(id) && !subscribedIds.has(id)) {
       delete wallpapers[id]
       removed++
@@ -439,7 +498,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     }
 
     const existing = wallpapers[entry.name]
-    if (!existing?.downloading && existing?.previewLocal !== undefined && existing?.contentRating !== undefined && existing?.fileSize !== undefined) {
+    if (existing?.localPath === localPath && !existing.downloading && existing.previewLocal !== undefined && existing?.contentRating !== undefined && existing?.fileSize !== undefined) {
       cacheHits.push(entry.name)
       skipped++
       continue
@@ -459,10 +518,32 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     incomplete.push({ id, localPath: path.join(workshopPath, id) })
   }
 
+  const roots = getExtraLibraryRoots()
+  const { found, mounted } = await findLocalWallpapers(roots)
+  const claimed = new Set([...onDisk, ...subscribedIds])
+  for (const w of Object.values(wallpapers)) {
+    if (w.source !== 'local') claimed.add(w.id)
+  }
+  const localFound = found.filter((f) => !claimed.has(f.id))
+  const localIds = new Set(localFound.map((f) => f.id))
+  for (const [id, w] of Object.entries(wallpapers)) {
+    if (w.source !== 'local' || localIds.has(id) || claimed.has(id)) continue
+    const root = path.dirname(path.resolve(w.localPath ?? ''))
+    if (roots.includes(root) && !mounted.includes(root)) continue
+    delete wallpapers[id]
+    removed++
+  }
+  const localToBuild = localFound.filter((f) => {
+    const existing = wallpapers[f.id]
+    return !(existing?.source === 'local' && existing.localPath === f.localPath && existing.fileSize !== undefined)
+  })
+  skipped += localFound.length - localToBuild.length
+
   const details = await safeGetWorkshopDetails([
     ...incomplete.map((i) => i.id),
     ...toRebuild.map(({ entry }) => entry.name),
-    ...cacheHits
+    ...cacheHits,
+    ...localToBuild.map((f) => f.id).filter((id) => /^\d+$/.test(id))
   ])
   // Author never changes once known, only take Steam's for items that don't have it yet
   const authors = new Map<string, string>()
@@ -511,6 +592,13 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
       authors.get(entry.name),
       details.get(entry.name)?.tags
     )
+    imported++
+  }
+
+  for (const { id, localPath } of localToBuild) {
+    const meta = await buildLocalMeta(id, localPath, wallpapers[id], details.get(id))
+    if (!meta) continue
+    wallpapers[id] = meta
     imported++
   }
 
@@ -620,6 +708,10 @@ export async function checkUnavailableWallpapers(): Promise<{
   return { checked: candidates.length, unavailable: unavailableIds.size, changed }
 }
 
+function isFromWorkshop(w: WallpaperMeta): boolean {
+  return w.source === 'workshop' || (w.source === 'local' && /^\d+$/.test(w.id))
+}
+
 // Bump whenever resolutionsFromTags() changes, stored resolutions then get re-derived once
 const RESOLUTIONS_VERSION = 2
 
@@ -630,7 +722,7 @@ export async function backfillResolutions(): Promise<boolean> {
 
   const rederive = store.get('resolutionsVersion') !== RESOLUTIONS_VERSION
   const ids = Object.values(store.get('wallpapers'))
-    .filter((w) => w.source === 'workshop' && (rederive || w.resolutions === undefined))
+    .filter((w) => isFromWorkshop(w) && (rederive || w.resolutions === undefined))
     .map((w) => w.id)
 
   let details = new Map<string, WorkshopDetails>()

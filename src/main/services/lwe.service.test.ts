@@ -31,15 +31,40 @@ describe('parseCustomArgs', () => {
 
 describe('buildHotswapLines', () => {
   it('writes only the fields that were given', () => {
-    expect(buildHotswapLines({ volume: 40, xray: false })).toEqual(['volume=40', 'xray=off'])
+    expect(buildHotswapLines({ volume: 40, xray: 'normal' })).toEqual(['volume=40', 'xray=off'])
+    expect(buildHotswapLines({ xray: 'full' })).toEqual(['xray=on'])
+    expect(buildHotswapLines({ xray: 'disabled' })).toEqual(['xray=disabled'])
     expect(buildHotswapLines({})).toEqual([])
   })
 
-  it('clears a side of the video trim with none and seeks after setting the range', () => {
-    expect(buildHotswapLines({ videoStart: 180, videoEnd: null, videoSeek: 237 })).toEqual([
-      'video-start=180',
-      'video-end=none',
-      'video-seek=237'
+  it('sends the video parts and seeks after setting them', () => {
+    expect(
+      buildHotswapLines({
+        videoSegments: [
+          { start: 120, end: 180 },
+          { start: 240 }
+        ],
+        videoSeek: 177
+      })
+    ).toEqual(['video-segments=120-180,240-', 'video-seek=177'])
+  })
+
+  it('plays the whole video again with no parts', () => {
+    expect(buildHotswapLines({ videoSegments: [] })).toEqual(['video-segments=none'])
+  })
+
+  it('replaces the effect lists the same way and switches animations live', () => {
+    expect(buildHotswapLines({ disabledEffects: [] })).toEqual(['effects=1'])
+    expect(buildHotswapLines({ disabledEffects: ['51', '74'], disableAnimations: false })).toEqual([
+      'effects=1',
+      'disable-effect=51',
+      'disable-effect=74',
+      'disable-animations=off'
+    ])
+    expect(buildHotswapLines({ enabledEffects: ['glow'], disableAnimations: true })).toEqual([
+      'effects=1',
+      'enable-effect=glow',
+      'disable-animations=on'
     ])
   })
 

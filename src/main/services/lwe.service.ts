@@ -15,7 +15,8 @@ import type {
   LweSceneEffect,
   CrashPhase,
   EngineFlags,
-  ScreenTarget
+  ScreenTarget,
+  XrayMode
 } from '@shared/types'
 import {
   isCommandAvailable,
@@ -38,6 +39,7 @@ import {
 import { DEFAULT_LWE_FPS, DEFAULT_LWE_REPO } from '@shared/constants'
 import { engineFlagArgs, filterSupportedArgs } from '@shared/engineFlags'
 import { imageAdjustmentArgs, imageAdjustmentLines, type ImageAdjustments } from '@shared/imageAdjustments'
+import { formatVideoSegments, type VideoSegment } from '@shared/videoTrim'
 
 export const ALL_SCREENS: ScreenTarget = '*'
 
@@ -930,7 +932,7 @@ export interface LweLaunchOptions {
   disabledEffects?: string[]
   enabledEffects?: string[]
   propertyOverrides?: Record<string, string>
-  xrayFullReveal?: boolean
+  xrayMode?: XrayMode
   scalingMode?: string
   zoom?: number
   offsetX?: number
@@ -940,8 +942,7 @@ export interface LweLaunchOptions {
   cornerColor?: string
   imageAdjustments?: ImageAdjustments
   speed?: number
-  videoStart?: number
-  videoEnd?: number
+  videoSegments?: VideoSegment[]
   audioSensitivity?: Record<string, number>
   soundVolume?: Record<string, number>
   customArgs?: string
@@ -993,9 +994,13 @@ function buildLweArgs(
   if (options.expandCanvas && supportsExpandCanvas()) args.push('--expand-canvas')
   if (options.cornerColor) args.push('--corner-color', options.cornerColor)
   if (options.speed !== undefined) args.push('--speed', String(options.speed))
-  if (supportsFlag('--video-start')) {
-    if (options.videoStart !== undefined) args.push('--video-start', String(options.videoStart))
-    if (options.videoEnd !== undefined) args.push('--video-end', String(options.videoEnd))
+  const segments = options.videoSegments ?? []
+  if (segments.length > 0 && supportsFlag('--video-segments')) {
+    args.push('--video-segments', formatVideoSegments(segments))
+  } else if (segments.length === 1 && supportsFlag('--video-start')) {
+    // fallback for engines without --video-segments
+    args.push('--video-start', String(segments[0].start))
+    if (segments[0].end !== undefined) args.push('--video-end', String(segments[0].end))
   }
   if ((options.disabledObjects?.length || options.enabledObjects?.length) && supportsObjectFlags()) {
     for (const id of options.disabledObjects ?? []) args.push('--disable-object', id)
@@ -1255,14 +1260,22 @@ export function getRunningInstances(): RunningInstance[] {
   }))
 }
 
+function supportsEffectHotswap(): boolean {
+  return supportsFlag('effects=1')
+}
+
+function supportsAnimationHotswap(): boolean {
+  return supportsFlag('disable-animations=on')
+}
+
 // flags a hotswap can't change, a running engine launched with different ones has to be restarted
 function launchKey(options: LweLaunchOptions): string {
   const flags = options.engineFlags ?? {}
   return JSON.stringify({
     customArgs: options.customArgs?.trim() ?? '',
-    disabledEffects: options.disabledEffects ?? [],
-    enabledEffects: options.enabledEffects ?? [],
-    disableAnimations: !!flags.disableAnimations,
+    disabledEffects: supportsEffectHotswap() ? [] : (options.disabledEffects ?? []),
+    enabledEffects: supportsEffectHotswap() ? [] : (options.enabledEffects ?? []),
+    disableAnimations: supportsAnimationHotswap() ? false : !!flags.disableAnimations,
     flags: engineFlagArgs(flags)
   })
 }
@@ -1273,7 +1286,7 @@ export interface HotswapOptions {
   enabledObjects?: string[]
   volume?: number
   fps?: number
-  xray?: boolean
+  xray?: XrayMode
   scaling?: string
   zoom?: number
   offsetX?: number
@@ -1283,9 +1296,7 @@ export interface HotswapOptions {
   cornerColor?: string
   imageAdjustments?: ImageAdjustments
   speed?: number
-  /** null clears that side of the video trim */
-  videoStart?: number | null
-  videoEnd?: number | null
+  videoSegments?: VideoSegment[]
   /** Jumps a video wallpaper to this many seconds, e.g. to watch the loop point */
   videoSeek?: number
   propertyOverrides?: Record<string, string>
@@ -1296,6 +1307,10 @@ export interface HotswapOptions {
   audioSensitivity?: Record<string, number>
   /** Sound object id -> volume (0-1), applied live without a reload */
   soundVolume?: Record<string, number>
+  /** Either being present replaces the engine's effect lists */
+  disabledEffects?: string[]
+  enabledEffects?: string[]
+  disableAnimations?: boolean
 }
 
 /**
@@ -1312,9 +1327,18 @@ export function buildHotswapLines(options: HotswapOptions): string[] {
     for (const id of options.disabledObjects ?? []) lines.push(`disable-object=${id}`)
     for (const id of options.enabledObjects ?? []) lines.push(`enable-object=${id}`)
   }
+  if (options.disabledEffects !== undefined || options.enabledEffects !== undefined) {
+    lines.push('effects=1')
+    for (const id of options.disabledEffects ?? []) lines.push(`disable-effect=${id}`)
+    for (const id of options.enabledEffects ?? []) lines.push(`enable-effect=${id}`)
+  }
+  if (options.disableAnimations !== undefined) lines.push(`disable-animations=${options.disableAnimations ? 'on' : 'off'}`)
   if (options.volume !== undefined) lines.push(`volume=${options.volume}`)
   if (options.fps !== undefined) lines.push(`fps=${options.fps}`)
-  if (options.xray !== undefined) lines.push(`xray=${options.xray ? 'on' : 'off'}`)
+  // on/off keeps engines without the disabled mode working
+  if (options.xray !== undefined) {
+    lines.push(`xray=${options.xray === 'full' ? 'on' : options.xray === 'normal' ? 'off' : options.xray}`)
+  }
   if (options.scaling !== undefined) lines.push(`scaling=${options.scaling}`)
   if (options.zoom !== undefined) lines.push(`zoom=${options.zoom}`)
   if (options.offsetX !== undefined || options.offsetY !== undefined) {
@@ -1325,8 +1349,9 @@ export function buildHotswapLines(options: HotswapOptions): string[] {
   if (options.cornerColor !== undefined) lines.push(`corner-color=${options.cornerColor}`)
   lines.push(...imageAdjustmentLines(options.imageAdjustments))
   if (options.speed !== undefined) lines.push(`speed=${options.speed}`)
-  if (options.videoStart !== undefined) lines.push(`video-start=${options.videoStart ?? 'none'}`)
-  if (options.videoEnd !== undefined) lines.push(`video-end=${options.videoEnd ?? 'none'}`)
+  if (options.videoSegments !== undefined) {
+    lines.push(`video-segments=${options.videoSegments.length ? formatVideoSegments(options.videoSegments) : 'none'}`)
+  }
   if (options.videoSeek !== undefined) lines.push(`video-seek=${options.videoSeek}`)
   if (options.audioScreen !== undefined) lines.push(`audio-screen=${options.audioScreen}`)
   if (options.ambientVolume !== undefined) lines.push(`ambient-volume=${options.ambientVolume}`)
@@ -1415,7 +1440,7 @@ function hotswapOptionsFor(wallpaperPath: string, options: LweLaunchOptions): Ho
     // the running engine keeps the previous wallpaper's limit, so a wallpaper without one has to
     // put it back to what a fresh launch without --fps gets
     fps: options.fps ?? DEFAULT_LWE_FPS,
-    xray: options.xrayFullReveal,
+    xray: options.xrayMode,
     scaling: options.scalingMode ?? 'default',
     zoom: options.zoom ?? 1,
     offsetX: options.offsetX ?? 0,
@@ -1426,14 +1451,17 @@ function hotswapOptionsFor(wallpaperPath: string, options: LweLaunchOptions): Ho
     imageAdjustments: options.imageAdjustments,
     speed: options.speed ?? 1,
     // the engine drops the trim on a path swap, so only a trimmed wallpaper has to send one
-    videoStart: options.videoStart,
-    videoEnd: options.videoEnd,
+    videoSegments: options.videoSegments?.length ? options.videoSegments : undefined,
     propertyOverrides: options.propertyOverrides ?? {},
     audioSensitivity: {
       ...(defaultSensitivity !== 1 ? { '*': defaultSensitivity } : {}),
       ...options.audioSensitivity
     },
-    soundVolume: options.soundVolume ?? {}
+    soundVolume: options.soundVolume ?? {},
+    ...(supportsEffectHotswap()
+      ? { disabledEffects: options.disabledEffects ?? [], enabledEffects: options.enabledEffects ?? [] }
+      : {}),
+    ...(supportsAnimationHotswap() ? { disableAnimations: !!options.engineFlags?.disableAnimations } : {})
   }
 }
 
@@ -1552,7 +1580,9 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
     setTimeout(() => {
       if (!settled && instances.get(screen) === inst && child.exitCode === null) {
         settled = true
-        if (options.xrayFullReveal) void hotswapLweSettings({ xray: true }, { screens: [screen] })
+        if (options.xrayMode && options.xrayMode !== 'normal') {
+          void hotswapLweSettings({ xray: options.xrayMode }, { screens: [screen] })
+        }
         resolve()
       }
     }, 2000)

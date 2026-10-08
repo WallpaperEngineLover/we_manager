@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Loader2, Check, X, Trash2, Download, Archive, AlertTriangle, RotateCw, Plus, FolderOpen, WifiOff } from 'lucide-react'
-import type { WallpaperMeta } from '@shared/types'
+import type { BackupProgressEvent, WallpaperMeta } from '@shared/types'
 import clsx from 'clsx'
 import CompatBadge from '../common/CompatBadge'
 import { getPreviewSrc } from '../../utils/preview'
-import { hasBackup } from '../../utils/wallpaper'
+import { hasBackup, progressVerb } from '../../utils/wallpaper'
 import { useToast } from '../common/Toast'
 import type { PreviewSize } from '../../hooks/usePreviewSize'
 import {
@@ -31,7 +31,7 @@ interface WallpaperCardProps {
   currentPlaylistId: string | null
   isInCurrentPlaylist: boolean
   previewSize: PreviewSize
-  backupProgress: { percentage: number; status: 'copying' | 'verifying' } | null
+  backupProgress: { percentage: number; status: 'copying' | 'verifying'; action?: BackupProgressEvent['action'] } | null
   onSelect: (e: React.MouseEvent) => void
   onContextMenu: (e: React.MouseEvent) => void
 }
@@ -207,7 +207,7 @@ export default function WallpaperCard({
             <span className="text-xs text-gray-300">
               {backupProgress.status === 'verifying'
                 ? `Verifying... ${backupProgress.percentage}%`
-                : `Backing up... ${backupProgress.percentage}%`}
+                : `${progressVerb([backupProgress])}... ${backupProgress.percentage}%`}
             </span>
             <ProgressBar percentage={backupProgress.percentage} className="h-1 w-full max-w-[140px] rounded-full bg-white/10" />
           </CardOverlay>

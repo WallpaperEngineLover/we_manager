@@ -17,6 +17,7 @@ import { findWallpaperVideoFile, getVideoFps } from '../utils/video'
 import { RECOMMENDED_WEB_FPS } from '@shared/constants'
 import { resolveEngineFlags } from '@shared/engineFlags'
 import { needsFreshLaunch } from '@shared/compat'
+import { videoSegmentsOf } from '@shared/videoTrim'
 
 const execFileAsync = promisify(execFile)
 
@@ -226,22 +227,18 @@ export async function lweOptionsFor(
     disabledEffects: wallpaper.disabledEffects,
     enabledEffects: wallpaper.enabledEffects,
     propertyOverrides: wallpaper.propertyOverrides,
-    // Explicit even when off: xray state lives on the running LWE process, not per-wallpaper,
-    // so a hot-reload into a wallpaper with xray off must actively clear a previous wallpaper's "on".
-    xrayFullReveal: wallpaper.xrayFullReveal ?? false,
+    // always sent: xray state lives in the running engine, a hotswap must clear it
+    xrayMode: wallpaper.xrayDisabled ? 'disabled' : wallpaper.xrayFullReveal ? 'full' : 'normal',
     scalingMode: wallpaper.scalingMode,
     zoom: wallpaper.zoom,
     offsetX: wallpaper.offsetX,
     offsetY: wallpaper.offsetY,
-    // Explicit even when off, same reasoning as xrayFullReveal above.
     disableParallax: wallpaper.disableParallax ?? false,
-    // Explicit even when off, same reasoning as xrayFullReveal above.
     expandCanvas: wallpaper.expandCanvas ?? false,
     cornerColor: wallpaper.cornerColor,
     imageAdjustments: wallpaper.imageAdjustments,
     speed: wallpaper.playbackSpeed,
-    videoStart: wallpaper.type === 'video' ? wallpaper.videoStart : undefined,
-    videoEnd: wallpaper.type === 'video' ? wallpaper.videoEnd : undefined,
+    videoSegments: wallpaper.type === 'video' ? videoSegmentsOf(wallpaper) : undefined,
     audioSensitivity: wallpaper.audioSensitivity,
     soundVolume: wallpaper.soundVolume,
     customArgs: wallpaper.customArgs

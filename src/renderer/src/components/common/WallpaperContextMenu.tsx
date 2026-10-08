@@ -1,13 +1,29 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Archive, ExternalLink, Eye, FolderOpen, Trash2, User } from 'lucide-react'
-import type { WallpaperMeta } from '@shared/types'
-import { ContextMenu, FolderMenuItems, MenuItem, MenuSelectionCount, MenuSeparator, VoteMenuItems } from './ContextMenu'
+import { Archive, Copy, ExternalLink, Eye, FolderOpen, HardDrive, MoveRight, Trash2, User } from 'lucide-react'
+import type { ExtraLibrary, WallpaperMeta } from '@shared/types'
+import {
+  ContextMenu,
+  FolderMenuItems,
+  MenuItem,
+  MenuSelectionCount,
+  MenuSeparator,
+  SubMenu,
+  VoteMenuItems
+} from './ContextMenu'
 import { useToast } from './Toast'
 import { useConfig, useFolders } from '../../hooks/queries'
 import { useBatchVote } from '../../hooks/useVotes'
 import { useUnsubscribe } from '../../hooks/useWallpaperActions'
 import { openWorkshopPage } from '../../utils/steam'
-import { backupSummary, canBrowseCreator, hasBackup, resolveCreatorSteamId, videoPath } from '../../utils/wallpaper'
+import {
+  backupSummary,
+  canBrowseCreator,
+  hasBackup,
+  isPlayable,
+  resolveCreatorSteamId,
+  transferSummary,
+  videoPath
+} from '../../utils/wallpaper'
 
 // Right-click menu for library wallpapers, shared by the library grid and playlists.
 // ids is what was right-clicked (the selection), wallpapers the ones of those that are loaded.
@@ -28,12 +44,15 @@ export default function WallpaperContextMenu({
 }) {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
-  const isBackupConfigured = useConfig()?.isBackupConfigured ?? false
+  const config = useConfig()
+  const isBackupConfigured = config?.isBackupConfigured ?? false
+  const libraries = config?.extraLibraries ?? []
   const { moveToFolder, removeFromFolders, menuState } = useFolders()
   const batchVote = useBatchVote()
   const unsubscribe = useUnsubscribe()
 
   const backupable = wallpapers.filter((w) => w.source === 'workshop')
+  const transferable = wallpapers.filter(isPlayable)
   const backups = wallpapers.filter(hasBackup)
   const video = wallpapers.map(videoPath).find(Boolean)
   const creatorSource = wallpapers.length === 1 && canBrowseCreator(wallpapers[0]) ? wallpapers[0] : undefined
@@ -76,6 +95,31 @@ export default function WallpaperContextMenu({
     )
     queryClient.invalidateQueries({ queryKey: ['library'] })
     queryClient.invalidateQueries({ queryKey: ['folders'] })
+  }
+
+  async function transfer(library: ExtraLibrary, mode: 'copy' | 'move') {
+    if (mode === 'move') {
+      const workshop = transferable.filter((w) => w.source === 'workshop').length
+      const backupOnly = transferable.filter((w) => w.source === 'backup').length
+      const notes = [
+        workshop > 0 &&
+          `${workshop === 1 ? 'The workshop wallpaper' : `${workshop} workshop wallpapers`} will be unsubscribed on Steam, otherwise Steam downloads ${workshop === 1 ? 'it' : 'them'} again.`,
+        backupOnly > 0 &&
+          `${backupOnly === 1 ? 'The backup' : `${backupOnly} backups`} will leave the backup folder.`
+      ].filter(Boolean)
+      if (notes.length > 0 && !confirm(`Move to "${library.name}"?\n\n${notes.join('\n')}`)) return
+    }
+    try {
+      const result = await window.electronAPI.library.transfer(
+        transferable.map((w) => w.id),
+        library.path,
+        mode
+      )
+      showToast(transferSummary(result, mode, library.name))
+    } catch (err) {
+      showToast(`${mode === 'copy' ? 'Copy' : 'Move'} failed: ${(err as Error).message}`)
+    }
+    queryClient.invalidateQueries({ queryKey: ['library'] })
   }
 
   async function openLocally() {
@@ -127,6 +171,26 @@ export default function WallpaperContextMenu({
         <MenuItem icon={User} onClick={run(browseCreator)}>
           Browse wallpapers from this creator
         </MenuItem>
+      )}
+
+      {libraries.length > 0 && transferable.length > 0 && (
+        <>
+          <MenuSeparator />
+          <SubMenu icon={Copy} label="Copy to library">
+            {libraries.map((l) => (
+              <MenuItem key={l.path} icon={HardDrive} onClick={run(() => transfer(l, 'copy'))}>
+                <span title={l.path}>{l.name}</span>
+              </MenuItem>
+            ))}
+          </SubMenu>
+          <SubMenu icon={MoveRight} label="Move to library">
+            {libraries.map((l) => (
+              <MenuItem key={l.path} icon={HardDrive} onClick={run(() => transfer(l, 'move'))}>
+                <span title={l.path}>{l.name}</span>
+              </MenuItem>
+            ))}
+          </SubMenu>
+        </>
       )}
 
       <MenuSeparator />

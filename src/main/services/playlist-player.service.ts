@@ -3,7 +3,7 @@ import type { BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import type { Playlist, PlaylistItem, PlaylistPlaybackState, ScreenTarget } from '@shared/types'
 import { compatStatus } from '@shared/compat'
-import { trimmedVideoLength } from '@shared/videoTrim'
+import { trimmedVideoLength, videoSegmentsOf } from '@shared/videoTrim'
 import { getPlaylist } from './playlist.service'
 import { getWallpaper, updateWallpaper } from './library.service'
 import { getLweStatus, ALL_SCREENS } from './lwe.service'
@@ -158,7 +158,7 @@ async function getVideoLengthSec(wallpaperId: string): Promise<number | undefine
   if (wallpaper?.type !== 'video' || !wallpaper.localPath) return undefined
   const videoFile = findWallpaperVideoFile(wallpaper.localPath, wallpaper.file)
   const duration = videoFile ? await getVideoDurationSec(videoFile) : undefined
-  return duration === undefined ? undefined : trimmedVideoLength(duration, wallpaper.videoStart, wallpaper.videoEnd)
+  return duration === undefined ? undefined : trimmedVideoLength(duration, videoSegmentsOf(wallpaper))
 }
 
 function scheduleNext(player: Player, playlist: Playlist): void {

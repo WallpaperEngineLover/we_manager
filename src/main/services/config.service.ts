@@ -3,10 +3,12 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { app } from 'electron'
 import { WE_APP_ID } from '@shared/constants'
-import type { DisplayMode, EngineFlagPreset, EngineFlags, SteamIdentity } from '@shared/types'
+import type { DisplayMode, EngineFlagPreset, EngineFlags, ExtraLibrary, SteamIdentity } from '@shared/types'
 
 interface AppConfig {
   workshopPath: string | null
+  /** Extra wallpaper folders (source 'local'), plain strings are the old unnamed format */
+  extraLibraryPaths: (string | ExtraLibrary)[]
   defaultFps: number | null
   lweRepoUrl: string | null
   lweRepoBranch: string | null
@@ -43,6 +45,7 @@ const store = new Store<AppConfig>({
   name: 'config',
   defaults: {
     workshopPath: null,
+    extraLibraryPaths: [],
     defaultFps: null,
     recommendedFpsEnabled: false,
     recommendedWebFpsEnabled: true,
@@ -80,6 +83,16 @@ export function setConfiguredWorkshopPath(p: string): void {
 
 export function isWorkshopPathConfigured(): boolean {
   return store.get('workshopPath') !== null
+}
+
+export function getExtraLibraries(): ExtraLibrary[] {
+  return store
+    .get('extraLibraryPaths')
+    .map((entry) => (typeof entry === 'string' ? { path: entry, name: path.basename(entry) || entry } : entry))
+}
+
+export function setExtraLibraries(libraries: ExtraLibrary[]): void {
+  store.set('extraLibraryPaths', libraries)
 }
 
 export function getConfiguredBackupPath(): string | null {

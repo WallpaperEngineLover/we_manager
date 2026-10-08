@@ -15,7 +15,7 @@ import { registerScheduleHandlers } from './schedule.handlers'
 export function registerAllHandlers(win: BrowserWindow): void {
   registerSteamHandlers(win)
   registerWorkshopHandlers()
-  registerLibraryHandlers()
+  registerLibraryHandlers(win)
   registerWallpaperHandlers()
   registerConfigHandlers()
   registerFolderHandlers()

@@ -20,6 +20,7 @@ export const IpcChannels = {
 
   LIBRARY_GET_ALL: 'library:get-all',
   LIBRARY_GET_ONE: 'library:get-one',
+  LIBRARY_TRANSFER: 'library:transfer',
   LIBRARY_UPDATE: 'library:update',
   LIBRARY_DELETE: 'library:delete',
   LIBRARY_ADD_TAG: 'library:add-tag',
@@ -58,6 +59,7 @@ export const IpcChannels = {
 
   CONFIG_GET: 'config:get',
   CONFIG_SET_WORKSHOP_PATH: 'config:set-workshop-path',
+  CONFIG_SET_EXTRA_LIBRARIES: 'config:set-extra-libraries',
   CONFIG_SET_DEFAULT_FPS: 'config:set-default-fps',
   CONFIG_SET_RECOMMENDED_FPS: 'config:set-recommended-fps',
   CONFIG_SET_RECOMMENDED_WEB_FPS: 'config:set-recommended-web-fps',
