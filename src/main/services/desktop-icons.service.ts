@@ -2,7 +2,9 @@ import { spawn, type ChildProcess } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
 import Store from 'electron-store'
+import { app } from 'electron'
 import { getConnectedScreens, getWaylandDisplay, getXdgRuntimeDir } from '../utils/platform'
+import { isFlatpak } from '../utils/flatpak'
 
 interface DesktopIconsStoreSchema {
   desktopIconsEnabled: boolean
@@ -29,13 +31,25 @@ function getOverlayScriptPath(): string {
   return candidates[0]
 }
 
+const LAYER_SHELL_LIBS = [
+  '/usr/lib64/libgtk4-layer-shell.so',
+  '/usr/lib/libgtk4-layer-shell.so',
+  '/usr/lib/x86_64-linux-gnu/libgtk4-layer-shell.so'
+]
+
 function findLayerShellLib(): string {
-  const candidates = [
-    '/usr/lib64/libgtk4-layer-shell.so',
-    '/usr/lib/libgtk4-layer-shell.so',
-    '/usr/lib/x86_64-linux-gnu/libgtk4-layer-shell.so'
-  ]
-  return candidates.find((p) => fs.existsSync(p)) ?? candidates[0]
+  return LAYER_SHELL_LIBS.find((p) => fs.existsSync(p)) ?? LAYER_SHELL_LIBS[0]
+}
+
+/** The overlay needs the host's Python, GTK4 and gtk4-layer-shell, so it runs on the host from a copy of the script */
+function flatpakOverlayCommand(scriptPath: string, envVars: string[], screen?: string): [string, string[]] {
+  const hostScript = path.join(app.getPath('userData'), 'desktop-icons-overlay.py')
+  fs.copyFileSync(scriptPath, hostScript)
+  const findLib = `for lib in ${LAYER_SHELL_LIBS.join(' ')}; do [ -e "$lib" ] && export LD_PRELOAD="$lib" && break; done`
+  const args = ['--host', ...envVars.filter((v) => !v.startsWith('LD_PRELOAD=')).map((v) => `--env=${v}`),
+    'sh', '-c', `${findLib}; exec python3 "$@"`, 'sh', hostScript]
+  if (screen) args.push(screen)
+  return ['flatpak-spawn', args]
 }
 
 /** Env vars for the overlay; Electron runs under XWayland so the Wayland env must be passed explicitly. */
@@ -76,7 +90,10 @@ export function startDesktopIconsOverlay(): void {
     const args = ['python3', scriptPath]
     if (screen) args.push(screen)
 
-    const child = spawn('env', [...envVars, ...args], {
+    const [command, commandArgs] = isFlatpak()
+      ? flatpakOverlayCommand(scriptPath, envVars, screen)
+      : ['env', [...envVars, ...args]]
+    const child = spawn(command, commandArgs, {
       stdio: 'ignore',
       detached: true
     })

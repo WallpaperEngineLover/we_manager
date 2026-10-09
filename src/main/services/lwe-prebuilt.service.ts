@@ -10,17 +10,24 @@ import { LWE_RELEASE_REPO } from '@shared/constants'
 import type { LweInstallProgress, LwePrebuiltTarget } from '@shared/types'
 import { isCommandAvailable } from '../utils/platform'
 import { getLwePrebuiltDir } from '../utils/paths'
-import { buildCleanBuildEnv, isOstreeSystem, readPrebuiltRelease, resetLweDetection } from './lwe.service'
+import { isFlatpak } from '../utils/flatpak'
+import { buildCleanBuildEnv, isOstreeSystem, parseOsReleaseIds, readPrebuiltRelease, resetLweDetection } from './lwe.service'
 
 const execFileAsync = promisify(execFile)
 
-// Arch builds are paused: V8 (libnode) is only in the AUR there, so the release CI can't build them
-type PrebuiltDistro = 'ubuntu-24.04' | 'fedora-44'
+/**
+ * Distribution builds link the system's own libraries. The portable build bundles all but the desktop's libraries
+ * and runs on any distribution with glibc 2.35 or newer (Arch, SteamOS, image-based systems, ...).
+ */
+type PrebuiltDistro = 'ubuntu-24.04' | 'fedora-44' | 'portable'
 
 const DISTRO_LABELS: Record<PrebuiltDistro, string> = {
   'ubuntu-24.04': 'Ubuntu 24.04',
-  'fedora-44': 'Fedora 44'
+  'fedora-44': 'Fedora 44',
+  portable: 'Portable build'
 }
+
+const PORTABLE_GLIBC = '2.35'
 
 // Libraries the engine and CEF load from the system. Fedora installs missing ones by soname instead
 // (see installMissingLibraries), so Nobara's full ffmpeg is never swapped for ffmpeg-free.
@@ -46,15 +53,38 @@ function readOsRelease(): Record<string, string> {
   return fields
 }
 
+/** glibc of the running system, e.g. "2.39" */
+function glibcVersion(): string | undefined {
+  const header = (process.report?.getReport() as { header?: { glibcVersionRuntime?: string } } | undefined)?.header
+  return header?.glibcVersionRuntime
+}
+
+function versionAtLeast(version: string, minimum: string): boolean {
+  const a = version.split('.').map(Number)
+  const b = minimum.split('.').map(Number)
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0)
+  }
+  return true
+}
+
 function detectPrebuiltDistro(): PrebuiltDistro | undefined {
   const release = readOsRelease()
   const ids = [release.ID, ...(release.ID_LIKE ?? '').split(/\s+/)].filter(Boolean)
-  // Mint 22 and Pop!_OS 24.04 are built on noble and carry its libraries
-  if (release.UBUNTU_CODENAME === 'noble' || (release.ID === 'ubuntu' && release.VERSION_ID === '24.04')) {
-    return 'ubuntu-24.04'
+  if (!isOstreeSystem()) {
+    // Mint 22 and Pop!_OS 24.04 are built on noble
+    if (release.UBUNTU_CODENAME === 'noble' || (release.ID === 'ubuntu' && release.VERSION_ID === '24.04')) {
+      return 'ubuntu-24.04'
+    }
+    if (ids.includes('fedora') && release.VERSION_ID === '44') return 'fedora-44'
   }
-  if (ids.includes('fedora') && release.VERSION_ID === '44') return 'fedora-44'
+  const glibc = glibcVersion()
+  if (glibc && versionAtLeast(glibc, PORTABLE_GLIBC)) return 'portable'
   return undefined
+}
+
+function assetName(variant: string, distro: PrebuiltDistro): string {
+  return `linux-wallpaperengine-${variant}-${distro}-x86_64.tar.gz`
 }
 
 function isKdeSession(): boolean {
@@ -62,25 +92,24 @@ function isKdeSession(): boolean {
 }
 
 export function getPrebuiltTarget(): LwePrebuiltTarget {
+  if (isFlatpak()) {
+    return { supported: false, managed: true, reason: 'linux-wallpaperengine comes with the Flatpak and is updated with it.' }
+  }
   if (process.arch !== 'x64') {
     return { supported: false, reason: 'Prebuilt builds are x86_64 only, build from source instead.' }
   }
   const distro = detectPrebuiltDistro()
   if (!distro) {
-    const release = readOsRelease()
-    const isArch = [release.ID, ...(release.ID_LIKE ?? '').split(/\s+/)].includes('arch')
-    const name = release.PRETTY_NAME ?? 'this distribution'
+    const glibc = glibcVersion()
     return {
       supported: false,
-      reason: isArch
-        ? 'There is no prebuilt build for Arch for now (V8 is only in the AUR there), build from source instead.'
-        : `There is no prebuilt build for ${name} (only Ubuntu 24.04 and Fedora 44), build from source instead.`
+      reason: `The prebuilt build needs glibc ${PORTABLE_GLIBC} or newer${glibc ? ` (this system has ${glibc})` : ''}, build from source instead.`
     }
   }
   const variant = isKdeSession() ? 'kde' : 'generic'
   return {
     supported: true,
-    asset: `linux-wallpaperengine-${variant}-${distro}-x86_64.tar.gz`,
+    asset: assetName(variant, distro),
     label: `${DISTRO_LABELS[distro]}, ${variant === 'kde' ? 'with' : 'without'} KDE integration`
   }
 }
@@ -120,7 +149,9 @@ async function download(url: string, dest: string, total: number, onProgress: (f
 
 /** Sonames the binary (with its bundled libs) can't resolve on this system */
 async function findMissingLibraries(binary: string): Promise<string[]> {
-  const { stdout } = await execFileAsync('ldd', [binary], {
+  // the portable launcher adds its bundled fallback libraries before running ldd
+  const portable = fs.existsSync(`${binary}.bin`)
+  const { stdout } = await execFileAsync(portable ? binary : 'ldd', portable ? ['--check-libraries'] : [binary], {
     env: buildCleanBuildEnv(),
     encoding: 'utf8',
     maxBuffer: 5 * 1024 * 1024
@@ -135,22 +166,25 @@ async function findMissingLibraries(binary: string): Promise<string[]> {
 
 /** true when layered with rpm-ostree, which needs a reboot */
 async function installMissingLibraries(distro: PrebuiltDistro, missing: string[]): Promise<boolean> {
-  if (distro === 'fedora-44' && isOstreeSystem()) {
+  const ids = parseOsReleaseIds(fs.existsSync('/etc/os-release') ? fs.readFileSync('/etc/os-release', 'utf8') : '')
+  const bySoname = missing.map(soname => `${soname}()(64bit)`)
+  if (isOstreeSystem()) {
     // --allow-inactive: a provider may already be in the base image
-    await execFileAsync('rpm-ostree', [
-      'install', '--idempotent', '--allow-inactive', ...missing.map(soname => `${soname}()(64bit)`)
-    ], { timeout: 1_200_000, maxBuffer: 10 * 1024 * 1024 })
+    await execFileAsync('rpm-ostree', ['install', '--idempotent', '--allow-inactive', ...bySoname],
+      { timeout: 1_200_000, maxBuffer: 10 * 1024 * 1024 })
     return true
   }
   const elevate = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
   let command: string[]
-  switch (distro) {
-    case 'fedora-44':
-      command = ['dnf', 'install', '-y', ...missing.map(soname => `${soname}()(64bit)`)]
-      break
-    case 'ubuntu-24.04':
-      command = ['apt-get', 'install', '-y', ...RUNTIME_DEPS_UBUNTU]
-      break
+  if (distro === 'ubuntu-24.04') {
+    command = ['apt-get', 'install', '-y', ...RUNTIME_DEPS_UBUNTU]
+  } else if (ids.includes('fedora') && isCommandAvailable('dnf')) {
+    command = ['dnf', 'install', '-y', ...bySoname]
+  } else if ((ids.includes('suse') || ids.includes('opensuse')) && isCommandAvailable('zypper')) {
+    command = ['zypper', '--non-interactive', 'install', ...bySoname]
+  } else {
+    // apt and pacman can't install by soname without a file index
+    throw new Error(`These system libraries are missing: ${missing.join(', ')}. Install the packages providing them with your package manager.`)
   }
   await execFileAsync(elevate, command, { timeout: 600_000, maxBuffer: 10 * 1024 * 1024 })
   return false
@@ -173,8 +207,11 @@ export async function installLwePrebuilt(win: BrowserWindow): Promise<void> {
 
     send({ stage: 'downloading', message: 'Looking up the latest release...', percentage: 2 })
     const release = await fetchLatestRelease()
-    const asset = release.assets.find(a => a.name === target.asset)
+    // fall back to the portable build
+    const portableAsset = assetName(isKdeSession() ? 'kde' : 'generic', 'portable')
+    const asset = release.assets.find(a => a.name === target.asset) ?? release.assets.find(a => a.name === portableAsset)
     if (!asset) throw new Error(`Release ${release.tag_name} has no ${target.asset}.`)
+    const assetDistro: PrebuiltDistro = asset.name === portableAsset ? 'portable' : distro
 
     const installed = readPrebuiltRelease()
     const binary = path.join(installDir, 'linux-wallpaperengine')
@@ -214,7 +251,7 @@ export async function installLwePrebuilt(win: BrowserWindow): Promise<void> {
         message: `Installing missing system libraries (sudo required): ${missing.join(', ')}`,
         percentage: 88
       })
-      if (await installMissingLibraries(distro, missing)) {
+      if (await installMissingLibraries(assetDistro, missing)) {
         resetLweDetection()
         send({
           stage: 'done',
@@ -234,7 +271,7 @@ export async function installLwePrebuilt(win: BrowserWindow): Promise<void> {
       stage: 'done',
       message: upToDate
         ? `linux-wallpaperengine ${release.tag_name} is already up to date.`
-        : `linux-wallpaperengine ${release.tag_name} installed (${target.label}).`,
+        : `linux-wallpaperengine ${release.tag_name} installed (${assetDistro === distro ? target.label : DISTRO_LABELS.portable}).`,
       percentage: 100
     })
   } catch (err) {

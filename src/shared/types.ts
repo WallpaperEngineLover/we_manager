@@ -390,6 +390,8 @@ export interface LweStatus {
   installed: boolean
   path?: string
   version?: string
+  /** A package manager owns the binary, it can't be uninstalled here */
+  managedBy?: string
 }
 
 export type LinuxDistro = 'fedora' | 'arch' | 'debian' | 'unknown'
@@ -401,6 +403,8 @@ export interface LwePrebuiltTarget {
   asset?: string
   label?: string
   reason?: string
+  /** The engine comes with the app (Flatpak) */
+  managed?: boolean
 }
 
 export interface LweInstallProgress {

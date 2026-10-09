@@ -5,3 +5,13 @@ dist/
 *.db
 *.tsbuildinfo
 preview-cache/
+# packaging/flatpak/fetch-sources.sh downloads, flatpak-builder state and bundles
+packaging/flatpak/*.deb
+packaging/flatpak/*.tar.gz
+.flatpak-builder/
+build-dir/
+repo/
+*.flatpak
+# makepkg runs in the AUR package folder
+packaging/aur/*/*
+!packaging/aur/*/PKGBUILD

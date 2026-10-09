@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -7,6 +8,7 @@ import { WE_APP_ID, STANDALONE_APP_ID } from '@shared/constants'
 import type { DownloadProgressEvent, WorkshopAuthorInfo } from '@shared/types'
 import { getSteamIdentity } from './config.service'
 import { encodeBigInts, decodeBigInts, type SteamHostResponse } from '../steam-host-protocol'
+import { hostCommand, isFlatpak } from '../utils/flatpak'
 
 // Steam counts a process that called SteamAPI_Init as a running game, which also breaks Steam
 // Game Recording. Like WE's ui32.exe, the connection only lives while the window is shown.
@@ -32,9 +34,21 @@ const STEAM_PID_FILES = [
 const PROCESS_CHECK_TTL_MS = 5000
 let processCheck = { at: 0, alive: false }
 
-// Flatpak Steam writes a pid from its own namespace, hence the /proc scan fallback
+// Flatpak Steam writes a pid from its own namespace, hence the /proc scan fallback (the host is asked from our own Flatpak)
 function steamProcessAlive(): boolean {
   if (Date.now() - processCheck.at < PROCESS_CHECK_TTL_MS) return processCheck.alive
+  if (isFlatpak()) {
+    let hostAlive = false
+    try {
+      const [file, args] = hostCommand('pgrep', ['-x', 'steam'])
+      execFileSync(file, args, { stdio: 'ignore', timeout: 5000 })
+      hostAlive = true
+    } catch {
+      hostAlive = false
+    }
+    processCheck = { at: Date.now(), alive: hostAlive }
+    return hostAlive
+  }
   let alive = false
   for (const file of STEAM_PID_FILES) {
     try {

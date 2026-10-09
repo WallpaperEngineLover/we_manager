@@ -47,7 +47,8 @@ export default function SettingsView() {
   const [distro, setDistro] = useState<LinuxDistro | null>(null)
   const [prebuiltTarget, setPrebuiltTarget] = useState<LwePrebuiltTarget | null>(null)
   const [showSourceBuild, setShowSourceBuild] = useState(false)
-  const sourceBuildVisible = showSourceBuild || prebuiltTarget?.supported === false
+  const engineManaged = prebuiltTarget?.managed === true
+  const sourceBuildVisible = !engineManaged && (showSourceBuild || prebuiltTarget?.supported === false)
   const [uninstalling, setUninstalling] = useState(false)
   const [uninstallMsg, setUninstallMsg] = useState<string | null>(null)
   const [killingLwe, setKillingLwe] = useState(false)
@@ -731,6 +732,9 @@ export default function SettingsView() {
                   {lweStatus.path && (
                     <p className="text-xs text-gray-500">Path: {lweStatus.path}</p>
                   )}
+                  {lweStatus.managedBy && !engineManaged && (
+                    <p className="text-xs text-gray-500">Installed by {lweStatus.managedBy}</p>
+                  )}
                 </>
               ) : (
                 <div className="flex items-center gap-2 text-sm text-yellow-400">
@@ -742,7 +746,7 @@ export default function SettingsView() {
               {prebuiltTarget?.supported ? (
                 <p className="text-xs text-gray-500">Prebuilt build: {prebuiltTarget.label}</p>
               ) : prebuiltTarget && (
-                <p className="text-xs text-yellow-500/80">{prebuiltTarget.reason}</p>
+                <p className={`text-xs ${engineManaged ? 'text-gray-500' : 'text-yellow-500/80'}`}>{prebuiltTarget.reason}</p>
               )}
 
               <div className="flex flex-wrap gap-2">
@@ -766,7 +770,7 @@ export default function SettingsView() {
                           : 'Switch to prebuilt build'}
                   </button>
                 )}
-                {lweStatus.installed && (
+                {lweStatus.installed && !engineManaged && !lweStatus.managedBy && (
                   <button
                     onClick={handleUninstallLwe}
                     disabled={isBusy}
@@ -793,12 +797,14 @@ export default function SettingsView() {
             </div>
           )}
 
-          <button
-            onClick={() => setShowSourceBuild(!sourceBuildVisible)}
-            className="mt-4 text-xs text-gray-400 hover:text-gray-200"
-          >
-            {sourceBuildVisible ? '▾' : '▸'} Build from source
-          </button>
+          {!engineManaged && (
+            <button
+              onClick={() => setShowSourceBuild(!sourceBuildVisible)}
+              className="mt-4 text-xs text-gray-400 hover:text-gray-200"
+            >
+              {sourceBuildVisible ? '▾' : '▸'} Build from source
+            </button>
+          )}
 
           {sourceBuildVisible && (
             <div className="mt-2 space-y-2 rounded-lg bg-white/[0.02] p-3">

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.WallpaperEngineLover.we_manager</id>
+  <name>WE Manager</name>
+  <summary>Play Wallpaper Engine wallpapers on the Linux desktop</summary>
+  <developer id="io.github.wallpaperenginelover">
+    <name>WallpaperEngineLover</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT AND GPL-3.0-only</project_license>
+  <description>
+    <p>
+      WE Manager browses the Steam Workshop of Wallpaper Engine, keeps a library of your wallpapers with folders,
+      tags and playlists, and plays them on your desktop with linux-wallpaperengine, which comes with it.
+    </p>
+    <p>
+      Scene, video and web wallpapers run per screen on KDE Plasma, wlroots compositors and X11. Wallpaper Engine
+      has to be in your Steam library for its assets and the Workshop.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.WallpaperEngineLover.we_manager.desktop</launchable>
+  <url type="homepage">https://github.com/WallpaperEngineLover/we_manager</url>
+  <url type="bugtracker">https://github.com/WallpaperEngineLover/we_manager/issues</url>
+  <categories>
+    <category>Utility</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.8.1" date="2026-10-09" />
+  </releases>
+</component>

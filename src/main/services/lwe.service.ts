@@ -26,7 +26,8 @@ import {
   getWaylandDisplay,
   getXdgRuntimeDir
 } from '../utils/platform'
-import { getWorkshopPath, getLweManifestPath, getLwePrebuiltDir } from '../utils/paths'
+import { getWorkshopPath, getLweManifestPath, getLwePrebuiltDir, getSteamRoots } from '../utils/paths'
+import { isFlatpak } from '../utils/flatpak'
 import {
   getLweRepoUrl,
   getLweRepoBranch,
@@ -166,7 +167,11 @@ function parseExtraCmakeArgs(raw: string | null): string[] {
   return args
 }
 
+/** The engine the Flatpak ships */
+const FLATPAK_LWE_BINARY = '/app/bin/linux-wallpaperengine'
+
 function findLweBinary(): string | undefined {
+  if (isFlatpak()) return fs.existsSync(FLATPAK_LWE_BINARY) ? FLATPAK_LWE_BINARY : undefined
   for (const p of LWE_SEARCH_PATHS) {
     try {
       fs.accessSync(p, fs.constants.X_OK)
@@ -189,15 +194,55 @@ function isPrebuiltPath(p: string): boolean {
   return p.startsWith(getLwePrebuiltDir() + path.sep)
 }
 
+let ownerCache: { path: string; owner: string | undefined } | undefined
+
+/** What installed the binary when it isn't ours to remove: the Flatpak, a Nix profile or a distribution package */
+export function lwePackageOwner(binary: string): string | undefined {
+  let real = binary
+  try { real = fs.realpathSync(binary) } catch { /* keep the path */ }
+  if (ownerCache?.path === real) return ownerCache.owner
+  let owner: string | undefined
+  if (isFlatpak() && real.startsWith('/app/')) {
+    owner = 'the Flatpak'
+  } else if (real.startsWith('/nix/store/')) {
+    owner = 'Nix'
+  } else {
+    const queries: [string, string[], (out: string) => string][] = [
+      ['pacman', ['-Qoq', real], out => `pacman (${out})`],
+      ['rpm', ['-qf', '--qf', '%{NAME}', real], out => `rpm (${out})`],
+      ['dpkg-query', ['-S', real], out => `dpkg (${out.split(':')[0]})`]
+    ]
+    for (const [command, args, label] of queries) {
+      if (!isCommandAvailable(command)) continue
+      try {
+        const out = execFileSync(command, args, { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+        if (out) {
+          owner = label(out.split('\n')[0])
+          break
+        }
+      } catch { /* not owned by a package */ }
+    }
+  }
+  ownerCache = { path: real, owner }
+  return owner
+}
+
 export function getLweStatus(): LweStatus {
   const found = findLweBinary()
   if (!found) return { installed: false }
   const version = isPrebuiltPath(found) ? readPrebuiltRelease()?.tag : undefined
-  return version ? { installed: true, path: found, version } : { installed: true, path: found }
+  const managedBy = isPrebuiltPath(found) ? undefined : lwePackageOwner(found)
+  return {
+    installed: true,
+    path: found,
+    ...(version ? { version } : {}),
+    ...(managedBy ? { managedBy } : {})
+  }
 }
 
 /** Forget everything detected about the previous binary after it was installed, replaced or removed */
 export function resetLweDetection(): void {
+  ownerCache = undefined
   invalidateCommandCache(LWE_BINARY)
   invalidateObjectFlagsSupport()
   invalidateAudioSensitivitySupport()
@@ -207,6 +252,8 @@ export function resetLweDetection(): void {
   invalidateExpandCanvasSupport()
   invalidateHelpText()
 }
+
+const FLATPAK_MANAGED = 'linux-wallpaperengine comes with the Flatpak and is updated with it.'
 
 export function parseOsReleaseIds(release: string): string[] {
   const ids: string[] = []
@@ -300,6 +347,11 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
     win.webContents.send(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, progress)
   }
 
+  if (isFlatpak()) {
+    send({ stage: 'error', message: FLATPAK_MANAGED, percentage: 0 })
+    return
+  }
+
   const distro = detectDistro()
   if (distro === 'unknown') {
     send({
@@ -375,6 +427,11 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
 export async function installLwe(win: BrowserWindow): Promise<void> {
   const send = (progress: LweInstallProgress) => {
     win.webContents.send(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, progress)
+  }
+
+  if (isFlatpak()) {
+    send({ stage: 'error', message: FLATPAK_MANAGED, percentage: 0 })
+    return
   }
 
   // read by the catch handler to decide whether to preserve or wipe the build cache
@@ -597,9 +654,13 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
 }
 
 export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> {
+  if (isFlatpak()) return { ok: false, message: FLATPAK_MANAGED }
   const status = getLweStatus()
   if (!status.installed || !status.path) {
     return { ok: false, message: 'linux-wallpaperengine is not installed.' }
+  }
+  if (status.managedBy) {
+    return { ok: false, message: `linux-wallpaperengine was installed by ${status.managedBy}, remove it there.` }
   }
 
   await stopLwe()
@@ -681,12 +742,9 @@ function findWeAssetsDir(): string | undefined {
   }
 
   // Fallback: scan common Steam locations
-  const home = os.homedir()
-  const candidates = [
-    path.join(home, '.steam', 'steam', 'steamapps', 'common', 'wallpaper_engine', 'assets'),
-    path.join(home, '.local', 'share', 'Steam', 'steamapps', 'common', 'wallpaper_engine', 'assets')
-  ]
-  return candidates.find(p => fs.existsSync(p))
+  return getSteamRoots()
+    .map(root => path.join(root, 'steamapps', 'common', 'wallpaper_engine', 'assets'))
+    .find(p => fs.existsSync(p))
 }
 
 function getLweLibDir(): string {
@@ -731,15 +789,19 @@ function getLweBinaryPath(): string {
 
 function buildLweEnvVars(): string[] {
   const vars: string[] = []
+  // a Nix build carries its own closure, host libraries would clash
+  const fromNix = getLweBinaryPath().startsWith('/nix/store/')
 
-  vars.push(`LD_LIBRARY_PATH=${getLweLdLibraryPath()}`)
+  if (fromNix) vars.push('-u', 'LD_LIBRARY_PATH', '-u', 'LD_PRELOAD')
+  else vars.push(`LD_LIBRARY_PATH=${getLweLdLibraryPath()}`)
 
   // CEF bundles its own libEGL.so alongside the LWE binary. LD_LIBRARY_PATH includes the
   // binary's directory so CEF's EGL shadows Mesa's system EGL, breaking Wayland rendering.
   // Force the system EGL via LD_PRELOAD so Mesa's implementation is always used.
-  const systemEgl = ['/lib64/libEGL.so.1', '/usr/lib64/libEGL.so.1', '/usr/lib/libEGL.so.1']
+  const systemEgl = ['/lib64/libEGL.so.1', '/usr/lib64/libEGL.so.1', '/usr/lib/x86_64-linux-gnu/libEGL.so.1',
+    '/usr/lib/libEGL.so.1']
     .find(p => fs.existsSync(p))
-  if (systemEgl) vars.push(`LD_PRELOAD=${systemEgl}`)
+  if (systemEgl && !fromNix) vars.push(`LD_PRELOAD=${systemEgl}`)
 
   const waylandDisplay = getWaylandDisplay()
   if (waylandDisplay) vars.push(`WAYLAND_DISPLAY=${waylandDisplay}`)

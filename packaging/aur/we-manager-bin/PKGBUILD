@@ -1,0 +1,28 @@
+# Maintainer: UwU <260361707+WallpaperEngineLover@users.noreply.github.com>
+# pkgver and the checksum are set by .github/workflows/aur.yml on every release
+pkgname=we-manager-bin
+_pkgname=we-manager
+pkgver=0.8.1
+pkgrel=1
+pkgdesc="Wallpaper Engine workshop manager for linux-wallpaperengine"
+arch=('x86_64')
+url="https://github.com/WallpaperEngineLover/we_manager"
+license=('MIT')
+# Electron's runtime, as the .deb lists it
+depends=('gtk3' 'libnotify' 'nss' 'libxss' 'libxtst' 'xdg-utils' 'at-spi2-core' 'util-linux-libs' 'libsecret')
+optdepends=('linux-wallpaperengine-kde-bin: the wallpaper engine, prebuilt'
+    'linux-wallpaperengine-kde-git: the wallpaper engine, built from git')
+provides=('we-manager')
+conflicts=('we-manager')
+options=('!strip' '!debug')
+source=("${_pkgname}_${pkgver}_amd64.deb::$url/releases/download/v$pkgver/${_pkgname}_${pkgver}_amd64.deb")
+sha256sums=('SKIP')
+
+package() {
+    bsdtar -xf data.tar.* -C "$pkgdir"
+    # the .deb's postinst does these
+    chmod 4755 "$pkgdir/opt/WE Manager/chrome-sandbox"
+    install -d "$pkgdir/usr/bin"
+    ln -s "/opt/WE Manager/we-manager" "$pkgdir/usr/bin/we-manager"
+    rm -rf "$pkgdir/usr/share/doc"
+}

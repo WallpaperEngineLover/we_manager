@@ -1,4 +1,5 @@
 import { execSync } from 'child_process'
+import { hostShell } from './flatpak'
 
 export type DisplayServer = 'wayland' | 'x11' | 'unknown'
 export type DesktopEnvironment = 'gnome' | 'kde' | 'hyprland' | 'sway' | 'other'
@@ -55,7 +56,7 @@ export function getConnectedScreens(): string[] {
   if (isWayland) {
     // wlr-randr (wlroots compositors: hyprland, sway, etc.)
     try {
-      const output = execSync('wlr-randr 2>/dev/null', { encoding: 'utf8', timeout: 5000 })
+      const output = execSync(hostShell('wlr-randr 2>/dev/null'), { encoding: 'utf8', timeout: 5000 })
       const screens = output
         .split('\n')
         .filter(line => /^[A-Za-z]/.test(line) && !line.startsWith(' '))
@@ -66,7 +67,7 @@ export function getConnectedScreens(): string[] {
 
     // KDE Plasma Wayland: kscreen-doctor
     try {
-      const output = execSync('kscreen-doctor --outputs 2>/dev/null', { encoding: 'utf8', timeout: 5000 })
+      const output = execSync(hostShell('kscreen-doctor --outputs 2>/dev/null'), { encoding: 'utf8', timeout: 5000 })
       // Strip ANSI color/escape codes before parsing
       const clean = output.replace(/\x1b\[[0-9;]*m/g, '')
       const screens = clean
@@ -82,7 +83,7 @@ export function getConnectedScreens(): string[] {
     // GNOME Wayland: gnome-randr or mutter output names via gdbus
     try {
       const output = execSync(
-        "gdbus call --session --dest org.gnome.Mutter.DisplayConfig --object-path /org/gnome/Mutter/DisplayConfig --method org.gnome.Mutter.DisplayConfig.GetCurrentState 2>/dev/null",
+        hostShell("gdbus call --session --dest org.gnome.Mutter.DisplayConfig --object-path /org/gnome/Mutter/DisplayConfig --method org.gnome.Mutter.DisplayConfig.GetCurrentState 2>/dev/null"),
         { encoding: 'utf8', timeout: 5000 }
       )
       const screens = [...output.matchAll(/connector:\s*'([^']+)'/gi)].map(m => m[1])
@@ -92,7 +93,7 @@ export function getConnectedScreens(): string[] {
 
   // X11: use xrandr
   try {
-    const output = execSync('xrandr --query 2>/dev/null', { encoding: 'utf8', timeout: 5000 })
+    const output = execSync(hostShell('xrandr --query 2>/dev/null'), { encoding: 'utf8', timeout: 5000 })
     const screens = output
       .split('\n')
       .filter(line => / connected/i.test(line))

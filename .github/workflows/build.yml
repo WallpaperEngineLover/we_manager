@@ -75,8 +75,44 @@ jobs:
             dist/*.deb
           if-no-files-found: error
 
+  # the app's .deb plus the engine's latest portable release, see packaging/flatpak
+  flatpak:
+    needs: we-manager
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: we-manager
+          path: ${{ runner.temp }}/we-manager
+
+      - name: Collect sources
+        run: |
+          cp "$RUNNER_TEMP"/we-manager/*.deb packaging/flatpak/we-manager.deb
+          url=$(curl -fsSL https://api.github.com/repos/WallpaperEngineLover/linux-wallpaperengine-kde/releases/latest |
+            jq -r '.assets[] | select(.name == "linux-wallpaperengine-kde-portable-x86_64.tar.gz") | .browser_download_url')
+          [ -n "$url" ] || { echo "the latest linux-wallpaperengine-kde release has no portable tarball"; exit 1; }
+          curl -fL "$url" -o packaging/flatpak/linux-wallpaperengine-kde-portable-x86_64.tar.gz
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: we-manager.flatpak
+          manifest-path: packaging/flatpak/io.github.WallpaperEngineLover.we_manager.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+          upload-artifact: false
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: we-manager-flatpak
+          path: we-manager.flatpak
+          if-no-files-found: error
+
   release:
-    needs: [steamworks-vote, we-manager]
+    needs: [steamworks-vote, we-manager, flatpak]
     if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.we-manager.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
@@ -102,4 +138,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
-            release/*.AppImage release/*.deb $(ls release/steamworks.js-*.tgz 2>/dev/null)
+            release/*.AppImage release/*.deb $(ls release/steamworks.js-*.tgz release/*.flatpak 2>/dev/null)
+
+  aur:
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      HAS_AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set the version
+        run: sed -i -e "s/^pkgver=.*/pkgver=${GITHUB_REF_NAME#v}/" -e "s/^pkgrel=.*/pkgrel=1/"
+          packaging/aur/we-manager-bin/PKGBUILD
+
+      - name: Publish we-manager-bin to the AUR
+        if: env.HAS_AUR_KEY == 'true'
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        with:
+          pkgname: we-manager-bin
+          pkgbuild: ./packaging/aur/we-manager-bin/PKGBUILD
+          updpkgsums: true
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: Update to ${{ github.ref_name }}

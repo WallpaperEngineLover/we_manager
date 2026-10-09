@@ -1,0 +1,75 @@
+# WE Manager with linux-wallpaperengine inside. Both come from their releases: the app's .deb and the engine's
+# portable tarball, which carries its own libraries except what this runtime provides (GTK, NSS, CUPS, Mesa,
+# PipeWire). fetch-sources.sh puts them next to this file, CI uses the .deb it just built.
+#
+#   packaging/flatpak/fetch-sources.sh
+#   flatpak-builder --user --install --force-clean build-dir packaging/flatpak/io.github.WallpaperEngineLover.we_manager.yml
+id: io.github.WallpaperEngineLover.we_manager
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+base: org.electronjs.Electron2.BaseApp
+base-version: '25.08'
+command: we-manager
+separate-locales: false
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  # wallpaper sounds, and the desktop audio the visualizers react to (the sink's monitor source)
+  - --socket=pulseaudio
+  - --device=dri
+  # the Steam client's IPC (steamworks.js) uses shared memory
+  - --device=shm
+  # Steam libraries and workshop folders, Wallpaper Engine's assets, the user's own wallpaper folders
+  - --filesystem=home
+  - --filesystem=~/.var/app/com.valvesoftware.Steam
+  # library folders on other disks
+  - --filesystem=/mnt
+  - --filesystem=/media
+  - --filesystem=/run/media
+  # the host's display tools (kscreen-doctor, wlr-randr, xrandr), wallpaper setters, the desktop icons overlay
+  # and the programs user shortcuts start
+  - --talk-name=org.freedesktop.Flatpak
+  # KDE integration: KWin scripts for the cursor and fullscreen detection, which call back into the engine
+  - --talk-name=org.kde.KWin
+  - --talk-name=org.kde.plasmashell
+  - --own-name=org.linuxwallpaperengine.*
+  # media info for wallpapers that show the playing song
+  - --talk-name=org.mpris.MediaPlayer2.*
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.Notifications
+
+modules:
+  - name: linux-wallpaperengine
+    buildsystem: simple
+    sources:
+      - type: archive
+        path: linux-wallpaperengine-kde-portable-x86_64.tar.gz
+        dest: engine
+    build-commands:
+      - mkdir -p /app/lib/linux-wallpaperengine-kde /app/bin
+      - cp -a engine/. /app/lib/linux-wallpaperengine-kde/
+      - ln -s ../lib/linux-wallpaperengine-kde/linux-wallpaperengine /app/bin/linux-wallpaperengine
+
+  - name: we-manager
+    buildsystem: simple
+    sources:
+      - type: file
+        path: we-manager.deb
+      - type: file
+        path: we-manager.sh
+      - type: file
+        path: io.github.WallpaperEngineLover.we_manager.metainfo.xml
+    build-commands:
+      - ar x we-manager.deb
+      - tar -xf data.tar.*
+      - cp -a "opt/WE Manager" /app/we-manager
+      - install -Dm755 we-manager.sh /app/bin/we-manager
+      - install -Dm644 usr/share/applications/we-manager.desktop /app/share/applications/${FLATPAK_ID}.desktop
+      - desktop-file-edit --set-key=Exec --set-value='we-manager %U' --set-icon=${FLATPAK_ID}
+        /app/share/applications/${FLATPAK_ID}.desktop
+      - for size in 16 32 48 64 128 256; do install -Dm644 usr/share/icons/hicolor/${size}x${size}/apps/we-manager.png
+        /app/share/icons/hicolor/${size}x${size}/apps/${FLATPAK_ID}.png; done
+      - install -Dm644 ${FLATPAK_ID}.metainfo.xml /app/share/metainfo/${FLATPAK_ID}.metainfo.xml

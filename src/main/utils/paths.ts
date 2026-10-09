@@ -22,13 +22,21 @@ export function getExtraLibraryRoots(): string[] {
   return roots
 }
 
+/** Where Steam keeps its own library on Linux: native, Flatpak Steam, Snap */
+export function getSteamRoots(): string[] {
+  const home = os.homedir()
+  return [
+    path.join(home, '.steam', 'steam'),
+    path.join(home, '.local', 'share', 'Steam'),
+    path.join(home, '.var', 'app', 'com.valvesoftware.Steam', '.local', 'share', 'Steam'),
+    path.join(home, 'snap', 'steam', 'common', '.local', 'share', 'Steam')
+  ]
+}
+
 export function getDefaultWorkshopPath(): string {
   const home = os.homedir()
   if (process.platform === 'linux') {
-    const candidates = [
-      path.join(home, '.steam', 'steam', 'steamapps', 'workshop', 'content', String(WE_APP_ID)),
-      path.join(home, '.local', 'share', 'Steam', 'steamapps', 'workshop', 'content', String(WE_APP_ID))
-    ]
+    const candidates = getSteamRoots().map((root) => path.join(root, 'steamapps', 'workshop', 'content', String(WE_APP_ID)))
     return candidates.find((p) => fs.existsSync(p)) ?? candidates[0]
   }
   if (process.platform === 'win32') {

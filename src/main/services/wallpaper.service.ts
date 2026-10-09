@@ -3,7 +3,8 @@ import { promisify } from 'util'
 import * as os from 'os'
 import * as fs from 'fs'
 import * as path from 'path'
-import { detectDisplayServer, detectDesktopEnv, isCommandAvailable } from '../utils/platform'
+import { detectDisplayServer, detectDesktopEnv } from '../utils/platform'
+import { hostCommand, isHostCommandAvailable } from '../utils/flatpak'
 import type { ScreenTarget, WallpaperBackend, WallpaperEnvironment, WallpaperMeta } from '@shared/types'
 import { getLweStatus, launchLweAsync, type LweLaunchOptions } from './lwe.service'
 import { ensureDependencyInstalled } from './dependency.service'
@@ -40,12 +41,12 @@ export function detectEnvironment(): WallpaperEnvironment {
   } else if (platform === 'darwin') {
     available.push('macos')
   } else {
-    if (isCommandAvailable('swww')) available.push('swww')
-    if (isCommandAvailable('swaybg')) available.push('swaybg')
-    if (isCommandAvailable('feh')) available.push('feh')
-    if (isCommandAvailable('xwallpaper')) available.push('xwallpaper')
+    if (isHostCommandAvailable('swww')) available.push('swww')
+    if (isHostCommandAvailable('swaybg')) available.push('swaybg')
+    if (isHostCommandAvailable('feh')) available.push('feh')
+    if (isHostCommandAvailable('xwallpaper')) available.push('xwallpaper')
     if (desktopEnv === 'gnome') available.push('gsettings')
-    if (desktopEnv === 'kde' && isCommandAvailable('qdbus')) available.push('qdbus')
+    if (desktopEnv === 'kde' && isHostCommandAvailable('qdbus')) available.push('qdbus')
   }
 
   let recommended: WallpaperBackend = 'auto'
@@ -97,39 +98,39 @@ async function applyLinux(imagePath: string, preferredBackend?: WallpaperBackend
 function pickLinuxBackend(): WallpaperBackend | null {
   const de = detectDesktopEnv()
   if (de === 'gnome') return 'gsettings'
-  if (de === 'kde' && isCommandAvailable('qdbus')) return 'qdbus'
+  if (de === 'kde' && isHostCommandAvailable('qdbus')) return 'qdbus'
 
   if (detectDisplayServer() === 'wayland') {
-    if (isCommandAvailable('swww')) return 'swww'
-    if (isCommandAvailable('swaybg')) return 'swaybg'
+    if (isHostCommandAvailable('swww')) return 'swww'
+    if (isHostCommandAvailable('swaybg')) return 'swaybg'
   }
 
-  if (isCommandAvailable('feh')) return 'feh'
-  if (isCommandAvailable('xwallpaper')) return 'xwallpaper'
+  if (isHostCommandAvailable('feh')) return 'feh'
+  if (isHostCommandAvailable('xwallpaper')) return 'xwallpaper'
   return null
 }
 
 async function applyWithBackend(backend: WallpaperBackend, imagePath: string): Promise<void> {
   switch (backend) {
     case 'swww':
-      await execFileAsync('swww', ['img', imagePath, '--transition-type', 'fade'])
+      await execFileAsync(...hostCommand('swww', ['img', imagePath, '--transition-type', 'fade']))
       break
     case 'swaybg':
-      await execFileAsync('swaybg', ['-i', imagePath, '-m', 'fill'])
+      await execFileAsync(...hostCommand('swaybg', ['-i', imagePath, '-m', 'fill']))
       break
     case 'feh':
-      await execFileAsync('feh', ['--bg-fill', imagePath])
+      await execFileAsync(...hostCommand('feh', ['--bg-fill', imagePath]))
       break
     case 'xwallpaper':
-      await execFileAsync('xwallpaper', ['--zoom', imagePath])
+      await execFileAsync(...hostCommand('xwallpaper', ['--zoom', imagePath]))
       break
     case 'gsettings':
-      await execFileAsync('gsettings', [
+      await execFileAsync(...hostCommand('gsettings', [
         'set',
         'org.gnome.desktop.background',
         'picture-uri',
         `file://${imagePath}`
-      ])
+      ]))
       break
     case 'qdbus': {
       const script = `
@@ -141,12 +142,12 @@ async function applyWithBackend(backend: WallpaperBackend, imagePath: string): P
           d.writeConfig('Image', 'file://${imagePath}');
         }
       `
-      await execFileAsync('qdbus', [
+      await execFileAsync(...hostCommand('qdbus', [
         'org.kde.plasmashell',
         '/PlasmaShell',
         'org.kde.PlasmaShell.evaluateScript',
         script
-      ])
+      ]))
       break
     }
     case 'windows':

@@ -12,7 +12,7 @@ vi.mock('./config.service', () => ({
   getDisablePuppetAnimation: () => false
 }))
 
-const { buildCleanBuildEnv, buildHotswapLines, nodeDevelPackage, parseCustomArgs, parseOsReleaseIds } = await import('./lwe.service')
+const { buildCleanBuildEnv, buildHotswapLines, lwePackageOwner, nodeDevelPackage, parseCustomArgs, parseOsReleaseIds } = await import('./lwe.service')
 
 describe('parseCustomArgs', () => {
   it('splits on whitespace and keeps quoted values together', () => {
@@ -143,5 +143,15 @@ describe('parseOsReleaseIds', () => {
 
   it('splits several parents and ignores VARIANT_ID', () => {
     expect(parseOsReleaseIds('ID=pop\nID_LIKE="ubuntu debian"\nVARIANT_ID=x')).toEqual(['pop', 'ubuntu', 'debian'])
+  })
+})
+
+describe('lwePackageOwner', () => {
+  it('leaves Nix store engines to Nix', () => {
+    expect(lwePackageOwner('/nix/store/abc-linux-wallpaperengine-kde/bin/linux-wallpaperengine')).toBe('Nix')
+  })
+
+  it('owns nothing in a folder of ours', () => {
+    expect(lwePackageOwner('/tmp/not-installed-by-anything/linux-wallpaperengine')).toBeUndefined()
   })
 })
