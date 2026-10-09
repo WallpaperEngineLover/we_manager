@@ -75,9 +75,52 @@ jobs:
             dist/*.deb
           if-no-files-found: error
 
-  # the app's .deb plus the engine's latest portable release, see packaging/flatpak
+  # the engine's portable tarball for the Flatpak: from the newest release that has one, else the newest artifact of the
+  # engine's CMake workflow (a release only gets the tarball at the end of that run)
+  engine-portable:
+    runs-on: ubuntu-latest
+    outputs:
+      found: ${{ steps.fetch.outputs.found }}
+    steps:
+      - name: Fetch the portable engine
+        id: fetch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENGINE: WallpaperEngineLover/linux-wallpaperengine-kde
+          ASSET: linux-wallpaperengine-kde-portable-x86_64.tar.gz
+        run: |
+          mkdir -p engine
+          tag=$(gh api "repos/$ENGINE/releases?per_page=30" \
+            --jq "[.[] | select(any(.assets[]; .name == \"$ASSET\"))][0].tag_name // empty")
+          if [ -n "$tag" ]; then
+            echo "using release $tag"
+            gh release download "$tag" -R "$ENGINE" -p "$ASSET" -D engine
+          else
+            # the newest unexpired artifact, also from a run that failed later on or is still going
+            run=$(gh api "repos/$ENGINE/actions/artifacts?name=linux-wallpaperengine-kde-portable&per_page=10" \
+              --jq '[.artifacts[] | select(.expired | not)][0].workflow_run.id // empty')
+            if [ -n "$run" ] && gh run download "$run" -R "$ENGINE" -n linux-wallpaperengine-kde-portable -D engine; then
+              echo "using the artifact of CMake run $run"
+            fi
+          fi
+          if [ -f "engine/$ASSET" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::no portable linux-wallpaperengine-kde build in a release or a CMake run artifact, skipping the Flatpak"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: steps.fetch.outputs.found == 'true'
+        with:
+          name: engine-portable
+          path: engine/linux-wallpaperengine-kde-portable-x86_64.tar.gz
+          if-no-files-found: error
+
+  # the app's .deb from above plus the portable engine, see packaging/flatpak
   flatpak:
-    needs: we-manager
+    needs: [we-manager, engine-portable]
+    if: needs.engine-portable.outputs.found == 'true'
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
@@ -90,13 +133,13 @@ jobs:
           name: we-manager
           path: ${{ runner.temp }}/we-manager
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: engine-portable
+          path: packaging/flatpak
+
       - name: Collect sources
-        run: |
-          cp "$RUNNER_TEMP"/we-manager/*.deb packaging/flatpak/we-manager.deb
-          url=$(curl -fsSL https://api.github.com/repos/WallpaperEngineLover/linux-wallpaperengine-kde/releases/latest |
-            jq -r '.assets[] | select(.name == "linux-wallpaperengine-kde-portable-x86_64.tar.gz") | .browser_download_url')
-          [ -n "$url" ] || { echo "the latest linux-wallpaperengine-kde release has no portable tarball"; exit 1; }
-          curl -fL "$url" -o packaging/flatpak/linux-wallpaperengine-kde-portable-x86_64.tar.gz
+        run: cp "$RUNNER_TEMP"/we-manager/*.deb packaging/flatpak/we-manager.deb
 
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
