@@ -208,14 +208,32 @@ export function resetLweDetection(): void {
   invalidateHelpText()
 }
 
+export function parseOsReleaseIds(release: string): string[] {
+  const ids: string[] = []
+  for (const line of release.split('\n')) {
+    const match = /^(ID|ID_LIKE)=(.*)$/.exec(line.trim())
+    if (match) ids.push(...match[2].replace(/^["']|["']$/g, '').toLowerCase().split(/\s+/).filter(Boolean))
+  }
+  return ids
+}
+
 export function detectDistro(): LinuxDistro {
+  let ids: string[]
   try {
-    const release = fs.readFileSync('/etc/os-release', 'utf8').toLowerCase()
-    if (release.includes('id=fedora') || release.includes('id=nobara') || release.includes('id=rhel') || release.includes('id=centos')) return 'fedora'
-    if (release.includes('id=arch') || release.includes('id=manjaro') || release.includes('id=endeavouros')) return 'arch'
-    if (release.includes('id=debian') || release.includes('id=ubuntu') || release.includes('id=linuxmint') || release.includes('id=pop')) return 'debian'
-  } catch { /* no os-release */ }
+    ids = parseOsReleaseIds(fs.readFileSync('/etc/os-release', 'utf8'))
+  } catch {
+    return 'unknown'
+  }
+  for (const id of ids) {
+    if (['fedora', 'nobara', 'rhel', 'centos'].includes(id)) return 'fedora'
+    if (['arch', 'manjaro', 'endeavouros'].includes(id)) return 'arch'
+    if (['debian', 'ubuntu', 'linuxmint', 'pop'].includes(id)) return 'debian'
+  }
   return 'unknown'
+}
+
+export function isOstreeSystem(): boolean {
+  return fs.existsSync('/run/ostree-booted')
 }
 
 // Aligned with https://github.com/Almamu/linux-wallpaperengine (README + Wayland + FBOProvider gmpxx)
@@ -287,6 +305,15 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
     send({
       stage: 'error',
       message: 'Could not detect your Linux distribution. Please install build dependencies manually.',
+      percentage: 0
+    })
+    return
+  }
+
+  if (isOstreeSystem()) {
+    send({
+      stage: 'error',
+      message: 'This is an image-based system (rpm-ostree, e.g. Bazzite or Silverblue), the build dependencies can\'t be installed with dnf here. Use the prebuilt download above instead, or build inside a toolbox/distrobox container.',
       percentage: 0
     })
     return

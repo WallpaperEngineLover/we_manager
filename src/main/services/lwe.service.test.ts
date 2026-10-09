@@ -12,7 +12,7 @@ vi.mock('./config.service', () => ({
   getDisablePuppetAnimation: () => false
 }))
 
-const { buildCleanBuildEnv, buildHotswapLines, nodeDevelPackage, parseCustomArgs } = await import('./lwe.service')
+const { buildCleanBuildEnv, buildHotswapLines, nodeDevelPackage, parseCustomArgs, parseOsReleaseIds } = await import('./lwe.service')
 
 describe('parseCustomArgs', () => {
   it('splits on whitespace and keeps quoted values together', () => {
@@ -132,5 +132,16 @@ describe('nodeDevelPackage', () => {
   it('leaves the choice to dnf without an installed libnode', () => {
     expect(nodeDevelPackage([])).toBe('nodejs-devel')
     expect(nodeDevelPackage(['nodejs24-docs'])).toBe('nodejs-devel')
+  })
+})
+
+describe('parseOsReleaseIds', () => {
+  it('lists ID before ID_LIKE', () => {
+    const bazzite = 'NAME="Bazzite"\nVERSION_ID="44"\nID=bazzite\nID_LIKE="fedora"\nVARIANT_ID=bazzite-deck\n'
+    expect(parseOsReleaseIds(bazzite)).toEqual(['bazzite', 'fedora'])
+  })
+
+  it('splits several parents and ignores VARIANT_ID', () => {
+    expect(parseOsReleaseIds('ID=pop\nID_LIKE="ubuntu debian"\nVARIANT_ID=x')).toEqual(['pop', 'ubuntu', 'debian'])
   })
 })

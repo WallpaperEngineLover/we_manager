@@ -10,7 +10,7 @@ import { LWE_RELEASE_REPO } from '@shared/constants'
 import type { LweInstallProgress, LwePrebuiltTarget } from '@shared/types'
 import { isCommandAvailable } from '../utils/platform'
 import { getLwePrebuiltDir } from '../utils/paths'
-import { buildCleanBuildEnv, readPrebuiltRelease, resetLweDetection } from './lwe.service'
+import { buildCleanBuildEnv, isOstreeSystem, readPrebuiltRelease, resetLweDetection } from './lwe.service'
 
 const execFileAsync = promisify(execFile)
 
@@ -133,7 +133,15 @@ async function findMissingLibraries(binary: string): Promise<string[]> {
   return [...missing]
 }
 
-async function installMissingLibraries(distro: PrebuiltDistro, missing: string[]): Promise<void> {
+/** true when layered with rpm-ostree, which needs a reboot */
+async function installMissingLibraries(distro: PrebuiltDistro, missing: string[]): Promise<boolean> {
+  if (distro === 'fedora-44' && isOstreeSystem()) {
+    // --allow-inactive: a provider may already be in the base image
+    await execFileAsync('rpm-ostree', [
+      'install', '--idempotent', '--allow-inactive', ...missing.map(soname => `${soname}()(64bit)`)
+    ], { timeout: 1_200_000, maxBuffer: 10 * 1024 * 1024 })
+    return true
+  }
   const elevate = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
   let command: string[]
   switch (distro) {
@@ -145,6 +153,7 @@ async function installMissingLibraries(distro: PrebuiltDistro, missing: string[]
       break
   }
   await execFileAsync(elevate, command, { timeout: 600_000, maxBuffer: 10 * 1024 * 1024 })
+  return false
 }
 
 export async function installLwePrebuilt(win: BrowserWindow): Promise<void> {
@@ -205,7 +214,15 @@ export async function installLwePrebuilt(win: BrowserWindow): Promise<void> {
         message: `Installing missing system libraries (sudo required): ${missing.join(', ')}`,
         percentage: 88
       })
-      await installMissingLibraries(distro, missing)
+      if (await installMissingLibraries(distro, missing)) {
+        resetLweDetection()
+        send({
+          stage: 'done',
+          message: `linux-wallpaperengine ${release.tag_name} installed. The missing system libraries (${missing.join(', ')}) were added with rpm-ostree, reboot once before using it.`,
+          percentage: 100
+        })
+        return
+      }
       missing = await findMissingLibraries(binary)
       if (missing.length > 0) {
         throw new Error(`These system libraries are still missing: ${missing.join(', ')}. Install them with your package manager, or build from source.`)
