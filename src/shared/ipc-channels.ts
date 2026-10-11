@@ -133,6 +133,7 @@ export const IpcChannels = {
   LWE_HOTSWAP_SETTINGS: 'lwe:hotswap-settings',
   LWE_LIST_PROPERTIES: 'lwe:list-properties',
   LWE_LIST_SCREENS: 'lwe:list-screens',
+  LWE_INPUT_FILES: 'lwe:input-files',
   LWE_LIST_AUDIO_OBJECTS: 'lwe:list-audio-objects',
   LWE_LIST_EFFECTS: 'lwe:list-effects',
   LWE_LIST_APPLICATIONS: 'lwe:list-applications',

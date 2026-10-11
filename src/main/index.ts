@@ -14,12 +14,14 @@ import { initPlaylistPlayer, startPlaylist } from './services/playlist-player.se
 import { killAllLweProcesses, getLweStatus } from './services/lwe.service'
 import { initDisplay } from './services/display.service'
 import { initSchedule } from './services/schedule.service'
+import { hasStatusNotifierHost } from './utils/platform'
 
 const startMinimized = process.argv.includes('--minimized')
 let isQuitting = false
 let hasKilledLweOnQuit = false
 
 const BACKGROUND_SYNC_INTERVAL_MS = 3 * 60 * 1000
+const TRAY_HOST_WAIT_MS = 10_000
 
 // Keeps "liked" state and library availability fresh without the user having to restart the
 // app or click "Check unavailable" - votes cast on Steam directly (client, community website)
@@ -78,7 +80,21 @@ function startBackgroundSync(win: BrowserWindow): void {
   }, BACKGROUND_SYNC_INTERVAL_MS)
 }
 
+// gives a panel that starts after us until the deadline, then shows the window
+function showWindowUnlessTrayAppears(win: BrowserWindow): void {
+  const deadline = Date.now() + TRAY_HOST_WAIT_MS
+  const timer = setInterval(() => {
+    if (win.isDestroyed() || win.isVisible() || hasStatusNotifierHost(0)) {
+      clearInterval(timer)
+    } else if (Date.now() >= deadline) {
+      clearInterval(timer)
+      win.show()
+    }
+  }, 1000)
+}
+
 function createWindow(): BrowserWindow {
+  const startHidden = startMinimized && getTrayEnabled()
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -86,7 +102,7 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     backgroundColor: '#0f0f0f',
     titleBarStyle: 'hiddenInset',
-    show: !(startMinimized && getTrayEnabled()),
+    show: !startHidden,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -102,8 +118,9 @@ function createWindow(): BrowserWindow {
 
   // When the tray is enabled, closing the window hides it instead of quitting so the
   // tray icon remains the only way back in (and the app keeps running for playlists).
+  // Without a StatusNotifier host there is no icon to come back through, so it quits.
   win.on('close', (event) => {
-    if (getTrayEnabled() && !isQuitting) {
+    if (getTrayEnabled() && !isQuitting && hasStatusNotifierHost()) {
       event.preventDefault()
       win.hide()
     }
@@ -114,6 +131,8 @@ function createWindow(): BrowserWindow {
   } else {
     win.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
+
+  if (startHidden && !hasStatusNotifierHost()) showWindowUnlessTrayAppears(win)
 
   return win
 }

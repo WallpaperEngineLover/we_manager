@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Plus, Save, Trash2 } from 'lucide-react'
 import type { EngineFlagPreset, EngineFlags, FullscreenPauseMode } from '@shared/types'
+import { isWlrootsStyle } from '@shared/desktop'
 import { BOOLEAN_FLAGS, CHOICE_FLAGS, FULLSCREEN_PAUSE_OPTIONS } from '../../constants/engineFlags'
 import { useConfig } from '../../hooks/queries'
+import CopyField from '../common/CopyField'
 
 interface Props {
   defaultFps: number | null
@@ -49,6 +51,13 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
   const { data: environment } = useQuery({
     queryKey: ['environment'],
     queryFn: () => window.electronAPI.wallpaper.detectEnvironment()
+  })
+  const desktopEnv = environment?.desktopEnv
+  const wlroots = !!desktopEnv && isWlrootsStyle(desktopEnv)
+  const { data: inputFiles = [] } = useQuery({
+    queryKey: ['input-files'],
+    queryFn: () => window.electronAPI.lwe.inputFiles(),
+    enabled: wlroots
   })
   const [newName, setNewName] = useState('')
   const [appliedId, setAppliedId] = useState<string | null>(null)
@@ -104,21 +113,43 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
             <span className="text-sm text-gray-300">{label}</span>
           </label>
         ))}
-        {environment?.desktopEnv === 'kde' && (
+        {(desktopEnv === 'kde' || wlroots) && (
           <div>
             <label className="flex cursor-pointer items-center gap-3">
               <Toggle
                 on={!!flags.kdeBackgroundLayer}
                 onClick={() => saveFlags({ ...flags, kdeBackgroundLayer: !flags.kdeBackgroundLayer })}
               />
-              <span className="text-sm text-gray-300">Use the KDE background layer</span>
+              <span className="text-sm text-gray-300">Use the background layer</span>
             </label>
             <p className="ml-12 mt-1 text-xs text-gray-600">
-              Older versions always did this on KDE. It puts the wallpaper in the same layer as Plasma's own
-              desktop, and whichever of the two shows up last is drawn on top. At login Plasma's desktop often
-              starts after the wallpaper and hides it, so leave this off unless the default layer causes problems
-              for you, e.g. with "keep below others" windows.
+              Draws the wallpaper in the compositor's background layer instead of the bottom one. Some compositors
+              (niri) need it.
+              {desktopEnv === 'kde' && (
+                <>
+                  {' '}
+                  Older versions always did this on KDE. It is the layer of Plasma's own desktop, and whichever of
+                  the two shows up last is drawn on top. At login Plasma's desktop often starts after the wallpaper
+                  and hides it, so leave this off unless the default layer causes problems for you, e.g. with "keep
+                  below others" windows.
+                </>
+              )}
             </p>
+          </div>
+        )}
+        {wlroots && inputFiles.length > 0 && (
+          <div>
+            <p className="text-sm text-gray-300">Click forwarding</p>
+            <p className="mt-1 text-xs text-gray-600">
+              Lets a desktop shell or compositor binding pass the left mouse button on when something covers the
+              wallpaper: it writes {'{"leftDown":true}'} to the file of the screen while the button is held, and the
+              engine ignores the file once it is older than 2 seconds.
+            </p>
+            <div className="mt-2 space-y-1">
+              {inputFiles.map((file) => (
+                <CopyField key={file.screen} label={file.screen === '*' ? 'All screens' : file.screen} text={file.path} />
+              ))}
+            </div>
           </div>
         )}
         <label className="flex items-center gap-3 text-sm text-gray-300">

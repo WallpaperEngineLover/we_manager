@@ -14,7 +14,7 @@ export const BOOLEAN_FLAGS: { key: BooleanFlag; label: string; hint: string }[] 
   {
     key: 'hdr',
     label: 'HDR output',
-    hint: 'Sends HDR to monitors running in HDR mode (KDE Plasma with HDR enabled); HDR videos keep their highlights'
+    hint: 'Sends HDR to monitors running in HDR mode (Wayland compositors with color management, e.g. KDE Plasma with HDR enabled); HDR videos keep their highlights'
   }
 ]
 

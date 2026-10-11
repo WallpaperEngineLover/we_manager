@@ -66,7 +66,7 @@ import { DEFAULT_LWE_REPO } from '@shared/constants'
 import { restartWatcher } from '../services/watcher.service'
 import { importWEConfig } from '../services/library.service'
 import { createTray, destroyTray } from '../services/tray.service'
-import { isAutostartSupported, setAutostartEnabled } from '../services/autostart.service'
+import { getCompositorAutostartLine, isAutostartSupported, setAutostartEnabled } from '../services/autostart.service'
 
 export function registerConfigHandlers(): void {
   ipcMain.handle(IpcChannels.CONFIG_GET, () => ({
@@ -86,6 +86,7 @@ export function registerConfigHandlers(): void {
     autoUnsubscribeAfterBackup: getAutoUnsubscribeAfterBackup(),
     trayEnabled: getTrayEnabled(),
     autostartSupported: isAutostartSupported(),
+    autostartCompositorLine: getCompositorAutostartLine(),
     autostartEnabled: getAutostartEnabled(),
     autostartMinimized: getAutostartMinimized(),
     autostartPlaylistId: getAutostartPlaylistId(),

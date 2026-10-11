@@ -24,7 +24,8 @@ import {
   whichCommand,
   getConnectedScreens,
   getWaylandDisplay,
-  getXdgRuntimeDir
+  getXdgRuntimeDir,
+  isWaylandSession
 } from '../utils/platform'
 import { getWorkshopPath, getLweManifestPath, getLwePrebuiltDir, getSteamRoots } from '../utils/paths'
 import { isFlatpak } from '../utils/flatpak'
@@ -244,12 +245,6 @@ export function getLweStatus(): LweStatus {
 export function resetLweDetection(): void {
   ownerCache = undefined
   invalidateCommandCache(LWE_BINARY)
-  invalidateObjectFlagsSupport()
-  invalidateAudioSensitivitySupport()
-  invalidateSoundVolumeSupport()
-  invalidateEffectFlagsSupport()
-  invalidateDisableAnimationsSupport()
-  invalidateExpandCanvasSupport()
   invalidateHelpText()
 }
 
@@ -310,13 +305,16 @@ const DEPS_FEDORA = [
 ]
 
 /**
- * Fedora's Node.js packages are versioned (nodejs22, nodejs24, ...) and their -devel packages conflict, so the headers
- * have to belong to the libnode already installed; with none installed dnf picks the default for nodejs-devel
+ * Fedora's versioned nodejsNN-devel packages conflict, so an installed one is kept. Otherwise the headers must match
+ * the newest installed libnode; with none installed dnf picks the default for nodejs-devel
  */
-export function nodeDevelPackage(installedLibs: string[]): string {
+export function nodeDevelPackage(installedNodePackages: string[]): string | null {
+  const names = installedNodePackages.map((name) => name.trim())
+  if (names.some((name) => /^nodejs\d*-devel$/.test(name))) return null
+
   let best: { name: string; version: number } | undefined
-  for (const name of installedLibs) {
-    const match = /^nodejs(\d*)-libs$/.exec(name.trim())
+  for (const name of names) {
+    const match = /^nodejs(\d*)-libs$/.exec(name)
     if (!match) continue
     const version = match[1] ? Number(match[1]) : 0
     if (!best || version > best.version) best = { name: `nodejs${match[1]}-devel`, version }
@@ -324,9 +322,12 @@ export function nodeDevelPackage(installedLibs: string[]): string {
   return best?.name ?? 'nodejs-devel'
 }
 
-function installedNodeLibs(): string[] {
+function installedNodePackages(): string[] {
   try {
-    return execFileSync('rpm', ['-qa', '--qf', '%{NAME}\n', 'nodejs*-libs'], { encoding: 'utf8', timeout: 10_000 }).split('\n')
+    return execFileSync('rpm', ['-qa', '--qf', '%{NAME}\n', 'nodejs*-libs', 'nodejs*-devel'], {
+      encoding: 'utf8',
+      timeout: 10_000
+    }).split('\n')
   } catch {
     return []
   }
@@ -385,7 +386,8 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
       pkgManager = 'dnf'
       // --skip-unavailable: avoid failing on missing/broken repos (e.g. Cursor 403) or package renames
       installArgs = ['install', '-y', '--skip-unavailable']
-      packages = [...DEPS_FEDORA, nodeDevelPackage(installedNodeLibs())]
+      const nodeDevel = nodeDevelPackage(installedNodePackages())
+      packages = nodeDevel ? [...DEPS_FEDORA, nodeDevel] : DEPS_FEDORA
       break
     case 'arch':
       pkgManager = 'pacman'
@@ -806,9 +808,14 @@ function buildLweEnvVars(): string[] {
   const waylandDisplay = getWaylandDisplay()
   if (waylandDisplay) vars.push(`WAYLAND_DISPLAY=${waylandDisplay}`)
 
-  // XDG_SESSION_TYPE is how LWE decides between X11 and Wayland drivers
-  const sessionType = process.env.XDG_SESSION_TYPE
+  // LWE picks its X11/Wayland driver by XDG_SESSION_TYPE, often unset without a login manager
+  const sessionType = process.env.XDG_SESSION_TYPE || (waylandDisplay ? 'wayland' : undefined)
   if (sessionType) vars.push(`XDG_SESSION_TYPE=${sessionType}`)
+
+  for (const name of ['XDG_CURRENT_DESKTOP', 'HYPRLAND_INSTANCE_SIGNATURE', 'SWAYSOCK', 'NIRI_SOCKET']) {
+    const value = process.env[name]
+    if (value) vars.push(`${name}=${value}`)
+  }
 
   if (process.env.DISPLAY) vars.push(`DISPLAY=${process.env.DISPLAY}`)
 
@@ -818,148 +825,28 @@ function buildLweEnvVars(): string[] {
   return vars
 }
 
-// Not every linux-wallpaperengine build has --list-objects/--disable-object/--enable-object
-// (they're recent additions), so probe --help once and cache the result rather than assuming.
-let objectFlagsSupported: boolean | null = null
-
-function invalidateObjectFlagsSupport(): void {
-  objectFlagsSupported = null
-}
-
 function supportsObjectFlags(): boolean {
-  if (objectFlagsSupported !== null) return objectFlagsSupported
-  try {
-    const binaryPath = getLweBinaryPath()
-    const envVars = buildLweEnvVars()
-    const stdout = execFileSync('env', [...envVars, binaryPath, '--help'], {
-      timeout: 5_000,
-      encoding: 'utf8',
-      maxBuffer: 2 * 1024 * 1024
-    })
-    objectFlagsSupported = stdout.includes('--list-objects')
-  } catch {
-    objectFlagsSupported = false
-  }
-  return objectFlagsSupported
-}
-
-// --list-audio-objects/--audio-sensitivity are even more recent than --list-objects, so they get
-// their own cached probe rather than assuming a build new enough for one is new enough for both.
-let audioSensitivitySupported: boolean | null = null
-
-function invalidateAudioSensitivitySupport(): void {
-  audioSensitivitySupported = null
+  return supportsFlag('--list-objects')
 }
 
 function supportsAudioSensitivity(): boolean {
-  if (audioSensitivitySupported !== null) return audioSensitivitySupported
-  try {
-    const binaryPath = getLweBinaryPath()
-    const envVars = buildLweEnvVars()
-    const stdout = execFileSync('env', [...envVars, binaryPath, '--help'], {
-      timeout: 5_000,
-      encoding: 'utf8',
-      maxBuffer: 2 * 1024 * 1024
-    })
-    audioSensitivitySupported = stdout.includes('--list-audio-objects')
-  } catch {
-    audioSensitivitySupported = false
-  }
-  return audioSensitivitySupported
-}
-
-// --sound-volume is newer still - its own probe rather than assuming a build with
-// --list-audio-objects also has it.
-let soundVolumeSupported: boolean | null = null
-
-function invalidateSoundVolumeSupport(): void {
-  soundVolumeSupported = null
+  return supportsFlag('--list-audio-objects')
 }
 
 function supportsSoundVolume(): boolean {
-  if (soundVolumeSupported !== null) return soundVolumeSupported
-  try {
-    const binaryPath = getLweBinaryPath()
-    const envVars = buildLweEnvVars()
-    const stdout = execFileSync('env', [...envVars, binaryPath, '--help'], {
-      timeout: 5_000,
-      encoding: 'utf8',
-      maxBuffer: 2 * 1024 * 1024
-    })
-    soundVolumeSupported = stdout.includes('--sound-volume')
-  } catch {
-    soundVolumeSupported = false
-  }
-  return soundVolumeSupported
-}
-
-let effectFlagsSupported: boolean | null = null
-
-function invalidateEffectFlagsSupport(): void {
-  effectFlagsSupported = null
+  return supportsFlag('--sound-volume')
 }
 
 function supportsEffectFlags(): boolean {
-  if (effectFlagsSupported !== null) return effectFlagsSupported
-  try {
-    const binaryPath = getLweBinaryPath()
-    const envVars = buildLweEnvVars()
-    const stdout = execFileSync('env', [...envVars, binaryPath, '--help'], {
-      timeout: 5_000,
-      encoding: 'utf8',
-      maxBuffer: 2 * 1024 * 1024
-    })
-    effectFlagsSupported = stdout.includes('--list-effects')
-  } catch {
-    effectFlagsSupported = false
-  }
-  return effectFlagsSupported
-}
-
-let disableAnimationsSupported: boolean | null = null
-
-function invalidateDisableAnimationsSupport(): void {
-  disableAnimationsSupported = null
+  return supportsFlag('--list-effects')
 }
 
 function supportsDisableAnimations(): boolean {
-  if (disableAnimationsSupported !== null) return disableAnimationsSupported
-  try {
-    const binaryPath = getLweBinaryPath()
-    const envVars = buildLweEnvVars()
-    const stdout = execFileSync('env', [...envVars, binaryPath, '--help'], {
-      timeout: 5_000,
-      encoding: 'utf8',
-      maxBuffer: 2 * 1024 * 1024
-    })
-    disableAnimationsSupported = stdout.includes('--disable-animations')
-  } catch {
-    disableAnimationsSupported = false
-  }
-  return disableAnimationsSupported
-}
-
-let expandCanvasSupported: boolean | null = null
-
-function invalidateExpandCanvasSupport(): void {
-  expandCanvasSupported = null
+  return supportsFlag('--disable-animations')
 }
 
 function supportsExpandCanvas(): boolean {
-  if (expandCanvasSupported !== null) return expandCanvasSupported
-  try {
-    const binaryPath = getLweBinaryPath()
-    const envVars = buildLweEnvVars()
-    const stdout = execFileSync('env', [...envVars, binaryPath, '--help'], {
-      timeout: 5_000,
-      encoding: 'utf8',
-      maxBuffer: 2 * 1024 * 1024
-    })
-    expandCanvasSupported = stdout.includes('--expand-canvas')
-  } catch {
-    expandCanvasSupported = false
-  }
-  return expandCanvasSupported
+  return supportsFlag('--expand-canvas')
 }
 
 // shell-like: quotes group whitespace anywhere in a token (foo="bar baz") and are dropped
@@ -990,16 +877,30 @@ export function parseCustomArgs(raw: string): string[] {
 }
 
 let helpText: string | null = null
+let helpTextStamp = ''
 
 function invalidateHelpText(): void {
   helpText = null
 }
 
+// the binary can be replaced while we run, the cached --help is tied to the file
+function binaryStamp(binaryPath: string): string {
+  try {
+    const stat = fs.statSync(binaryPath)
+    return `${binaryPath}:${stat.ino}:${stat.size}:${stat.mtimeMs}`
+  } catch {
+    return binaryPath
+  }
+}
+
 // older builds ignore unknown flags, so a flag the binary doesn't list is left out instead of passed
 function supportsFlag(flag: string): boolean {
-  if (helpText === null) {
+  const binaryPath = getLweBinaryPath()
+  const stamp = binaryStamp(binaryPath)
+  if (helpText === null || stamp !== helpTextStamp) {
+    helpTextStamp = stamp
     try {
-      helpText = execFileSync('env', [...buildLweEnvVars(), getLweBinaryPath(), '--help'], {
+      helpText = execFileSync('env', [...buildLweEnvVars(), binaryPath, '--help'], {
         timeout: 5_000,
         encoding: 'utf8',
         maxBuffer: 2 * 1024 * 1024
@@ -1028,6 +929,7 @@ export interface LweLaunchOptions {
   offsetY?: number
   disableParallax?: boolean
   expandCanvas?: boolean
+  repairAssets?: boolean
   cornerColor?: string
   imageAdjustments?: ImageAdjustments
   speed?: number
@@ -1081,6 +983,7 @@ function buildLweArgs(
   }
   if (options.disableParallax) args.push('--disable-parallax')
   if (options.expandCanvas && supportsExpandCanvas()) args.push('--expand-canvas')
+  if (options.repairAssets && supportsFlag('--repair-assets')) args.push('--repair-assets')
   if (options.cornerColor) args.push('--corner-color', options.cornerColor)
   if (options.speed !== undefined) args.push('--speed', String(options.speed))
   const segments = options.videoSegments ?? []
@@ -1132,10 +1035,28 @@ function getControlFilePath(): string {
   return path.join(getXdgRuntimeDir(), 'lwe-control')
 }
 
+function screenFileSuffix(screen: ScreenTarget): string {
+  return screen === ALL_SCREENS ? 'all' : screen.replace(/[^A-Za-z0-9._-]/g, '_')
+}
+
 /** One hotswap file per engine (--control-file), so engines on different screens can't read each other's */
 function controlFileFor(screen: ScreenTarget): string {
-  const name = screen === ALL_SCREENS ? 'all' : screen.replace(/[^A-Za-z0-9._-]/g, '_')
-  return path.join(getXdgRuntimeDir(), `lwe-control-${name}`)
+  return path.join(getXdgRuntimeDir(), `lwe-control-${screenFileSuffix(screen)}`)
+}
+
+/** Where a desktop shell writes the mouse button state for the engine on a screen (--input-file) */
+function inputFileFor(screen: ScreenTarget): string {
+  return path.join(getXdgRuntimeDir(), `lwe-input-${screenFileSuffix(screen)}`)
+}
+
+function supportsInputFile(): boolean {
+  return isWaylandSession() && supportsFlag('--input-file')
+}
+
+/** Input files for the all-screens engine and each given screen, none without --input-file support */
+export function listInputFiles(screens: string[]): { screen: ScreenTarget; path: string }[] {
+  if (!supportsInputFile()) return []
+  return [ALL_SCREENS, ...screens].map((screen) => ({ screen, path: inputFileFor(screen) }))
 }
 
 /**
@@ -1382,6 +1303,7 @@ export interface HotswapOptions {
   offsetY?: number
   disableParallax?: boolean
   expandCanvas?: boolean
+  repairAssets?: boolean
   cornerColor?: string
   imageAdjustments?: ImageAdjustments
   speed?: number
@@ -1435,6 +1357,9 @@ export function buildHotswapLines(options: HotswapOptions): string[] {
   }
   if (options.disableParallax !== undefined) lines.push(`disable-parallax=${options.disableParallax ? 'on' : 'off'}`)
   if (options.expandCanvas !== undefined) lines.push(`expand-canvas=${options.expandCanvas ? 'on' : 'off'}`)
+  if (options.repairAssets !== undefined && supportsFlag('--repair-assets')) {
+    lines.push(`repair-assets=${options.repairAssets ? 'on' : 'off'}`)
+  }
   if (options.cornerColor !== undefined) lines.push(`corner-color=${options.cornerColor}`)
   lines.push(...imageAdjustmentLines(options.imageAdjustments))
   if (options.speed !== undefined) lines.push(`speed=${options.speed}`)
@@ -1536,6 +1461,7 @@ function hotswapOptionsFor(wallpaperPath: string, options: LweLaunchOptions): Ho
     offsetY: options.offsetY ?? 0,
     disableParallax: options.disableParallax ?? false,
     expandCanvas: options.expandCanvas ?? false,
+    repairAssets: options.repairAssets ?? false,
     cornerColor: options.cornerColor ?? '000000',
     imageAdjustments: options.imageAdjustments,
     speed: options.speed ?? 1,
@@ -1585,7 +1511,12 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
 
   const binaryPath = getLweBinaryPath()
   const controlFile = supportsFlag('--control-file') ? controlFileFor(screen) : null
-  const lweArgs = [...(controlFile ? ['--control-file', controlFile] : []), ...buildLweArgs(wallpaperPath, options)]
+  const inputFile = supportsInputFile() ? inputFileFor(screen) : null
+  const lweArgs = [
+    ...(controlFile ? ['--control-file', controlFile] : []),
+    ...(inputFile ? ['--input-file', inputFile] : []),
+    ...buildLweArgs(wallpaperPath, options)
+  ]
   const envVars = buildLweEnvVars()
 
   // Spawn via `env` to set env vars explicitly, matching how LWE works from the terminal.
@@ -1786,7 +1717,7 @@ function parseLweAudioObjectList(output: string): LweAudioObject[] {
 export async function listLweAudioObjects(wallpaperPath: string): Promise<LweAudioObject[]> {
   const status = getLweStatus()
   if (!status.installed) throw new Error('linux-wallpaperengine is not installed.')
-  // Same reasoning as supportsObjectFlags(): older builds silently ignore unknown flags and fall
+  // older builds silently ignore unknown flags and fall
   // through to actually rendering the wallpaper instead of exiting.
   if (!supportsAudioSensitivity()) return []
 
@@ -1934,6 +1865,7 @@ export async function stopLwe(screen?: ScreenTarget): Promise<void> {
       } catch { /* already dead */ }
       await waitForPidExit(inst.pid)
       if (inst.controlFile) fs.rmSync(inst.controlFile, { force: true })
+      fs.rmSync(inputFileFor(inst.screen), { force: true })
       if (instances.get(inst.screen) === inst) instances.delete(inst.screen)
     })
   )

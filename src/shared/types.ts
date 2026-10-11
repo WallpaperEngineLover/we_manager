@@ -1,5 +1,6 @@
 import type { ImageAdjustments } from './imageAdjustments'
 import type { VideoSegment } from './videoTrim'
+import type { DesktopEnvironment } from './desktop'
 
 export type { ImageAdjustments } from './imageAdjustments'
 
@@ -83,6 +84,8 @@ export interface WallpaperMeta {
    * meant to be revealed by parallax) show in full, via linux-wallpaperengine --expand-canvas
    */
   expandCanvas?: boolean
+  /** --repair-assets: loads what broken wallpapers meant where WE shows nothing useful (e.g. a texture named "") */
+  repairAssets?: boolean
   /**
    * Color shown outside the wallpaper's bounds (Center/Fit letterboxing, zoomed-out scaling) as a
    * "RRGGBB"/"RRGGBBAA" hex string, applied via linux-wallpaperengine --corner-color. Default: black.
@@ -174,7 +177,7 @@ export interface EngineFlags {
   shadows?: LightingQuality
   msaa?: MsaaQuality
   ssaa?: SsaaQuality
-  /** KDE only: --layer background, plasmashell's desktop window can cover the wallpaper there */
+  /** --layer background (plasmashell's desktop can cover the wallpaper on KDE, niri needs it); key kept for stored configs */
   kdeBackgroundLayer?: boolean
 }
 
@@ -380,7 +383,7 @@ export interface WallpaperFolder {
 
 export interface WallpaperEnvironment {
   displayServer: 'wayland' | 'x11' | 'unknown'
-  desktopEnv: 'gnome' | 'kde' | 'hyprland' | 'sway' | 'other'
+  desktopEnv: DesktopEnvironment
   availableBackends: WallpaperBackend[]
   recommendedBackend: WallpaperBackend
   linuxWallpaperEngine: LweStatus

@@ -133,6 +133,13 @@ describe('nodeDevelPackage', () => {
     expect(nodeDevelPackage([])).toBe('nodejs-devel')
     expect(nodeDevelPackage(['nodejs24-docs'])).toBe('nodejs-devel')
   })
+
+  it('keeps an installed -devel package instead of adding a conflicting one', () => {
+    // Nobara: nodejs-devel 22 from an older release next to Fedora 44's nodejs24-libs
+    expect(nodeDevelPackage(['nodejs-libs', 'nodejs24-libs', 'nodejs-devel'])).toBeNull()
+    expect(nodeDevelPackage(['nodejs22-libs', 'nodejs22-devel'])).toBeNull()
+    expect(nodeDevelPackage(['nodejs24-libs', 'nodejs24-docs'])).toBe('nodejs24-devel')
+  })
 })
 
 describe('parseOsReleaseIds', () => {

@@ -7,6 +7,7 @@ import DisplaySettings from './DisplaySettings'
 import VoteBorderSettings from './VoteBorderSettings'
 import LibraryFoldersSettings from './LibraryFoldersSettings'
 import ScheduleSettings from './ScheduleSettings'
+import CopyField from '../common/CopyField'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
   fedora: 'Fedora / Nobara / RHEL',
@@ -65,6 +66,7 @@ export default function SettingsView() {
   const [steamIdentity, setSteamIdentityState] = useState<SteamIdentity>('wallpaper-engine')
   const [steamIdentitySaved, setSteamIdentitySaved] = useState(false)
   const [autostartSupported, setAutostartSupported] = useState(false)
+  const [autostartCompositorLine, setAutostartCompositorLine] = useState<string | null>(null)
   const [autostartEnabled, setAutostartEnabledState] = useState(false)
   const [autostartMinimized, setAutostartMinimized] = useState(false)
   const [autostartPlaylistId, setAutostartPlaylistId] = useState<string | null>(null)
@@ -95,6 +97,7 @@ export default function SettingsView() {
       setKillLweOnQuit(cfg.killLweOnQuit)
       setSteamIdentityState(cfg.steamIdentity)
       setAutostartSupported(cfg.autostartSupported)
+      setAutostartCompositorLine(cfg.autostartCompositorLine)
       setAutostartEnabledState(cfg.autostartEnabled)
       setAutostartMinimized(cfg.autostartMinimized)
       setAutostartPlaylistId(cfg.autostartPlaylistId)
@@ -1077,6 +1080,15 @@ export default function SettingsView() {
               <p className="text-xs text-yellow-500/80">
                 Only available in a packaged build (AppImage/deb), not in development mode.
               </p>
+            )}
+            {autostartCompositorLine && (
+              <div className="space-y-1.5">
+                <p className="text-xs text-gray-500">
+                  This compositor does not run ~/.config/autostart entries by itself (a session manager like uwsm
+                  does). To start WE Manager at login, add this line to its config:
+                </p>
+                <CopyField text={autostartCompositorLine} />
+              </div>
             )}
 
             <label className="flex items-center gap-3 cursor-pointer pl-12">

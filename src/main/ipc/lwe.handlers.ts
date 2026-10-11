@@ -1,6 +1,6 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
-import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, isLweRunning, killAllLweProcesses, listLweObjects, hotswapLweSettings, listLweProperties, listLweAudioObjects, listLweEffects, type HotswapOptions } from '../services/lwe.service'
+import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, isLweRunning, killAllLweProcesses, listLweObjects, hotswapLweSettings, listLweProperties, listLweAudioObjects, listLweEffects, listInputFiles, type HotswapOptions } from '../services/lwe.service'
 import { getPrebuiltTarget, installLwePrebuilt } from '../services/lwe-prebuilt.service'
 import { stopDisplay } from '../services/display.service'
 import { stopPlaylist } from '../services/playlist-player.service'
@@ -77,6 +77,8 @@ export function registerLweHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.LWE_LIST_SCREENS, () => {
     return getConnectedScreens()
   })
+
+  ipcMain.handle(IpcChannels.LWE_INPUT_FILES, () => listInputFiles(getConnectedScreens()))
 
   ipcMain.handle(IpcChannels.LWE_LIST_APPLICATIONS, () => listDesktopApplications())
 

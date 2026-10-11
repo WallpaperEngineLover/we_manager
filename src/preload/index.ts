@@ -130,6 +130,7 @@ const api = {
       autoUnsubscribeAfterBackup: boolean
       trayEnabled: boolean
       autostartSupported: boolean
+      autostartCompositorLine: string | null
       autostartEnabled: boolean
       autostartMinimized: boolean
       autostartPlaylistId: string | null
@@ -326,6 +327,7 @@ const api = {
       offsetY?: number
       disableParallax?: boolean
       expandCanvas?: boolean
+      repairAssets?: boolean
       cornerColor?: string
       imageAdjustments?: ImageAdjustments
       speed?: number
@@ -342,6 +344,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LWE_LIST_PROPERTIES, wallpaperPath),
     listScreens: (): Promise<string[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_SCREENS),
+    inputFiles: (): Promise<{ screen: string; path: string }[]> =>
+      ipcRenderer.invoke(IpcChannels.LWE_INPUT_FILES),
     videoDuration: (wallpaperPath: string, projectFile?: string): Promise<number | null> =>
       ipcRenderer.invoke(IpcChannels.LWE_VIDEO_DURATION, wallpaperPath, projectFile),
     listAudioObjects: (wallpaperPath: string): Promise<LweAudioObject[]> =>

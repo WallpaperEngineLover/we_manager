@@ -185,6 +185,8 @@ jobs:
 
   aur:
     needs: release
+    # pre-release tags are no valid pkgver
+    if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     env:
       HAS_AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
@@ -197,7 +199,7 @@ jobs:
 
       - name: Publish we-manager-bin to the AUR
         if: env.HAS_AUR_KEY == 'true'
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        uses: KSXGitHub/github-actions-deploy-aur@2ac5a4c1d7035885d46b10e3193393be8460b6f1 # v4.1.1
         with:
           pkgname: we-manager-bin
           pkgbuild: ./packaging/aur/we-manager-bin/PKGBUILD

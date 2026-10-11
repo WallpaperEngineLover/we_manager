@@ -55,6 +55,7 @@ export function detectEnvironment(): WallpaperEnvironment {
   else if (desktopEnv === 'gnome') recommended = 'gsettings'
   else if (desktopEnv === 'kde') recommended = 'qdbus'
   else if (displayServer === 'wayland' && available.includes('swww')) recommended = 'swww'
+  else if (displayServer === 'wayland' && available.includes('swaybg')) recommended = 'swaybg'
   else if (available.includes('feh')) recommended = 'feh'
 
   envCache = {
@@ -236,6 +237,7 @@ export async function lweOptionsFor(
     offsetY: wallpaper.offsetY,
     disableParallax: wallpaper.disableParallax ?? false,
     expandCanvas: wallpaper.expandCanvas ?? false,
+    repairAssets: wallpaper.repairAssets ?? false,
     cornerColor: wallpaper.cornerColor,
     imageAdjustments: wallpaper.imageAdjustments,
     speed: wallpaper.playbackSpeed,

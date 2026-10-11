@@ -30,6 +30,7 @@ import {
   Move,
   Move3d,
   Expand,
+  Wrench,
   Palette,
   Gauge,
   Zap,
@@ -581,6 +582,7 @@ export default function DetailSidebar({
             offsetY: patch.offsetY,
             disableParallax: patch.disableParallax,
             expandCanvas: patch.expandCanvas,
+            repairAssets: patch.repairAssets,
             cornerColor: patch.cornerColor,
             imageAdjustments: patch.imageAdjustments,
             speed: patch.playbackSpeed,
@@ -854,6 +856,19 @@ export default function DetailSidebar({
       await persistAndMaybeRelaunch({ expandCanvas: !expandCanvas })
     } finally {
       setIsCommittingExpandCanvas(false)
+    }
+  }
+
+  const [isCommittingRepairAssets, setIsCommittingRepairAssets] = useState(false)
+  const repairAssets = libraryMeta?.repairAssets ?? false
+
+  async function toggleRepairAssets() {
+    if (isCommittingRepairAssets) return
+    setIsCommittingRepairAssets(true)
+    try {
+      await persistAndMaybeRelaunch({ repairAssets: !repairAssets })
+    } finally {
+      setIsCommittingRepairAssets(false)
     }
   }
 
@@ -1435,6 +1450,31 @@ export default function DetailSidebar({
                 <ToggleLeft size={14} className="text-gray-600" />
               )}
             </button>
+            <button
+              onClick={toggleRepairAssets}
+              disabled={isCommittingRepairAssets}
+              title="Loads files the way the wallpaper's author meant where current Wallpaper Engine drops them, e.g. an image whose texture has no name"
+              className="mt-1.5 flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
+            >
+              <Wrench size={12} />
+              <span className="flex-1 text-left">Repair broken assets</span>
+              {isActive && (
+                <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
+                  live
+                </span>
+              )}
+              {isCommittingRepairAssets ? (
+                <Loader2 size={14} className="animate-spin text-gray-500" />
+              ) : repairAssets ? (
+                <ToggleRight size={14} className="text-indigo-400" />
+              ) : (
+                <ToggleLeft size={14} className="text-gray-600" />
+              )}
+            </button>
+            <p className="mt-0.5 text-[11px] text-gray-600">
+              Might fix old wallpapers that show a blank or grey screen in current Wallpaper Engine but
+              worked in older versions. Off by default to match Wallpaper Engine.
+            </p>
           </div>
         )}
 

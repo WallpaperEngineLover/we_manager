@@ -2,6 +2,8 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { app } from 'electron'
+import { compositorAutostartLine } from '@shared/desktop'
+import { detectDesktopEnv } from '../utils/platform'
 
 const DESKTOP_FILE_NAME = 'we-manager.desktop'
 
@@ -54,6 +56,12 @@ export function setAutostartEnabled(enabled: boolean, minimized: boolean): void 
   ].join('\n')
 
   fs.writeFileSync(filePath, contents, 'utf8')
+}
+
+/** Startup line for the compositor config, null when the session runs the .desktop entry itself */
+export function getCompositorAutostartLine(): string | null {
+  if (!isAutostartSupported()) return null
+  return compositorAutostartLine(detectDesktopEnv(), resolveExecutablePath())
 }
 
 export function isAutostartFileEnabled(): boolean {

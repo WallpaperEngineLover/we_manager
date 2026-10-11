@@ -52,3 +52,30 @@ npm run dist     # package with electron-builder
   is called correctly on our end. Confirmed upstream: relaunching the process
   is the only thing that clears it, but doing that from the toggle itself
   caused GPU/window failures on Wayland, so it isn't worth the tradeoff.
+
+## Hyprland, Sway, niri and other wlroots compositors
+
+- Screens come from the compositor itself when its session variable is set: `hyprctl monitors -j`
+  (`HYPRLAND_INSTANCE_SIGNATURE`), `swaymsg -t get_outputs -r` (`SWAYSOCK`) or `niri msg --json outputs`
+  (`NIRI_SOCKET`). Disabled outputs are skipped. `wlr-randr`, `kscreen-doctor`, GNOME's D-Bus API and `xrandr`
+  stay as the fallbacks, in that order.
+- Settings > Performance has "Use the background layer" (`--layer background`) on these compositors and on KDE.
+  niri needs it, the engine's default is the bottom layer. The stored setting is still called
+  `kdeBackgroundLayer`, so existing configs keep working.
+- These compositors do not run `~/.config/autostart` entries, so Settings shows the line for the compositor
+  config next to the startup toggle (`exec-once = ... --minimized` for Hyprland, `exec ... --minimized` for sway,
+  `spawn-at-startup` for niri, the plain command otherwise). It only shows in a packaged build, the path is the
+  AppImage or the installed executable.
+- Closing the window to the tray (and `--minimized`) needs a StatusNotifier host on the session bus, e.g. the
+  tray module of waybar or a Quickshell tray. Without one, closing quits the app and `--minimized` shows the
+  window after waiting 10 seconds for the host to appear. If neither `busctl` nor `gdbus` can tell, a host is
+  assumed.
+- Click forwarding: a layer-shell background surface gets no mouse buttons while a bar or shell covers it. With an
+  engine that has `--input-file`, WE Manager starts each engine with `$XDG_RUNTIME_DIR/lwe-input-<screen>`
+  (`lwe-input-all` when one engine draws every screen), and Settings > Performance lists the paths. A shell or
+  compositor binding writes `{"leftDown":true}` into that file while the left button is held, e.g.
+  `echo '{"leftDown":true}' > "$XDG_RUNTIME_DIR/lwe-input-DP-1"`, and keeps refreshing it: the engine ignores
+  the file once it is older than 2 seconds. WE Manager never writes the file itself.
+- Not done, these are engine side and tracked in the linux-wallpaperengine-kde repository: the fullscreen pause is
+  global per engine and ignores maximized windows on wlroots compositors, fractional scaling is rounded to an
+  integer scale, and the Flatpak sandbox cannot reach the Hyprland socket.
