@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Loader2, User, ExternalLink, Play, Download, EyeOff, Eye } from 'lucide-react'
 import WorkshopCard from './WorkshopCard'
@@ -34,7 +34,7 @@ import {
   migrateResolutionSelection
 } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
-import { usePersistentState } from '../../hooks/usePersistentState'
+import { loadPageSize, usePersistentState, useSessionState } from '../../hooks/usePersistentState'
 import { useCardBorders, useCardSteamState } from '../../hooks/useCardBorders'
 import { useBatchVote, useDislikedIds, useVotedIds } from '../../hooks/useVotes'
 import { useBatchFavorite, useFavoriteIds } from '../../hooks/useFavorites'
@@ -48,6 +48,13 @@ import { matchesSearchTerms, parseSearchQuery } from '../../utils/searchQuery'
 import { formatFileSize } from '../../utils/format'
 
 const STORAGE_KEY = 'we-workshop-filters'
+const QUERY_TYPES: WorkshopQueryType[] = [
+  'RankedByVote',
+  'RankedByPublicationDate',
+  'RankedByTrend',
+  'RankedByTotalUniqueSubscriptions',
+  'RankedByLastUpdatedDate'
+]
 const STORAGE_VERSION = 2
 
 const ALL_TAGS = {
@@ -133,18 +140,22 @@ export default function WorkshopBrowser({
   const queryClient = useQueryClient()
   const { entries: subscribeEntries, enqueue: enqueueSubscribe, clear: clearSubscribeEntries } =
     useSubscriptionQueue(() => queryClient.invalidateQueries({ queryKey: ['library'] }))
-  const [searchText, setSearchText] = useState('')
+  const [searchText, setSearchText] = useSessionState(`we-workshop-search:${creatorFilter ?? ''}`, '')
   const searchQuery = useMemo(() => parseSearchQuery(searchText), [searchText])
   const steamSearchText = searchQuery.steamText
-  const [queryType, setQueryType] = useState<WorkshopQueryType>('RankedByPublicationDate')
+  const [queryType, setQueryType] = usePersistentState<WorkshopQueryType>(
+    'we-workshop-sort',
+    'RankedByPublicationDate',
+    (v) => (typeof v === 'string' && QUERY_TYPES.includes(v as WorkshopQueryType) ? (v as WorkshopQueryType) : 'RankedByPublicationDate')
+  )
   const [showFilters, setShowFilters] = usePersistentState('we-workshop-show-filters', true, (v) => v !== false)
   const [filters, setFilters] = usePersistentState(STORAGE_KEY, DEFAULT_STATE, loadFilters)
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
+  const [page, setPage] = useSessionState(`we-workshop-page:${creatorFilter ?? ''}`, 1)
+  const [pageSize, setPageSize] = usePersistentState('we-workshop-page-size', 50, loadPageSize)
   const [previewSize, setPreviewSize] = usePreviewSize()
   const [detailId, setDetailId] = useState<string | null>(null)
-  const [showIgnored, setShowIgnored] = useState(false)
+  const [showIgnored, setShowIgnored] = usePersistentState('we-workshop-show-ignored', false, (v) => v === true)
 
   const votedSet = useVotedIds()
   const dislikedSet = useDislikedIds()
@@ -158,9 +169,14 @@ export default function WorkshopBrowser({
   const unsubscribe = useUnsubscribe()
   const { moveToFolder, removeFromFolders, menuState } = useFolders()
 
+  // only a real change resets to page 1, not remounting
+  const pageResetKey = JSON.stringify([searchText, queryType, filters, pageSize, creatorFilter])
+  const lastPageResetKey = useRef(pageResetKey)
   useEffect(() => {
+    if (lastPageResetKey.current === pageResetKey) return
+    lastPageResetKey.current = pageResetKey
     setPage(1)
-  }, [searchText, queryType, filters, pageSize, creatorFilter])
+  }, [pageResetKey, setPage])
 
   function setFilter<K extends keyof WorkshopFilterState>(key: K, value: WorkshopFilterState[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }))

@@ -8,6 +8,7 @@ import PlaylistsView from './components/playlist/PlaylistsView'
 import SettingsView from './components/settings/SettingsView'
 import SetupScreen from './components/setup/SetupScreen'
 import StatusBar from './components/layout/StatusBar'
+import GnomeExtensionNotice from './components/layout/GnomeExtensionNotice'
 import { useToast } from './components/common/Toast'
 import { screenLabel } from './utils/screens'
 import { useConfig } from './hooks/queries'
@@ -148,6 +149,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <div className="flex h-full flex-col bg-app text-gray-100">
+        <GnomeExtensionNotice />
         <div className="flex flex-1 overflow-hidden">
           <Sidebar activeView={activeView} onNavigate={setActiveView} />
           <main className="flex-1 overflow-hidden">

@@ -36,3 +36,13 @@ export function isHostCommandAvailable(cmd: string): boolean {
   hostCommandCache.set(cmd, found)
   return found
 }
+
+/** The sandbox's /app as the host sees it (app-path in /.flatpak-info) */
+export function hostAppPath(info = (() => { try { return fs.readFileSync('/.flatpak-info', 'utf8') } catch { return '' } })()): string | undefined {
+  return info.match(/^app-path=(.+)$/m)?.[1]?.trim() || undefined
+}
+
+export function toHostPath(sandboxPath: string, appPath = hostAppPath()): string | undefined {
+  if (!appPath || !sandboxPath.startsWith('/app/')) return undefined
+  return appPath + sandboxPath.slice('/app'.length)
+}

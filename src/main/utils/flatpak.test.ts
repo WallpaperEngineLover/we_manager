@@ -29,3 +29,13 @@ describe('hostCommand', () => {
     expect(hostShell('wlr-randr 2>/dev/null')).toBe('flatpak-spawn --host sh -c "wlr-randr 2>/dev/null"')
   })
 })
+
+describe('toHostPath', () => {
+  it('maps /app through app-path from /.flatpak-info', async () => {
+    const { hostAppPath, toHostPath } = await load()
+    const appPath = hostAppPath('[Application]\nname=io.x\n\n[Instance]\napp-path=/var/lib/flatpak/app/io.x/x86_64/stable/abc/files\n')
+    expect(appPath).toBe('/var/lib/flatpak/app/io.x/x86_64/stable/abc/files')
+    expect(toHostPath('/app/bin/gnome-shell-extension', appPath)).toBe('/var/lib/flatpak/app/io.x/x86_64/stable/abc/files/bin/gnome-shell-extension')
+    expect(toHostPath('/usr/bin/x', appPath)).toBeUndefined()
+  })
+})

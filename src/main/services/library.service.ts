@@ -498,7 +498,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     }
 
     const existing = wallpapers[entry.name]
-    if (existing?.localPath === localPath && !existing.downloading && existing.previewLocal !== undefined && existing?.contentRating !== undefined && existing?.fileSize !== undefined) {
+    if (existing?.localPath === localPath && !existing.downloading && existing.previewLocal !== undefined && fs.existsSync(existing.previewLocal) && existing?.contentRating !== undefined && existing?.fileSize !== undefined) {
       cacheHits.push(entry.name)
       skipped++
       continue

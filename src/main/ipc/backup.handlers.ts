@@ -45,6 +45,7 @@ async function backupOne(id: string, win: BrowserWindow): Promise<BackupItemResu
       library.updateWallpaper(id, {
         source: 'backup',
         localPath: backupDir!,
+        previewLocal: await backup.previewInBackup(wallpaper, backupDir!),
         subscribed: false,
         downloading: false,
         downloadFailed: false

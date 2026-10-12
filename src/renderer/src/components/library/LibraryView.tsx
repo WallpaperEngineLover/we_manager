@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Loader2,
@@ -41,7 +41,7 @@ import {
   migrateResolutionSelection
 } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
-import { usePersistentState } from '../../hooks/usePersistentState'
+import { loadPageSize, usePersistentState, useSessionState } from '../../hooks/usePersistentState'
 import { useCardBorders, useCardSteamState } from '../../hooks/useCardBorders'
 import { useDislikedIds, useVotedIds } from '../../hooks/useVotes'
 import { useFavoriteIds } from '../../hooks/useFavorites'
@@ -172,7 +172,7 @@ interface LibraryViewProps {
 export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useSessionState('we-library-search', '')
   const [sort, setSort] = usePersistentState('we-library-sort', DEFAULT_SORT)
   const [filterState, setFilterState] = usePersistentState('we-library-filters', DEFAULT_STATE, loadFilters)
   const [showFilters, setShowFilters] = usePersistentState('we-library-show-filters', true, (v) => v !== false)
@@ -181,11 +181,13 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<{ imported: number; skipped: number; removed: number } | null>(null)
 
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
+  const [page, setPage] = useSessionState('we-library-page', 1)
+  const [pageSize, setPageSize] = usePersistentState('we-library-page-size', 50, loadPageSize)
   const [previewSize, setPreviewSize] = usePreviewSize()
 
-  const [activeFolder, setActiveFolder] = useState<string | null>(null) // null = "All"
+  const [activeFolder, setActiveFolder] = usePersistentState<string | null>('we-library-folder', null, (v) =>
+    typeof v === 'string' ? v : null
+  ) // null = "All"
   const [folderMenu, setFolderMenu] = useState<{ folder: WallpaperFolder; x: number; y: number } | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -198,7 +200,11 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   const cardBorders = useCardBorders()
   const lweInstalled = useLweInstalled()
   const isBackupConfigured = useConfig()?.isBackupConfigured ?? false
-  const { folders, refetchFolders, moveToFolder } = useFolders()
+  const { folders, foldersLoaded, refetchFolders, moveToFolder } = useFolders()
+
+  useEffect(() => {
+    if (foldersLoaded && activeFolder && !folders.some((f) => f.id === activeFolder)) setActiveFolder(null)
+  }, [foldersLoaded, folders, activeFolder, setActiveFolder])
   const applyWallpaper = useApplyWallpaper()
   const subscribe = useSubscribe()
   const unsubscribe = useUnsubscribe()
@@ -339,7 +345,14 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     [allWallpapersForView, safePage, pageSize]
   )
 
-  useEffect(() => { setPage(1) }, [filterState, activeFolder, search, sort, pageSize])
+  // only a real change resets to page 1, not remounting
+  const pageResetKey = JSON.stringify([filterState, activeFolder, search, sort, pageSize])
+  const lastPageResetKey = useRef(pageResetKey)
+  useEffect(() => {
+    if (lastPageResetKey.current === pageResetKey) return
+    lastPageResetKey.current = pageResetKey
+    setPage(1)
+  }, [pageResetKey, setPage])
 
   const wallpaperIds = useMemo(() => wallpapers.map((w) => w.id), [wallpapers])
   const {
@@ -410,6 +423,31 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     })
   }, [showToast])
 
+  // keep the last text between items so the progress line doesn't flicker
+  const backupTaskRunning = runningTasks.has('backup-selection') || runningTasks.has('backup-unavailable')
+  const progressItems = Array.from(backupProgress.values())
+  const liveProgress =
+    progressItems.length > 0
+      ? `${progressVerb(progressItems)} ${progressItems.length} wallpaper${progressItems.length === 1 ? '' : 's'}` +
+        `${progressItems.some((p) => p.status === 'verifying') ? ' (verifying copies)' : ''}... ` +
+        `${Math.round(progressItems.reduce((sum, p) => sum + p.percentage, 0) / progressItems.length)}% avg`
+      : null
+  const [lingeringProgress, setLingeringProgress] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (liveProgress) {
+      setLingeringProgress(liveProgress)
+      return
+    }
+    if (backupTaskRunning) return
+    const timer = setTimeout(() => setLingeringProgress(null), 1500)
+    return () => clearTimeout(timer)
+  }, [liveProgress, backupTaskRunning])
+
+  const statusLine =
+    liveProgress ??
+    (backupTaskRunning ? (lingeringProgress ?? 'Backing up...') : (backupStatus ?? lingeringProgress))
+
   // backup and availability checks report into the status line and can change any wallpaper's flags
   async function runTask(task: BackgroundTask, work: () => Promise<string>) {
     setRunningTasks((prev) => new Set(prev).add(task))
@@ -442,7 +480,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     void runTask('scan-backups', async () => {
       const result = await window.electronAPI.backup.scan()
       const dropped = result.removed + result.unlinked
-      return `Backup scan: ${result.imported} imported, ${result.linked} linked${dropped > 0 ? `, ${dropped} broken removed` : ''}${result.corrupted.length > 0 ? `, ${result.corrupted.length} corrupted folder${result.corrupted.length === 1 ? '' : 's'} skipped (${result.corrupted.join(', ')})` : ''}.`
+      return `Backup scan: ${result.imported} imported, ${result.linked} linked${dropped > 0 ? `, ${dropped} broken removed` : ''}${result.previewsFixed > 0 ? `, ${result.previewsFixed} thumbnail${result.previewsFixed === 1 ? '' : 's'} fixed` : ''}${result.corrupted.length > 0 ? `, ${result.corrupted.length} corrupted folder${result.corrupted.length === 1 ? '' : 's'} skipped (${result.corrupted.join(', ')})` : ''}.`
     })
   }
 
@@ -673,25 +711,9 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
         </div>
       )}
 
-      {backupProgress.size > 0 && (
-        <div className="border-b border-fg/5 px-4 py-2 text-xs text-gray-400">
-          {progressVerb(Array.from(backupProgress.values()))} {backupProgress.size} wallpaper
-          {backupProgress.size === 1 ? '' : 's'}
-          {Array.from(backupProgress.values()).some((p) => p.status === 'verifying')
-            ? ' (verifying copies)'
-            : ''}
-          ...{' '}
-          {Math.round(
-            Array.from(backupProgress.values()).reduce((sum, p) => sum + p.percentage, 0) /
-              backupProgress.size
-          )}
-          % avg
-        </div>
-      )}
-
-      {backupStatus && (
-        <div className="border-b border-fg/5 px-4 py-2 text-xs text-gray-400">
-          {backupStatus}
+      {statusLine && (
+        <div className="truncate border-b border-fg/5 px-4 py-2 text-xs text-gray-400" title={statusLine}>
+          {statusLine}
         </div>
       )}
 

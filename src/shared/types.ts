@@ -171,6 +171,8 @@ export interface EngineFlags {
   disableAnimations?: boolean
   noAudioProcessing?: boolean
   fullscreenPause?: FullscreenPauseMode
+  /** --pause-on-focus, WE's "Other application focused: Pause" */
+  pauseOnFocus?: boolean
   automute?: boolean
   silent?: boolean
   hdr?: boolean
@@ -403,6 +405,18 @@ export interface WallpaperEnvironment {
   availableBackends: WallpaperBackend[]
   recommendedBackend: WallpaperBackend
   linuxWallpaperEngine: LweStatus
+}
+
+/** The engine's GNOME Shell extension (GNOME Wayland only) */
+export interface GnomeExtensionStatus {
+  needed: boolean
+  state: 'not-needed' | 'active' | 'outdated' | 'needs-relogin' | 'disabled' | 'not-installed' | 'error'
+  bundled?: boolean
+  bundledVersion?: string
+  installedVersion?: string
+  detail?: string
+  /** Flatpak: manual host commands if the button fails */
+  flatpakCommands?: string[]
 }
 
 export interface LweStatus {

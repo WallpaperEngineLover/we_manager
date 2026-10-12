@@ -36,6 +36,8 @@ describe('engineFlagArgs', () => {
     expect(engineFlagArgs({ hwdec: 'auto' })).toEqual([])
     expect(engineFlagArgs({ kdeBackgroundLayer: true })).toEqual(['--layer', 'background'])
     expect(engineFlagArgs({ kdeBackgroundLayer: false })).toEqual([])
+    expect(engineFlagArgs({ pauseOnFocus: true, fullscreenPause: 'off' })).toEqual(['--no-fullscreen-pause', '--pause-on-focus'])
+    expect(engineFlagArgs({ pauseOnFocus: false })).toEqual([])
   })
 
   it('leaves disableAnimations to the caller, it needs its own capability probe', () => {

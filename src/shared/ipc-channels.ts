@@ -147,6 +147,8 @@ export const IpcChannels = {
 
   DESKTOP_ICONS_SET_ENABLED: 'desktop-icons:set-enabled',
   DESKTOP_ICONS_GET_ENABLED: 'desktop-icons:get-enabled',
+  GNOME_EXTENSION_STATUS: 'gnome-extension:status',
+  GNOME_EXTENSION_INSTALL: 'gnome-extension:install',
 
   // Events pushed from main to renderer
   EVENT_DOWNLOAD_PROGRESS: 'event:download-progress',

@@ -158,6 +158,47 @@ describe('scanBackupFolder', () => {
     expect(wallpapers.get('moved')?.localPath).toBe(path.join(backupRoot, 'moved'))
   })
 
+  it('fixes the thumbnail of a backup entry that still points into the deleted workshop folder', async () => {
+    writeFiles(path.join(backupRoot, 'unsubbed'), { 'project.json': '{"preview":"preview.gif"}', 'preview.gif': 'gif' })
+    const gone = path.join(tmp, 'workshop', 'unsubbed', 'preview.gif')
+    wallpapers.set('unsubbed', { ...base, id: 'unsubbed', source: 'backup', localPath: path.join(backupRoot, 'unsubbed'), backedUp: true, fileSize: 1, previewLocal: gone })
+    const result = await backup.scanBackupFolder()
+    expect(result.previewsFixed).toBe(1)
+    expect(wallpapers.get('unsubbed')?.previewLocal).toBe(path.join(backupRoot, 'unsubbed', 'preview.gif'))
+    expect((await backup.scanBackupFolder()).previewsFixed).toBe(0)
+  })
+
+  it('fixes the thumbnail of a workshop entry whose preview file changed name', async () => {
+    writeFiles(source, { 'project.json': '{"preview":"Preview.GIF"}', 'preview.gif': 'gif' })
+    wallpapers.set('123', { ...base, id: '123', source: 'workshop', localPath: source, fileSize: 1, previewLocal: path.join(source, 'preview.jpg') })
+    const result = await backup.scanBackupFolder()
+    expect(result.previewsFixed).toBe(1)
+    expect(wallpapers.get('123')?.previewLocal).toBe(path.join(source, 'preview.gif'))
+  })
+
+  it('drops a custom thumbnail whose file is gone', async () => {
+    writeFiles(source, { 'project.json': '{"preview":"preview.jpg"}', 'preview.jpg': 'jpg' })
+    const preview = path.join(source, 'preview.jpg')
+    wallpapers.set('123', { ...base, id: '123', source: 'workshop', localPath: source, previewLocal: preview, customPreview: path.join(tmp, 'thumbs', 'gone.png') })
+    expect((await backup.scanBackupFolder()).previewsFixed).toBe(1)
+    expect(wallpapers.get('123')?.customPreview).toBeUndefined()
+    expect(wallpapers.get('123')?.previewLocal).toBe(preview)
+  })
+
+  it('leaves the preview of an entry on an unmounted drive alone', async () => {
+    const gone = path.join(tmp, 'unmounted', '123', 'preview.jpg')
+    wallpapers.set('123', { ...base, id: '123', source: 'local', localPath: path.dirname(gone), previewLocal: gone })
+    expect((await backup.scanBackupFolder()).previewsFixed).toBe(0)
+    expect(wallpapers.get('123')?.previewLocal).toBe(gone)
+  })
+
+  it('moves the preview into the backup folder', async () => {
+    writeFiles(source, { 'project.json': '{"preview":"preview.jpg"}', 'preview.jpg': 'jpg' })
+    const dir = await backup.backupWallpaper('123', source, win)
+    const meta = { ...base, id: '123', source: 'workshop' as const, localPath: source, previewLocal: path.join(source, 'preview.jpg') }
+    expect(await backup.previewInBackup(meta, dir)).toBe(path.join(dir, 'preview.jpg'))
+  })
+
   it('keeps a workshop entry linked when its backup differs from the workshop copy', async () => {
     const dir = await backup.backupWallpaper('123', source, win)
     wallpapers.set('123', { ...base, id: '123', source: 'workshop', localPath: source, backedUp: true, backupDir: dir })

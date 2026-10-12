@@ -1,5 +1,7 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 
+const sessionValues = new Map<string, unknown>()
+
 // useState backed by localStorage. load turns the stored JSON back into a value, returning the
 // fallback for anything it doesn't accept (wrong version, old shape).
 export function usePersistentState<T>(
@@ -25,4 +27,21 @@ export function usePersistentState<T>(
   }, [key, value])
 
   return [value, setValue]
+}
+
+// useState that survives the view unmounting (switching tabs) but not an app restart
+export function useSessionState<T>(key: string, initial: T): [T, Dispatch<SetStateAction<T>>] {
+  const [value, setValue] = useState<T>(() => (sessionValues.has(key) ? (sessionValues.get(key) as T) : initial))
+
+  useEffect(() => {
+    sessionValues.set(key, value)
+  }, [key, value])
+
+  return [value, setValue]
+}
+
+const PAGE_SIZES = [50, 100, 200]
+
+export function loadPageSize(stored: unknown): number {
+  return typeof stored === 'number' && PAGE_SIZES.includes(stored) ? stored : 50
 }

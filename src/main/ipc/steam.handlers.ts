@@ -82,6 +82,7 @@ export function registerSteamHandlers(win: BrowserWindow): void {
       library.updateWallpaper(itemId, {
         source: 'backup',
         localPath: backupDir,
+        previewLocal: await backup.previewInBackup(wallpaper, backupDir),
         backupDir,
         subscribed: false,
         downloading: false,

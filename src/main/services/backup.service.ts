@@ -50,6 +50,39 @@ async function readProjectJson(dir: string): Promise<ProjectJson | null> {
   }
 }
 
+// project.json names come from Windows, where "Preview.JPG" finds preview.jpg
+async function findFileIgnoringCase(dir: string, rel: string): Promise<string | undefined> {
+  const exact = path.join(dir, rel)
+  if (await exists(exact)) return exact
+  const parent = path.dirname(exact)
+  const name = path.basename(exact).toLowerCase()
+  try {
+    const match = (await fs.promises.readdir(parent)).find((f) => f.toLowerCase() === name)
+    return match ? path.join(parent, match) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// Current relative preview path if present, else project.json's, else any preview.* image.
+export async function previewInBackup(wallpaper: WallpaperMeta, dir: string): Promise<string | undefined> {
+  if (wallpaper.previewLocal && wallpaper.localPath) {
+    const rel = path.relative(wallpaper.localPath, wallpaper.previewLocal)
+    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel) && (await exists(path.join(dir, rel)))) {
+      return path.join(dir, rel)
+    }
+  }
+  const pj = await readProjectJson(dir)
+  const named = pj?.preview ? await findFileIgnoringCase(dir, pj.preview) : undefined
+  if (named) return named
+  try {
+    const any = (await fs.promises.readdir(dir)).find((f) => /^preview\.(png|jpe?g|gif|webp|bmp)$/i.test(f))
+    return any ? path.join(dir, any) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export async function hasBackupFiles(dir: string | null): Promise<boolean> {
   return !!dir && (await isDir(dir)) && (await exists(path.join(dir, 'project.json')))
 }
@@ -364,19 +397,70 @@ async function buildBackupMeta(id: string, localPath: string, existing?: Wallpap
 
 const SCAN_CONCURRENCY = 4
 
+// Repoints a missing preview at the file on disk now; folders on unmounted drives are skipped.
+async function previewRepair(w: WallpaperMeta): Promise<Partial<WallpaperMeta> | null> {
+  const patch: Partial<WallpaperMeta> = {}
+  if (w.customPreview && !(await exists(w.customPreview))) {
+    patch.customPreview = undefined
+    patch.useOriginalPreview = false
+  }
+  if (!w.previewLocal || !(await exists(w.previewLocal))) {
+    const dirs = [w.localPath, resolveBackupDir(w)].filter((d): d is string => !!d)
+    let mounted = false
+    for (const dir of [...new Set(dirs.map((d) => path.resolve(d)))]) {
+      if (!(await isDir(dir))) continue
+      mounted = true
+      const found = await previewInBackup(w, dir)
+      if (found) {
+        patch.previewLocal = found
+        break
+      }
+    }
+    if (!patch.previewLocal && mounted && w.previewLocal) patch.previewLocal = undefined
+  }
+  return Object.keys(patch).length > 0 ? patch : null
+}
+
+async function previewRepairs(wallpapers: WallpaperMeta[]): Promise<{ id: string; patch: Partial<WallpaperMeta> }[]> {
+  const patches: { id: string; patch: Partial<WallpaperMeta> }[] = []
+  await forEachLimit(
+    wallpapers.filter((w) => !w.downloading),
+    SCAN_CONCURRENCY,
+    async (w) => {
+      const patch = await previewRepair(w)
+      if (patch) patches.push({ id: w.id, patch })
+    }
+  )
+  return patches
+}
+
 export async function scanBackupFolder(): Promise<{
   imported: number
   skipped: number
   linked: number
   removed: number
   unlinked: number
+  previewsFixed: number
   corrupted: string[]
 }> {
-  const result = { imported: 0, skipped: 0, linked: 0, removed: 0, unlinked: 0, corrupted: [] as string[] }
+  const result = {
+    imported: 0,
+    skipped: 0,
+    linked: 0,
+    removed: 0,
+    unlinked: 0,
+    previewsFixed: 0,
+    corrupted: [] as string[]
+  }
   const backupPath = getConfiguredBackupPath()
-  if (!backupPath || !(await isDir(backupPath))) return result
-
   const wallpapers = new Map(library.getAllWallpapers().map((w) => [w.id, w]))
+  if (!backupPath || !(await isDir(backupPath))) {
+    const patches = await previewRepairs([...wallpapers.values()])
+    library.applyWallpaperChanges({ patches })
+    result.previewsFixed = patches.length
+    return result
+  }
+
   const folderIds = (await fs.promises.readdir(backupPath, { withFileTypes: true }))
     // dot folders are staging copies of an in-progress backup
     .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
@@ -445,6 +529,12 @@ export async function scanBackupFolder(): Promise<{
   })
 
   const reimported = new Set(upserts.map((m) => m.id))
+  const previewPatches = await previewRepairs(
+    [...wallpapers.values()].filter((w) => !reimported.has(w.id) && !deletes.includes(w.id))
+  )
+  patches.push(...previewPatches)
+  result.previewsFixed = previewPatches.length
+
   library.applyWallpaperChanges({
     upserts,
     patches,

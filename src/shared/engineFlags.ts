@@ -58,6 +58,7 @@ export function engineFlagArgs(flags: EngineFlags): string[] {
   if (flags.noAudioProcessing) args.push('--no-audio-processing')
   if (flags.fullscreenPause === 'off') args.push('--no-fullscreen-pause')
   if (flags.fullscreenPause === 'active-only') args.push('--fullscreen-pause-only-active')
+  if (flags.pauseOnFocus) args.push('--pause-on-focus')
   if (flags.automute) args.push('--automute')
   if (flags.silent) args.push('--silent')
   if (flags.hdr) args.push('--hdr')

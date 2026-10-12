@@ -1926,7 +1926,7 @@ export async function captureLweScreenshot(
       ...options,
       fps: 60,
       volume: 0,
-      engineFlags: { ...options.engineFlags, silent: true, fullscreenPause: 'off', disableMouse: true }
+      engineFlags: { ...options.engineFlags, silent: true, fullscreenPause: 'off', pauseOnFocus: false, disableMouse: true }
     },
     { window: `0x0x${size.width}x${size.height}`, screenshotPath: outPath, delayFrames: 120 }
   )

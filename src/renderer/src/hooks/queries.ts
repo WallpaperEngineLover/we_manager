@@ -58,7 +58,7 @@ export interface FolderMenuState {
 
 export function useFolders() {
   const queryClient = useQueryClient()
-  const { data: folders = [] } = useQuery({
+  const { data: folders = [], isSuccess: foldersLoaded } = useQuery({
     queryKey: ['folders'],
     queryFn: () => window.electronAPI.folders.getAll()
   })
@@ -97,5 +97,5 @@ export function useFolders() {
     }
   }
 
-  return { folders, folderOfItem, refetchFolders, moveToFolder, removeFromFolders, menuState }
+  return { folders, foldersLoaded, folderOfItem, refetchFolders, moveToFolder, removeFromFolders, menuState }
 }

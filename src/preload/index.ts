@@ -17,6 +17,7 @@ import type {
   DownloadProgressEvent,
   WallpaperEnvironment,
   LweStatus,
+  GnomeExtensionStatus,
   LwePrebuiltTarget,
   LweInstallProgress,
   LinuxDistro,
@@ -397,6 +398,7 @@ const api = {
       linked: number
       removed: number
       unlinked: number
+      previewsFixed: number
       corrupted: string[]
     }> => ipcRenderer.invoke(IpcChannels.BACKUP_SCAN),
     remove: (itemIds: string[]): Promise<{ removed: number; failed: number; keptDirs: string[] }> =>
@@ -408,6 +410,12 @@ const api = {
       ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_SET_ENABLED, enabled),
     getEnabled: (): Promise<boolean> =>
       ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_GET_ENABLED)
+  },
+
+  gnomeExtension: {
+    status: (): Promise<GnomeExtensionStatus> => ipcRenderer.invoke(IpcChannels.GNOME_EXTENSION_STATUS),
+    install: (): Promise<{ ok: boolean; message: string; status: GnomeExtensionStatus }> =>
+      ipcRenderer.invoke(IpcChannels.GNOME_EXTENSION_INSTALL)
   },
 
   shell: {
