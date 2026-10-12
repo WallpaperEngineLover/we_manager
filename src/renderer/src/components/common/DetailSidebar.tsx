@@ -5,6 +5,7 @@ import {
   Star,
   ThumbsUp,
   ThumbsDown,
+  Heart,
   Download,
   Play,
   Loader2,
@@ -38,13 +39,15 @@ import {
   Terminal,
   Sparkles,
   CloudFog,
+  HeartCrack,
   type LucideIcon
 } from 'lucide-react'
 import clsx from 'clsx'
 import { openWorkshopPage, openProfilePage, isWorkshopId } from '../../utils/steam'
 import { WE_TYPES, WE_AGE_RATINGS, canonicalResolutionTag, resolutionsFromTags } from '../../constants/weFilters'
 import { formatFileSize } from '../../utils/format'
-import { useVoteAction, useVotedIds } from '../../hooks/useVotes'
+import { useDislikedIds, useVoteAction, useVotedIds } from '../../hooks/useVotes'
+import { useFavoriteAction, useFavoriteIds, useItemFavoriteStatus } from '../../hooks/useFavorites'
 import { useLweInstalled } from '../../hooks/queries'
 import ScreenSelect from './ScreenSelect'
 import { getPreviewSrc } from '../../utils/preview'
@@ -137,14 +140,14 @@ function LayerRow({
             : 'Forced visible - click to reset to default'
       }
       className={clsx(
-        'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-white/5 disabled:opacity-40',
+        'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-fg/5 disabled:opacity-40',
         state === 'hidden' ? 'text-gray-600' : 'text-gray-300'
       )}
     >
       {state === 'hidden' ? (
         <EyeOff size={12} className="shrink-0 text-gray-600" />
       ) : state === 'forced' ? (
-        <Pin size={12} className="shrink-0 text-indigo-400" />
+        <Pin size={12} className="shrink-0 text-accent-400" />
       ) : (
         <Eye size={12} className="shrink-0 text-gray-500" />
       )}
@@ -179,14 +182,14 @@ function EffectRow({
             : 'Forced visible - click to reset to default'
       }
       className={clsx(
-        'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-white/5 disabled:opacity-40',
+        'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-fg/5 disabled:opacity-40',
         state === 'hidden' ? 'text-gray-600' : 'text-gray-300'
       )}
     >
       {state === 'hidden' ? (
         <EyeOff size={12} className="shrink-0 text-gray-600" />
       ) : state === 'forced' ? (
-        <Pin size={12} className="shrink-0 text-indigo-400" />
+        <Pin size={12} className="shrink-0 text-accent-400" />
       ) : (
         <Eye size={12} className="shrink-0 text-gray-500" />
       )}
@@ -228,12 +231,12 @@ function PropertyRow({
         disabled={busy}
         title={property.name}
         className={clsx(
-          'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-white/5 disabled:opacity-40',
+          'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-fg/5 disabled:opacity-40',
           on ? 'text-gray-200' : 'text-gray-500'
         )}
       >
         {on ? (
-          <ToggleRight size={14} className="shrink-0 text-indigo-400" />
+          <ToggleRight size={14} className="shrink-0 text-accent-400" />
         ) : (
           <ToggleLeft size={14} className="shrink-0 text-gray-600" />
         )}
@@ -263,7 +266,7 @@ function PropertyRow({
           onMouseUp={(e) => { onCommit(e.currentTarget.value); setDraft(null) }}
           onTouchEnd={(e) => { onCommit(e.currentTarget.value); setDraft(null) }}
           onKeyUp={(e) => { onCommit(e.currentTarget.value); setDraft(null) }}
-          className="w-full accent-indigo-500 disabled:opacity-50"
+          className="w-full accent-accent-500 disabled:opacity-50"
         />
       </div>
     )
@@ -279,7 +282,7 @@ function PropertyRow({
           value={value}
           disabled={busy}
           onChange={(e) => onCommit(e.target.value)}
-          className="rounded bg-white/5 px-1.5 py-0.5 text-xs text-gray-300 outline-none disabled:opacity-50"
+          className="rounded bg-fg/5 px-1.5 py-0.5 text-xs text-gray-300 outline-none disabled:opacity-50"
         >
           {property.options?.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -333,7 +336,7 @@ function AudioObjectRow({
         onMouseUp={(e) => { onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
         onTouchEnd={(e) => { onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
         onKeyUp={(e) => { onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
-        className="w-full accent-indigo-500 disabled:opacity-50"
+        className="w-full accent-accent-500 disabled:opacity-50"
       />
     </div>
   )
@@ -375,7 +378,7 @@ function SoundTrackRow({
         onMouseUp={(e) => { onCommit(Number(e.currentTarget.value)); setDraft(null) }}
         onTouchEnd={(e) => { onCommit(Number(e.currentTarget.value)); setDraft(null) }}
         onKeyUp={(e) => { onCommit(Number(e.currentTarget.value)); setDraft(null) }}
-        className="w-full accent-indigo-500 disabled:opacity-50"
+        className="w-full accent-accent-500 disabled:opacity-50"
       />
     </div>
   )
@@ -385,7 +388,7 @@ function SidebarButton({ icon: Icon, onClick, children }: { icon: LucideIcon; on
   return (
     <button
       onClick={onClick}
-      className="flex items-center justify-center gap-1.5 rounded-lg bg-white/5 py-1.5 text-xs text-gray-300 transition-colors hover:bg-white/10"
+      className="flex items-center justify-center gap-1.5 rounded-lg bg-fg/5 py-1.5 text-xs text-gray-300 transition-colors hover:bg-fg/10"
     >
       <Icon size={12} />
       {children}
@@ -428,7 +431,12 @@ export default function DetailSidebar({
   const queryClient = useQueryClient()
   const lweInstalled = useLweInstalled()
   const cachedLiked = useVotedIds().has(id)
+  const isDisliked = useDislikedIds().has(id)
   const { vote, isLiking, isDisliking } = useVoteAction()
+  const isFavorite = useFavoriteIds().has(id)
+  const { setFavorite, isPending: isFavoritePending } = useFavoriteAction()
+  const { failure: favoriteFailure, checking: favoriteChecking } = useItemFavoriteStatus(id)
+  const favoriteAdd = favoriteFailure ? favoriteFailure.add : !isFavorite
   const [isApplying, setIsApplying] = useState(false)
   const [unsubConfirm, setUnsubConfirm] = useState(false)
   const [isUnsubscribing, setIsUnsubscribing] = useState(false)
@@ -930,8 +938,8 @@ export default function DetailSidebar({
   }
 
   return (
-    <div className="flex w-80 flex-shrink-0 flex-col overflow-y-auto border-l border-white/5 bg-[#0d0d0d]">
-      <div className="relative aspect-video shrink-0 overflow-hidden bg-[#111]">
+    <div className="flex w-80 flex-shrink-0 flex-col overflow-y-auto border-l border-fg/5 bg-pane">
+      <div className="relative aspect-video shrink-0 overflow-hidden bg-sunken">
         {previewUrl ? (
           <img src={previewUrl} alt={title} className="h-full w-full object-cover" />
         ) : (
@@ -962,11 +970,11 @@ export default function DetailSidebar({
             {author?.avatarUrl ? (
               <img src={author.avatarUrl} alt="" className="h-8 w-8 rounded" />
             ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded bg-white/5 text-gray-500">
+              <div className="flex h-8 w-8 items-center justify-center rounded bg-fg/5 text-gray-500">
                 <User size={14} />
               </div>
             )}
-            <span className="text-sm text-indigo-300 hover:text-indigo-200">
+            <span className="text-sm text-accent-300 hover:text-accent-200">
               {author?.name ?? '...'}
             </span>
           </button>
@@ -976,23 +984,23 @@ export default function DetailSidebar({
 
         <div className="flex flex-wrap gap-1.5">
           {typeTag && (
-            <span className="rounded bg-white/5 px-2 py-1 text-xs text-gray-300">
+            <span className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-300">
               {typeTag}
               {fileSizeLabel ? ` · ${fileSizeLabel}` : ''}
             </span>
           )}
           {genreTags.map((tag) => (
-            <span key={tag} className="rounded bg-white/5 px-2 py-1 text-xs text-gray-400">
+            <span key={tag} className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-400">
               {tag}
             </span>
           ))}
           {resolutionTags.map((tag) => (
-            <span key={tag} className="rounded bg-white/5 px-2 py-1 text-xs text-gray-400">
+            <span key={tag} className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-400">
               {tag}
             </span>
           ))}
           {ageTag && (
-            <span className="rounded bg-white/5 px-2 py-1 text-xs text-gray-400">{ageTag}</span>
+            <span className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-400">{ageTag}</span>
           )}
         </div>
 
@@ -1001,7 +1009,7 @@ export default function DetailSidebar({
         )}
 
         {localPath && lweInstalled && (objectsLoading || objects.length > 0) && (
-          <div className="border-t border-white/5 pt-3">
+          <div className="border-t border-fg/5 pt-3">
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => setLayersOpen((v) => !v)}
@@ -1024,7 +1032,7 @@ export default function DetailSidebar({
                   title={fogDisabled ? 'Fog disabled - click to re-enable' : 'Click to disable fog'}
                   className={clsx(
                     'flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium normal-case transition-colors disabled:opacity-40',
-                    fogDisabled ? 'bg-white/5 text-gray-500' : 'bg-white/10 text-gray-300 hover:bg-white/15'
+                    fogDisabled ? 'bg-fg/5 text-gray-500' : 'bg-fg/10 text-gray-300 hover:bg-fg/15'
                   )}
                 >
                   {togglingFog ? <Loader2 size={10} className="animate-spin" /> : <CloudFog size={10} />}
@@ -1049,7 +1057,7 @@ export default function DetailSidebar({
         )}
 
         {localPath && lweInstalled && (effectsLoading || effects.length > 0) && (
-          <div className="border-t border-white/5 pt-3">
+          <div className="border-t border-fg/5 pt-3">
             <button
               onClick={() => setEffectsOpen((v) => !v)}
               className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
@@ -1076,7 +1084,7 @@ export default function DetailSidebar({
         )}
 
         {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
-          <div className="border-t border-white/5 pt-3">
+          <div className="border-t border-fg/5 pt-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               <Maximize size={12} />
               <span className="flex-1 text-left">Scaling</span>
@@ -1091,7 +1099,7 @@ export default function DetailSidebar({
               value={scalingMode}
               disabled={isCommittingScaling}
               onChange={(e) => commitScaling(e.target.value as ScalingMode)}
-              className="w-full rounded bg-white/5 px-1.5 py-1 text-xs text-gray-300 outline-none disabled:opacity-50"
+              className="w-full rounded bg-fg/5 px-1.5 py-1 text-xs text-gray-300 outline-none disabled:opacity-50"
             >
               {SCALING_MODE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -1103,7 +1111,7 @@ export default function DetailSidebar({
         )}
 
         {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
-          <div className="border-t border-white/5 pt-3">
+          <div className="border-t border-fg/5 pt-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               {zoomPercent < 100 ? <ZoomOut size={12} /> : <ZoomIn size={12} />}
               <span className="flex-1 text-left">Zoom</span>
@@ -1130,13 +1138,13 @@ export default function DetailSidebar({
               onMouseUp={(e) => commitZoom(Number(e.currentTarget.value))}
               onTouchEnd={(e) => commitZoom(Number(e.currentTarget.value))}
               onKeyUp={(e) => commitZoom(Number(e.currentTarget.value))}
-              className="w-full accent-indigo-500 disabled:opacity-50"
+              className="w-full accent-accent-500 disabled:opacity-50"
             />
           </div>
         )}
 
         {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
-          <div className="border-t border-white/5 pt-3">
+          <div className="border-t border-fg/5 pt-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               <Move size={12} />
               <span className="flex-1 text-left">Position</span>
@@ -1164,7 +1172,7 @@ export default function DetailSidebar({
                 onMouseUp={(e) => commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
                 onTouchEnd={(e) => commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
                 onKeyUp={(e) => commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
-                className="w-full accent-indigo-500 disabled:opacity-50"
+                className="w-full accent-accent-500 disabled:opacity-50"
               />
               <span className="w-8 shrink-0 text-right text-[10px] text-gray-400">
                 {Math.round(offsetX * 100)}
@@ -1187,7 +1195,7 @@ export default function DetailSidebar({
                 onMouseUp={(e) => commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
                 onTouchEnd={(e) => commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
                 onKeyUp={(e) => commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
-                className="w-full accent-indigo-500 disabled:opacity-50"
+                className="w-full accent-accent-500 disabled:opacity-50"
               />
               <span className="w-8 shrink-0 text-right text-[10px] text-gray-400">
                 {Math.round(offsetY * 100)}
@@ -1197,7 +1205,7 @@ export default function DetailSidebar({
         )}
 
         {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
-          <div className="border-t border-white/5 pt-3">
+          <div className="border-t border-fg/5 pt-3">
             <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               <Zap size={12} />
               <span className="flex-1 text-left">FPS limit</span>
@@ -1224,14 +1232,14 @@ export default function DetailSidebar({
                   commitFps(Number.isFinite(parsed) ? Math.min(240, Math.max(1, parsed)) : fps)
                 }}
                 title="Overrides the app-wide default FPS for this wallpaper only - changes require a relaunch, not live. Empty = use the default."
-                className="w-14 rounded bg-white/5 px-1 py-0.5 text-right normal-case text-gray-400 outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                className="w-14 rounded bg-fg/5 px-1 py-0.5 text-right normal-case text-gray-400 outline-none focus:ring-1 focus:ring-accent-500 disabled:opacity-50"
               />
             </div>
           </div>
         )}
 
         {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
-          <div className="border-t border-white/5 pt-3">
+          <div className="border-t border-fg/5 pt-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               <Gauge size={12} />
               <span className="flex-1 text-left">Playback speed</span>
@@ -1258,7 +1266,7 @@ export default function DetailSidebar({
                   commitSpeed(clamped)
                 }}
                 title="Type an exact speed percentage - applies on Enter or clicking away"
-                className="w-12 rounded bg-white/5 px-1 py-0.5 text-right normal-case text-gray-400 outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                className="w-12 rounded bg-fg/5 px-1 py-0.5 text-right normal-case text-gray-400 outline-none focus:ring-1 focus:ring-accent-500 disabled:opacity-50"
               />
               <span className="normal-case text-gray-400">%</span>
             </div>
@@ -1278,7 +1286,7 @@ export default function DetailSidebar({
               onTouchEnd={(e) => commitSpeed(Number(e.currentTarget.value))}
               onKeyUp={(e) => commitSpeed(Number(e.currentTarget.value))}
               title="Slows down or speeds up particles, animated effects and scripts (100% = normal speed)"
-              className="w-full accent-indigo-500 disabled:opacity-50"
+              className="w-full accent-accent-500 disabled:opacity-50"
             />
           </div>
         )}
@@ -1305,7 +1313,7 @@ export default function DetailSidebar({
         )}
 
         {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
-          <div className="border-t border-white/5 pt-3">
+          <div className="border-t border-fg/5 pt-3">
             <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               <Palette size={12} />
               <span className="flex-1 text-left">Corner color</span>
@@ -1321,14 +1329,14 @@ export default function DetailSidebar({
                 disabled={isCommittingCornerColor}
                 onChange={(e) => commitCornerColor(e.target.value)}
                 title="Color shown outside the wallpaper's bounds (letterboxing / zoomed-out scaling)"
-                className="h-5 w-8 shrink-0 cursor-pointer rounded border border-white/10 bg-transparent p-0 disabled:opacity-50"
+                className="h-5 w-8 shrink-0 cursor-pointer rounded border border-fg/10 bg-transparent p-0 disabled:opacity-50"
               />
             </label>
           </div>
         )}
 
         {localPath && lweInstalled && (libraryMeta?.type === 'video' || libraryMeta?.type === 'scene') && (
-          <div className="border-t border-white/5 pt-3">
+          <div className="border-t border-fg/5 pt-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               {volume === 0 ? <VolumeX size={12} /> : <Volume2 size={12} />}
               <span className="flex-1 text-left">Volume</span>
@@ -1359,13 +1367,13 @@ export default function DetailSidebar({
               onMouseUp={(e) => commitVolume(Number(e.currentTarget.value))}
               onTouchEnd={(e) => commitVolume(Number(e.currentTarget.value))}
               onKeyUp={(e) => commitVolume(Number(e.currentTarget.value))}
-              className="w-full accent-indigo-500 disabled:opacity-50"
+              className="w-full accent-accent-500 disabled:opacity-50"
             />
           </div>
         )}
 
         {localPath && lweInstalled && libraryMeta?.type === 'scene' && (
-          <div className="border-t border-white/5 pt-3">
+          <div className="border-t border-fg/5 pt-3">
             <button
               onClick={() => setXray({ xrayFullReveal: !xrayFullReveal, xrayDisabled: false })}
               disabled={isCommittingXray}
@@ -1382,7 +1390,7 @@ export default function DetailSidebar({
               {isCommittingXray ? (
                 <Loader2 size={14} className="animate-spin text-gray-500" />
               ) : xrayFullReveal ? (
-                <ToggleRight size={14} className="text-indigo-400" />
+                <ToggleRight size={14} className="text-accent-400" />
               ) : (
                 <ToggleLeft size={14} className="text-gray-600" />
               )}
@@ -1403,7 +1411,7 @@ export default function DetailSidebar({
               {isCommittingXray ? (
                 <Loader2 size={14} className="animate-spin text-gray-500" />
               ) : xrayDisabled ? (
-                <ToggleRight size={14} className="text-indigo-400" />
+                <ToggleRight size={14} className="text-accent-400" />
               ) : (
                 <ToggleLeft size={14} className="text-gray-600" />
               )}
@@ -1424,7 +1432,7 @@ export default function DetailSidebar({
               {isCommittingParallax ? (
                 <Loader2 size={14} className="animate-spin text-gray-500" />
               ) : disableParallax ? (
-                <ToggleRight size={14} className="text-indigo-400" />
+                <ToggleRight size={14} className="text-accent-400" />
               ) : (
                 <ToggleLeft size={14} className="text-gray-600" />
               )}
@@ -1445,7 +1453,7 @@ export default function DetailSidebar({
               {isCommittingExpandCanvas ? (
                 <Loader2 size={14} className="animate-spin text-gray-500" />
               ) : expandCanvas ? (
-                <ToggleRight size={14} className="text-indigo-400" />
+                <ToggleRight size={14} className="text-accent-400" />
               ) : (
                 <ToggleLeft size={14} className="text-gray-600" />
               )}
@@ -1466,7 +1474,7 @@ export default function DetailSidebar({
               {isCommittingRepairAssets ? (
                 <Loader2 size={14} className="animate-spin text-gray-500" />
               ) : repairAssets ? (
-                <ToggleRight size={14} className="text-indigo-400" />
+                <ToggleRight size={14} className="text-accent-400" />
               ) : (
                 <ToggleLeft size={14} className="text-gray-600" />
               )}
@@ -1479,7 +1487,7 @@ export default function DetailSidebar({
         )}
 
         {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
-          <div className="border-t border-white/5 pt-3">
+          <div className="border-t border-fg/5 pt-3">
             <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               <Terminal size={12} />
               <span className="flex-1 text-left">Custom launch arguments</span>
@@ -1501,13 +1509,13 @@ export default function DetailSidebar({
                 if (e.key === 'Enter') e.currentTarget.blur()
               }}
               placeholder="--render-debug skip-effect=726"
-              className="w-full rounded border border-white/10 bg-black/30 px-2 py-1 text-xs text-gray-200 placeholder:text-gray-600 focus:border-indigo-500/50 focus:outline-none disabled:opacity-50"
+              className="w-full rounded border border-fg/10 bg-black/30 px-2 py-1 text-xs text-gray-200 placeholder:text-gray-600 focus:border-accent-500/50 focus:outline-none disabled:opacity-50"
             />
           </div>
         )}
 
         {localPath && lweInstalled && (propertiesLoading || properties.length > 0) && (
-          <div className="border-t border-white/5 pt-3">
+          <div className="border-t border-fg/5 pt-3">
             <button
               onClick={() => setPropertiesOpen((v) => !v)}
               className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
@@ -1539,7 +1547,7 @@ export default function DetailSidebar({
         )}
 
         {localPath && lweInstalled && (audioObjectsLoading || audioObjects.length > 0) && (
-          <div className="border-t border-white/5 pt-3">
+          <div className="border-t border-fg/5 pt-3">
             <button
               onClick={() => setAudioOpen((v) => !v)}
               className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
@@ -1572,7 +1580,7 @@ export default function DetailSidebar({
         )}
 
         {localPath && lweInstalled && (objectsLoading || soundObjects.length > 0) && (
-          <div className="border-t border-white/5 pt-3">
+          <div className="border-t border-fg/5 pt-3">
             <button
               onClick={() => setSoundTracksOpen((v) => !v)}
               className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
@@ -1628,7 +1636,7 @@ export default function DetailSidebar({
           </>
         )}
 
-        <div className="flex flex-col gap-1.5 border-t border-white/5 pt-3">
+        <div className="flex flex-col gap-1.5 border-t border-fg/5 pt-3">
           <div className="flex gap-1.5">
             <button
               onClick={() => handleVote(true)}
@@ -1637,10 +1645,10 @@ export default function DetailSidebar({
               className={clsx(
                 'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs transition-colors disabled:cursor-not-allowed',
                 unavailable
-                  ? 'bg-white/5 text-gray-600 opacity-50'
+                  ? 'bg-fg/5 text-gray-600 opacity-50'
                   : isLiked
                     ? 'bg-green-600/30 text-green-300'
-                    : 'bg-white/5 text-gray-300 hover:bg-white/10'
+                    : 'bg-fg/5 text-gray-300 hover:bg-fg/10'
               )}
             >
               {isLiking ? <Loader2 size={12} className="animate-spin" /> : <ThumbsUp size={12} />}
@@ -1648,17 +1656,72 @@ export default function DetailSidebar({
             </button>
             <button
               onClick={() => handleVote(false)}
-              disabled={isLiking || isDisliking || unavailable}
+              disabled={isLiking || isDisliking || unavailable || (isDisliked && !isLiked)}
               title={unavailable ? 'Removed from the Steam Workshop - voting is no longer possible' : undefined}
               className={clsx(
                 'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs transition-colors disabled:cursor-not-allowed',
-                unavailable ? 'bg-white/5 text-gray-600 opacity-50' : 'bg-white/5 text-gray-300 hover:bg-white/10'
+                unavailable
+                  ? 'bg-fg/5 text-gray-600 opacity-50'
+                  : isDisliked && !isLiked
+                    ? 'bg-red-600/25 text-red-300'
+                    : 'bg-fg/5 text-gray-300 hover:bg-fg/10'
               )}
             >
               {isDisliking ? <Loader2 size={12} className="animate-spin" /> : <ThumbsDown size={12} />}
-              Dislike
+              {isDisliked && !isLiked ? 'Disliked' : 'Dislike'}
             </button>
+            {workshopId && (
+              <button
+                onClick={() => setFavorite(id, favoriteAdd)}
+                disabled={isFavoritePending || (unavailable && favoriteAdd)}
+                title={
+                  favoriteFailure
+                    ? 'Try again'
+                    : isFavorite
+                      ? 'In your Steam favorites - click to remove'
+                      : 'Add to your Steam favorites'
+                }
+                aria-pressed={isFavorite}
+                className={clsx(
+                  'flex w-9 items-center justify-center rounded-lg py-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                  favoriteFailure
+                    ? 'bg-red-500/20 text-red-300 hover:bg-red-500/30'
+                    : isFavorite
+                      ? 'bg-pink-500/20 text-pink-300 hover:bg-pink-500/30'
+                      : 'bg-fg/5 text-gray-300 hover:bg-fg/10'
+                )}
+              >
+                {isFavoritePending ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : favoriteFailure ? (
+                  <HeartCrack size={12} />
+                ) : (
+                  <Heart size={12} fill={isFavorite ? 'currentColor' : 'none'} />
+                )}
+              </button>
+            )}
           </div>
+          {workshopId && favoriteFailure && (
+            <p className="flex items-start gap-1.5 text-xs text-red-300">
+              <HeartCrack size={12} className="mt-0.5 shrink-0" />
+              <span>
+                {favoriteFailure.message}.{' '}
+                <button
+                  onClick={() => setFavorite(id, favoriteFailure.add)}
+                  disabled={isFavoritePending || (unavailable && favoriteFailure.add)}
+                  className="underline underline-offset-2 hover:text-red-200 disabled:opacity-50"
+                >
+                  Try again
+                </button>
+              </span>
+            </p>
+          )}
+          {workshopId && favoriteChecking && !favoriteFailure && (
+            <p className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Loader2 size={11} className="animate-spin" />
+              Checking your Steam favorites list for the change
+            </p>
+          )}
 
           {canPlay && perScreen && (
             <ScreenSelect targets={targets} value={playScreen} onChange={setPlayScreen} title="Which screen to play on" />
@@ -1668,7 +1731,7 @@ export default function DetailSidebar({
               onClick={handlePlay}
               disabled={isApplying || !lweInstalled}
               title={lweInstalled ? undefined : 'Install linux-wallpaperengine in Settings first'}
-              className="flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 py-1.5 text-xs text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center justify-center gap-1.5 rounded-lg bg-accent-600 py-1.5 text-xs text-white transition-colors hover:bg-accent-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isApplying ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
               Play wallpaper
@@ -1683,7 +1746,7 @@ export default function DetailSidebar({
                 'flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs transition-colors',
                 unsubConfirm
                   ? 'bg-red-600 text-white hover:bg-red-500'
-                  : 'bg-white/5 text-gray-300 hover:bg-red-500/20 hover:text-red-400'
+                  : 'bg-fg/5 text-gray-300 hover:bg-red-500/20 hover:text-red-400'
               )}
             >
               {isUnsubscribing ? (

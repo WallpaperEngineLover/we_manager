@@ -2,13 +2,13 @@ import { execFileSync } from 'child_process'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import Store from 'electron-store'
 import { app, utilityProcess, type BrowserWindow, type UtilityProcess } from 'electron'
 import { WE_APP_ID, STANDALONE_APP_ID } from '@shared/constants'
-import type { DownloadProgressEvent, WorkshopAuthorInfo } from '@shared/types'
+import type { DownloadProgressEvent, FavoriteFailure, FavoriteStatus, WorkshopAuthorInfo } from '@shared/types'
 import { getSteamIdentity } from './config.service'
 import { encodeBigInts, decodeBigInts, type SteamHostResponse } from '../steam-host-protocol'
 import { hostCommand, isFlatpak } from '../utils/flatpak'
+import { SteamListCache } from './steam-list-cache'
 
 // Steam counts a process that called SteamAPI_Init as a running game, which also breaks Steam
 // Game Recording. Like WE's ui32.exe, the connection only lives while the window is shown.
@@ -293,6 +293,7 @@ const USER_ITEM_TYPE = 13 // UGCType.All, since WE items span multiple subtypes
 const CREATION_ORDER_DESC = 1
 const VOTED_UP = 2
 const VOTED_DOWN = 3
+const FAVORITED = 4
 const PAGE_FETCH_TIMEOUT_MS = 8000
 const VOTE_TIMEOUT_MS = 15000
 
@@ -324,73 +325,11 @@ async function getUserItemsPage(
   }
 }
 
-interface VoteCacheStore {
-  accountId: number | null
-  up: string[]
-  missing: string[]
-  lastFullSync: number
-  pending: Record<string, { up: boolean; at: number }>
-}
-
-const voteStore = new Store<VoteCacheStore>({
-  name: 'vote-cache',
-  defaults: { accountId: null, up: [], missing: [], lastFullSync: 0, pending: {} }
-})
-
-let votedUpCache = new Set<string>(voteStore.get('up'))
-
-// an id must be missing on two consecutive full crawls before it is dropped, to absorb pagination drift
-let missingLastCycle = new Set<string>(voteStore.get('missing'))
-
-// Steam's voted-up list lags behind the vote itself, so local votes stay authoritative until the crawl agrees or this window runs out
-const PENDING_VOTE_TTL_MS = 15 * 60 * 1000
-const pendingVotes = new Map<string, { up: boolean; at: number }>(
-  Object.entries(voteStore.get('pending')).filter(([, v]) => Date.now() - v.at <= PENDING_VOTE_TTL_MS)
-)
-
-function applyPendingVotes(fresh: Set<string>): Set<string> {
-  const now = Date.now()
-  const merged = new Set(fresh)
-  for (const [id, vote] of pendingVotes) {
-    if (fresh.has(id) === vote.up || now - vote.at > PENDING_VOTE_TTL_MS) {
-      pendingVotes.delete(id)
-      continue
-    }
-    if (vote.up) merged.add(id)
-    else merged.delete(id)
-  }
-  return merged
-}
-
-const PERSIST_DELAY_MS = 3000
-let persistTimer: ReturnType<typeof setTimeout> | null = null
-let persistDirty = false
-
-function persistVoteCache(): void {
-  persistDirty = true
-  if (persistTimer) return
-  persistTimer = setTimeout(flushVoteCache, PERSIST_DELAY_MS)
-}
-
-function flushVoteCache(): void {
-  if (persistTimer) {
-    clearTimeout(persistTimer)
-    persistTimer = null
-  }
-  if (!persistDirty) return
-  persistDirty = false
-  voteStore.set('up', [...votedUpCache])
-  voteStore.set('missing', [...missingLastCycle])
-  voteStore.set('pending', Object.fromEntries(pendingVotes))
-}
-
-app.on('will-quit', flushVoteCache)
-
 const VOTE_FETCH_CONCURRENCY = 3
 const PAGE_PACING_MS = 150
 
-// list sort orders use the item's publish date, not the vote date, so the only way to get the full liked list is to crawl all of it
-async function fetchVotedItems(
+// lists sort by publish date, not vote date, so a full list means crawling all of it
+async function fetchUserList(
   accountId: number,
   listType: number,
   onPage: (ids: string[]) => void
@@ -428,94 +367,47 @@ async function fetchVotedItems(
   return ids
 }
 
-const FULL_SYNC_INTERVAL_MS = 12 * 60 * 60 * 1000
-const SYNC_CHECK_INTERVAL_MS = 10 * 60 * 1000
-const SYNC_STARTUP_DELAY_MS = 20 * 1000
-const PROGRESS_NOTIFY_INTERVAL_MS = 15 * 1000
-
-let votedIdsChangeListener: ((ids: string[]) => void) | null = null
-let syncInFlight = false
-let lastSyncFailure = 0
-
-function notifyVotedIds(): void {
-  votedIdsChangeListener?.([...votedUpCache])
-}
-
-async function runFullSync(): Promise<void> {
-  const accountId = await getLocalAccountId()
-  if (voteStore.get('accountId') !== null && voteStore.get('accountId') !== accountId) {
-    votedUpCache = new Set()
-    missingLastCycle = new Set()
-    pendingVotes.clear()
-    notifyVotedIds()
+function listSource(listType: number) {
+  return {
+    canSync: isSteamRunning,
+    getAccountId: getLocalAccountId,
+    crawl: (accountId: number, onPage: (ids: string[]) => void) => fetchUserList(accountId, listType, onPage)
   }
-  voteStore.set('accountId', accountId)
+}
 
-  let lastNotify = Date.now()
-  const seen = await fetchVotedItems(accountId, VOTED_UP, (pageIds) => {
-    let added = false
-    for (const id of pageIds) {
-      if (!votedUpCache.has(id) && pendingVotes.get(id)?.up !== false) {
-        votedUpCache.add(id)
-        added = true
-      }
-    }
-    if (!added) return
-    persistVoteCache()
-    if (Date.now() - lastNotify >= PROGRESS_NOTIFY_INTERVAL_MS) {
-      lastNotify = Date.now()
-      notifyVotedIds()
-    }
-  })
+const likedList = new SteamListCache('Liked list', 'vote-cache', listSource(VOTED_UP))
+const dislikedList = new SteamListCache('Disliked list', 'dislike-cache', listSource(VOTED_DOWN))
+const favoriteList = new SteamListCache('Favorites', 'favorite-cache', listSource(FAVORITED))
 
-  const fresh = applyPendingVotes(seen)
-  const merged = new Set(fresh)
-  const missingThisCycle = new Set<string>()
-  for (const id of votedUpCache) {
-    if (fresh.has(id)) continue
-    if (missingLastCycle.has(id)) continue
-    merged.add(id)
-    missingThisCycle.add(id)
+const WRITE_ATTEMPTS = 4
+const WRITE_RETRY_BASE_MS = 1500
+// Steam drops overlapping UGC writes
+const WRITE_GAP_MS = 400
+
+let writeQueue: Promise<unknown> = Promise.resolve()
+
+function queueSteamWrite<T>(run: () => Promise<T>): Promise<T> {
+  const result = writeQueue.then(run)
+  writeQueue = result.catch(() => {}).then(() => sleep(WRITE_GAP_MS))
+  return result
+}
+
+async function withRetry(what: string, attempt: () => Promise<void>): Promise<void> {
+  let lastErr: unknown
+  for (let i = 0; i < WRITE_ATTEMPTS; i++) {
+    if (i > 0) await sleep(WRITE_RETRY_BASE_MS * 2 ** (i - 1))
+    if (!isSteamRunning()) throw new Error(`Steam is not running - start Steam to ${what}`)
+    if (!(await isSteamOnline())) throw new Error('Steam is offline - check your internet connection and try again')
+    try {
+      await attempt()
+      return
+    } catch (err) {
+      lastErr = err
+      console.warn(`[Steam] Could not ${what} (attempt ${i + 1}/${WRITE_ATTEMPTS}):`, (err as Error)?.message ?? err)
+    }
   }
-  const changed = !sameIds(votedUpCache, merged)
-  missingLastCycle = missingThisCycle
-  votedUpCache = merged
-  voteStore.set('lastFullSync', Date.now())
-  persistVoteCache()
-  if (changed) notifyVotedIds()
-  console.log(`[Steam] Liked list synced: ${votedUpCache.size} items`)
+  throw lastErr
 }
-
-function maybeRunFullSync(): void {
-  if (syncInFlight || !isSteamRunning()) return
-  const now = Date.now()
-  if (now - voteStore.get('lastFullSync') < FULL_SYNC_INTERVAL_MS) return
-  if (now - lastSyncFailure < SYNC_CHECK_INTERVAL_MS) return
-  syncInFlight = true
-  runFullSync()
-    .catch((err) => {
-      lastSyncFailure = Date.now()
-      console.warn('[Steam] Liked list sync failed, will retry later:', err?.message ?? err)
-    })
-    .finally(() => {
-      syncInFlight = false
-    })
-}
-
-function recordVote(idStr: string, voteUp: boolean): void {
-  pendingVotes.set(idStr, { up: voteUp, at: Date.now() })
-  if (voteUp) votedUpCache.add(idStr)
-  else votedUpCache.delete(idStr)
-  missingLastCycle.delete(idStr)
-  persistVoteCache()
-}
-
-const VOTE_ATTEMPTS = 4
-const VOTE_RETRY_BASE_MS = 1500
-// Steam rejects or drops SetUserItemVote calls that overlap, so votes go out one at a time
-const VOTE_GAP_MS = 400
-
-let voteQueue: Promise<unknown> = Promise.resolve()
 
 // kept for this session only, a failure usually means Steam was busy or offline at the time
 const failedVotes = new Map<string, { up: boolean; message: string }>()
@@ -525,7 +417,7 @@ export function getFailedVotes(): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [id, failure] of failedVotes) {
     // liked elsewhere since, e.g. on the website or picked up by the background sync
-    if (failure.up && votedUpCache.has(id)) failedVotes.delete(id)
+    if ((failure.up ? likedList : dislikedList).has(id)) failedVotes.delete(id)
     else out[id] = failure.message
   }
   return out
@@ -545,90 +437,162 @@ function setVoteFailure(idStr: string, failure: { up: boolean; message: string }
 }
 
 export function voteOnItemAndConfirm(itemId: bigint, voteUp: boolean): Promise<boolean> {
-  const run = voteQueue.then(() => voteWithRetry(itemId, voteUp))
-  voteQueue = run.catch(() => {}).then(() => sleep(VOTE_GAP_MS))
-  return run
-}
-
-async function voteWithRetry(itemId: bigint, voteUp: boolean): Promise<boolean> {
-  let lastErr: unknown
-  for (let attempt = 0; attempt < VOTE_ATTEMPTS; attempt++) {
-    if (attempt > 0) await sleep(VOTE_RETRY_BASE_MS * 2 ** (attempt - 1))
-    if (!isSteamRunning()) throw new Error('Steam is not running - start Steam to like wallpapers')
-    if (!(await isSteamOnline())) throw new Error('Steam is offline - check your internet connection and try again')
+  const idStr = itemId.toString()
+  return queueSteamWrite(async () => {
     try {
-      const ok = await voteOnce(itemId, voteUp)
-      setVoteFailure(itemId.toString(), null)
-      return ok
+      await withRetry(voteUp ? 'like wallpapers' : 'dislike wallpapers', () => voteOnce(itemId, voteUp))
     } catch (err) {
-      lastErr = err
-      console.warn(`[Steam] Vote on ${itemId} failed (attempt ${attempt + 1}/${VOTE_ATTEMPTS}):`, (err as Error)?.message ?? err)
+      const msg = (err as Error)?.message ?? String(err)
+      setVoteFailure(idStr, {
+        up: voteUp,
+        message: `${voteUp ? 'Like' : 'Dislike'} failed after ${WRITE_ATTEMPTS} attempts: ${msg}`
+      })
+      throw new Error(`Could not reach Steam to ${voteUp ? 'like' : 'dislike'} this wallpaper: ${msg}`)
     }
-  }
-  const msg = (lastErr as Error)?.message ?? String(lastErr)
-  setVoteFailure(itemId.toString(), {
-    up: voteUp,
-    message: `${voteUp ? 'Like' : 'Dislike'} failed after ${VOTE_ATTEMPTS} attempts: ${msg}`
+    setVoteFailure(idStr, null)
+    likedList.record(idStr, voteUp)
+    dislikedList.record(idStr, !voteUp)
+    return true
   })
-  throw new Error(`Could not reach Steam to ${voteUp ? 'like' : 'dislike'} this wallpaper: ${msg}`)
 }
 
 // Without the patched steamworks.js, success is reported once SetUserItemVote is enqueued: its result can't be read back,
 // because steamworks.js's manual dispatch loop consumes every call result on the shared Steam pipe first.
-async function voteOnce(itemId: bigint, voteUp: boolean): Promise<boolean> {
-  const idStr = itemId.toString()
+async function voteOnce(itemId: bigint, voteUp: boolean): Promise<void> {
   if (await patchedVoteApiAvailable()) {
     await withTimeout(steamCall('workshop.voteItem', itemId, voteUp), VOTE_TIMEOUT_MS, 'Vote')
   } else {
     await voteOnItem(itemId, voteUp)
   }
-  recordVote(idStr, voteUp)
-  return true
-}
-
-function sameIds(a: Set<string>, b: Set<string>): boolean {
-  if (a.size !== b.size) return false
-  for (const id of a) if (!b.has(id)) return false
-  return true
 }
 
 export async function getVotedUpItemIds(): Promise<string[]> {
-  return [...votedUpCache]
+  return likedList.list()
 }
 
-// a vote this fresh may not have reached Steam's per-item lookup yet
-const VOTE_SETTLE_MS = 10_000
+export function getVotedDownItemIds(): string[] {
+  return dislikedList.list()
+}
 
 export async function refreshItemVote(itemId: bigint): Promise<boolean | null> {
   if (!isSteamRunning() || !(await isSteamOnline().catch(() => false))) return null
-  const idStr = itemId.toString()
   const result = await withTimeout(checkUserVote(itemId), PAGE_FETCH_TIMEOUT_MS, 'getUserVote').catch((err) => {
     console.warn('[Steam] Per-item vote check failed:', err?.message ?? err)
     return null
   })
   if (!result) return null
-
-  const pending = pendingVotes.get(idStr)
-  if (pending && Date.now() - pending.at < VOTE_SETTLE_MS) return pending.up
-  pendingVotes.delete(idStr)
-  missingLastCycle.delete(idStr)
-
-  if (votedUpCache.has(idStr) !== result.votedUp) {
-    if (result.votedUp) votedUpCache.add(idStr)
-    else votedUpCache.delete(idStr)
-    persistVoteCache()
-    notifyVotedIds()
-  }
-  return result.votedUp
+  dislikedList.applyCheck(itemId.toString(), result.votedDown)
+  return likedList.applyCheck(itemId.toString(), result.votedUp)
 }
 
-let voteSyncTimer: ReturnType<typeof setInterval> | null = null
+let hasPatchedFavoriteApi: boolean | null = null
 
-export function startVotedItemsSync(onChange: (ids: string[]) => void): void {
-  votedIdsChangeListener = onChange
-  if (voteSyncTimer) return
-  setTimeout(maybeRunFullSync, SYNC_STARTUP_DELAY_MS)
-  voteSyncTimer = setInterval(maybeRunFullSync, SYNC_CHECK_INTERVAL_MS)
+async function patchedFavoriteApiAvailable(): Promise<boolean> {
+  if (hasPatchedFavoriteApi === null) {
+    const [add, remove] = await Promise.all([
+      steamCall<boolean>('hasMethod', 'workshop.addFavorite'),
+      steamCall<boolean>('hasMethod', 'workshop.removeFavorite')
+    ])
+    hasPatchedFavoriteApi = add && remove
+  }
+  return hasPatchedFavoriteApi
+}
+
+// favorites belong to WE's app id, even when connected as Spacewar
+async function favoriteOnce(itemId: bigint, add: boolean): Promise<void> {
+  if (await patchedFavoriteApiAvailable()) {
+    const method = add ? 'workshop.addFavorite' : 'workshop.removeFavorite'
+    await withTimeout(steamCall(method, WE_APP_ID, itemId), VOTE_TIMEOUT_MS, 'Favorite')
+  } else {
+    await steamCall<bigint>('favoriteRaw', WE_APP_ID, itemId, add)
+  }
+}
+
+// session-only, like failedVotes
+const failedFavorites = new Map<string, FavoriteFailure>()
+let favoriteStatusListener: ((status: FavoriteStatus) => void) | null = null
+
+export function getFavoriteStatus(): FavoriteStatus {
+  const failed: Record<string, FavoriteFailure> = {}
+  for (const [id, failure] of failedFavorites) {
+    // already as intended, e.g. changed on the website
+    if (favoriteList.has(id) === failure.add) failedFavorites.delete(id)
+    else failed[id] = failure
+  }
+  return { failed, checking: favoriteList.unverified() }
+}
+
+export function onFavoriteStatusChange(cb: (status: FavoriteStatus) => void): void {
+  favoriteStatusListener = cb
+}
+
+function favoriteStatusChanged(): void {
+  favoriteStatusListener?.(getFavoriteStatus())
+}
+
+favoriteList.onVerified((id, add, confirmed) => {
+  if (confirmed) {
+    failedFavorites.delete(id)
+  } else {
+    console.warn(`[Steam] Favorites list still ${add ? 'misses' : 'has'} ${id}, the change didn't stick`)
+    failedFavorites.set(id, {
+      add,
+      readBack: true,
+      message: `Steam accepted the ${add ? 'favorite' : 'removal'}, but your favorites list still ${add ? "doesn't show" : 'shows'} this wallpaper 15 minutes later`
+    })
+  }
+  favoriteStatusChanged()
+})
+
+export function setFavorite(itemId: bigint, add: boolean): Promise<boolean> {
+  const idStr = itemId.toString()
+  return queueSteamWrite(async () => {
+    try {
+      await withRetry(add ? 'add favorites' : 'remove favorites', () => favoriteOnce(itemId, add))
+    } catch (err) {
+      const msg = (err as Error)?.message ?? String(err)
+      failedFavorites.set(idStr, {
+        add,
+        readBack: false,
+        message: `${add ? 'Adding to' : 'Removing from'} favorites failed after ${WRITE_ATTEMPTS} attempts: ${msg}`
+      })
+      favoriteStatusChanged()
+      throw new Error(`Could not reach Steam to ${add ? 'favorite' : 'unfavorite'} this wallpaper: ${msg}`)
+    }
+    failedFavorites.delete(idStr)
+    favoriteList.record(idStr, add)
+    favoriteStatusChanged()
+    return true
+  })
+}
+
+export function getFavoriteItemIds(): string[] {
+  return favoriteList.list()
+}
+
+const SYNC_CHECK_INTERVAL_MS = 10 * 60 * 1000
+const SYNC_STARTUP_DELAY_MS = 20 * 1000
+let listSyncTimer: ReturnType<typeof setInterval> | null = null
+
+export function startUserListSync(listeners: {
+  onLikedChange: (ids: string[]) => void
+  onDislikedChange: (ids: string[]) => void
+  onFavoritesChange: (ids: string[]) => void
+}): void {
+  likedList.onChange(listeners.onLikedChange)
+  dislikedList.onChange(listeners.onDislikedChange)
+  favoriteList.onChange((ids) => {
+    listeners.onFavoritesChange(ids)
+    if (failedFavorites.size > 0) favoriteStatusChanged()
+  })
+  if (listSyncTimer) return
+  const tick = (): void => {
+    likedList.maybeSync()
+    dislikedList.maybeSync()
+    favoriteList.maybeSync()
+  }
+  setTimeout(tick, SYNC_STARTUP_DELAY_MS)
+  listSyncTimer = setInterval(tick, SYNC_CHECK_INTERVAL_MS)
 }
 
 export async function getSubscribedItems(): Promise<string[]> {

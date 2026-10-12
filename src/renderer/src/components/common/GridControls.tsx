@@ -25,12 +25,12 @@ export function PanelToggle({
       title={open ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
       className={clsx(
         'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
-        open || activeCount > 0 ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-300 hover:bg-white/10'
+        open || activeCount > 0 ? 'bg-accent-600 text-white' : 'bg-fg/5 text-gray-300 hover:bg-fg/10'
       )}
     >
       <Icon size={14} />
       {label}
-      {activeCount > 0 && <span className="rounded-full bg-white/20 px-1.5 text-xs">{activeCount}</span>}
+      {activeCount > 0 && <span className="rounded-full bg-fg/20 px-1.5 text-xs">{activeCount}</span>}
     </button>
   )
 }
@@ -43,7 +43,7 @@ export function ResetFiltersButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10"
+      className="flex items-center gap-1 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
     >
       <X size={14} /> Reset
     </button>
@@ -70,7 +70,7 @@ export function SearchInput({
         title={title}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg bg-white/5 py-2 pl-9 pr-3 text-sm text-gray-200 placeholder-gray-500 outline-none focus:ring-1 focus:ring-indigo-500"
+        className="w-full rounded-lg bg-fg/5 py-2 pl-9 pr-3 text-sm text-gray-200 placeholder-gray-500 outline-none focus:ring-1 focus:ring-accent-500"
       />
     </div>
   )
@@ -96,7 +96,7 @@ export function ToolbarButton({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
+      className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
     >
       {busy ? <Loader2 size={14} className="animate-spin" /> : icon}
       {children}
@@ -116,7 +116,7 @@ export function MarqueeOverlay({ rect }: { rect: MarqueeRect | null }) {
   if (!rect || rect.width <= 3 || rect.height <= 3) return null
   return (
     <div
-      className="pointer-events-none absolute z-20 border border-indigo-500 bg-indigo-500/15"
+      className="pointer-events-none absolute z-20 border border-accent-500 bg-accent-500/15"
       style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
     />
   )
@@ -140,7 +140,7 @@ export function Pagination({
       <button
         disabled={page <= 1}
         onClick={() => onPage(Math.max(1, page - 1))}
-        className="rounded bg-white/5 px-2.5 py-1 text-gray-300 hover:bg-white/10 disabled:opacity-40"
+        className="rounded bg-fg/5 px-2.5 py-1 text-gray-300 hover:bg-fg/10 disabled:opacity-40"
       >
         Prev
       </button>
@@ -148,7 +148,7 @@ export function Pagination({
       <button
         disabled={!canNext}
         onClick={() => onPage(page + 1)}
-        className="rounded bg-white/5 px-2.5 py-1 text-gray-300 hover:bg-white/10 disabled:opacity-40"
+        className="rounded bg-fg/5 px-2.5 py-1 text-gray-300 hover:bg-fg/10 disabled:opacity-40"
       >
         Next
       </button>

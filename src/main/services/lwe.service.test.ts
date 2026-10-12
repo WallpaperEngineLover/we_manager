@@ -68,6 +68,10 @@ describe('buildHotswapLines', () => {
     ])
   })
 
+  it('switches the video decoder live', () => {
+    expect(buildHotswapLines({ hwdec: 'vaapi-copy' })).toEqual(['hwdec=vaapi-copy'])
+  })
+
   it('replaces the layer lists when either one is present, even empty', () => {
     expect(buildHotswapLines({ disabledObjects: [] })).toEqual(['layers=1'])
     expect(buildHotswapLines({ disabledObjects: ['12'], enabledObjects: ['fog'] })).toEqual([

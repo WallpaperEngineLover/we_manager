@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import Toggle from '../common/Toggle'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   ListVideo,
@@ -208,7 +209,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
 
   return (
     <div className="flex h-full">
-      <div className="flex w-56 shrink-0 flex-col border-r border-white/5 overflow-y-auto">
+      <div className="flex w-56 shrink-0 flex-col border-r border-fg/5 overflow-y-auto">
         <div className="flex items-center justify-between px-3 pt-3 pb-1">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
             Playlists
@@ -256,15 +257,15 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
             className={clsx(
               'group flex items-center gap-2 px-3 py-2 text-sm',
               activePlaylistId === p.id
-                ? 'bg-white/5 text-white'
-                : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+                ? 'bg-fg/5 text-fg'
+                : 'text-gray-400 hover:bg-fg/5 hover:text-gray-200'
             )}
           >
             <ListVideo
               size={14}
               className={clsx(
                 'shrink-0',
-                playbackStates.some((s) => s.playlistId === p.id) ? 'text-indigo-400' : 'text-gray-600'
+                playbackStates.some((s) => s.playlistId === p.id) ? 'text-accent-400' : 'text-gray-600'
               )}
             />
             {renamingId === p.id ? (
@@ -315,7 +316,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
           </div>
         ) : (
           <>
-            <div className="border-b border-white/5 px-4 py-3">
+            <div className="border-b border-fg/5 px-4 py-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-gray-100">{activePlaylist.title}</h2>
                 <div className="flex items-center gap-2">
@@ -327,28 +328,28 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                       <button
                         onClick={handlePrevious}
                         title="Previous"
-                        className="rounded-lg bg-white/5 p-2 text-gray-300 hover:bg-white/10"
+                        className="rounded-lg bg-fg/5 p-2 text-gray-300 hover:bg-fg/10"
                       >
                         <SkipBack size={14} />
                       </button>
                       <button
                         onClick={handlePauseResume}
                         title={isPlaying ? 'Pause' : 'Resume'}
-                        className="rounded-lg bg-indigo-600 p-2 text-white hover:bg-indigo-500"
+                        className="rounded-lg bg-accent-600 p-2 text-white hover:bg-accent-500"
                       >
                         {isPlaying ? <Pause size={14} /> : <Play size={14} />}
                       </button>
                       <button
                         onClick={handleNext}
                         title="Next"
-                        className="rounded-lg bg-white/5 p-2 text-gray-300 hover:bg-white/10"
+                        className="rounded-lg bg-fg/5 p-2 text-gray-300 hover:bg-fg/10"
                       >
                         <SkipForward size={14} />
                       </button>
                       <button
                         onClick={handleStop}
                         title="Stop"
-                        className="rounded-lg bg-white/5 p-2 text-gray-300 hover:bg-red-500/20 hover:text-red-400"
+                        className="rounded-lg bg-fg/5 p-2 text-gray-300 hover:bg-red-500/20 hover:text-red-400"
                       >
                         <Square size={14} />
                       </button>
@@ -357,7 +358,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                     <button
                       onClick={handlePlay}
                       disabled={activePlaylist.items.length === 0}
-                      className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                      className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
                     >
                       <Play size={14} />
                       Play playlist
@@ -374,20 +375,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
 
               <div className="mt-3 flex flex-wrap items-center gap-4">
                 <label className="flex items-center gap-2 text-xs text-gray-400">
-                  <button
-                    onClick={() => updateSettings({ randomize: !activePlaylist.settings.randomize })}
-                    className={clsx(
-                      'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-                      activePlaylist.settings.randomize ? 'bg-indigo-600' : 'bg-white/10'
-                    )}
-                  >
-                    <span
-                      className={clsx(
-                        'inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform',
-                        activePlaylist.settings.randomize ? 'translate-x-4' : 'translate-x-0.5'
-                      )}
-                    />
-                  </button>
+                  <Toggle on={activePlaylist.settings.randomize} onClick={() => updateSettings({ randomize: !activePlaylist.settings.randomize })} />
                   <Shuffle size={12} />
                   Randomize
                 </label>
@@ -401,7 +389,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                       onChange={(e) =>
                         updateSettings({ sortBy: e.target.value as PlaylistSettings['sortBy'] })
                       }
-                      className="rounded bg-white/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                      className="rounded bg-fg/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                     >
                       {SORT_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>
@@ -421,7 +409,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                     onChange={(e) =>
                       updateSettings({ defaultDurationSec: Math.max(1, Number(e.target.value)) })
                     }
-                    className="w-20 rounded bg-white/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-20 rounded bg-fg/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                   />
                   sec
                 </label>
@@ -430,20 +418,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                   className="flex items-center gap-2 text-xs text-gray-400"
                   title="Videos longer than the duration play to the end once before switching. Shorter videos loop until the duration is up."
                 >
-                  <button
-                    onClick={() => updateSettings({ finishVideos: !activePlaylist.settings.finishVideos })}
-                    className={clsx(
-                      'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-                      activePlaylist.settings.finishVideos ? 'bg-indigo-600' : 'bg-white/10'
-                    )}
-                  >
-                    <span
-                      className={clsx(
-                        'inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform',
-                        activePlaylist.settings.finishVideos ? 'translate-x-4' : 'translate-x-0.5'
-                      )}
-                    />
-                  </button>
+                  <Toggle on={!!activePlaylist.settings.finishVideos} onClick={() => updateSettings({ finishVideos: !activePlaylist.settings.finishVideos })} />
                   <Film size={12} />
                   Finish videos
                 </label>
@@ -456,7 +431,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                     max={100}
                     value={activePlaylist.settings.defaultVolume}
                     onChange={(e) => updateSettings({ defaultVolume: Number(e.target.value) })}
-                    className="w-24 accent-indigo-500"
+                    className="w-24 accent-accent-500"
                   />
                   <span className="w-8 text-gray-300">{activePlaylist.settings.defaultVolume}</span>
                 </label>
@@ -470,7 +445,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
               </span>
               <button
                 onClick={() => setPickerOpen(true)}
-                className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10"
+                className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-fg/10"
               >
                 <Plus size={12} />
                 Add wallpapers

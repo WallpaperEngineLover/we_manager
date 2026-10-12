@@ -8,13 +8,15 @@ import {
   MenuSelectionCount,
   MenuSeparator,
   SubMenu,
-  VoteMenuItems
+  VoteMenuItems,
+  FavoriteMenuItems
 } from './ContextMenu'
 import { useToast } from './Toast'
 import { useConfig, useFolders } from '../../hooks/queries'
 import { useBatchVote } from '../../hooks/useVotes'
+import { useBatchFavorite, useFavoriteIds } from '../../hooks/useFavorites'
 import { useUnsubscribe } from '../../hooks/useWallpaperActions'
-import { openWorkshopPage } from '../../utils/steam'
+import { isWorkshopId, openWorkshopPage } from '../../utils/steam'
 import {
   backupSummary,
   canBrowseCreator,
@@ -49,6 +51,8 @@ export default function WallpaperContextMenu({
   const libraries = config?.extraLibraries ?? []
   const { moveToFolder, removeFromFolders, menuState } = useFolders()
   const batchVote = useBatchVote()
+  const batchFavorite = useBatchFavorite()
+  const favoriteIds = useFavoriteIds()
   const unsubscribe = useUnsubscribe()
 
   const backupable = wallpapers.filter((w) => w.source === 'workshop')
@@ -154,6 +158,11 @@ export default function WallpaperContextMenu({
 
       <MenuSeparator />
       <VoteMenuItems onVote={(up) => run(() => batchVote(ids, up))()} />
+      <FavoriteMenuItems
+        ids={ids.filter(isWorkshopId)}
+        favorites={favoriteIds}
+        onFavorite={(favIds, add) => run(() => batchFavorite(favIds, add))()}
+      />
 
       <MenuSeparator />
       <MenuItem icon={ExternalLink} onClick={run(() => ids.forEach(openWorkshopPage))}>

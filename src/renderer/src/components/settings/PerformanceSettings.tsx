@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Toggle from '../common/Toggle'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Plus, Save, Trash2 } from 'lucide-react'
 import type { EngineFlagPreset, EngineFlags, FullscreenPauseMode } from '@shared/types'
@@ -10,23 +11,6 @@ import CopyField from '../common/CopyField'
 interface Props {
   defaultFps: number | null
   onDefaultFpsChanged: (fps: number | null) => void
-}
-
-function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-        on ? 'bg-indigo-600' : 'bg-white/10'
-      }`}
-    >
-      <span
-        className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-          on ? 'translate-x-4' : 'translate-x-0.5'
-        }`}
-      />
-    </button>
-  )
 }
 
 function describePreset(preset: EngineFlagPreset): string {
@@ -157,7 +141,7 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
           <select
             value={flags.fullscreenPause ?? 'default'}
             onChange={(e) => saveFlags({ ...flags, fullscreenPause: e.target.value as FullscreenPauseMode })}
-            className="rounded-lg bg-white/5 px-2 py-1.5 text-sm text-gray-200 outline-none"
+            className="rounded-lg bg-fg/5 px-2 py-1.5 text-sm text-gray-200 outline-none"
           >
             {FULLSCREEN_PAUSE_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
@@ -166,21 +150,24 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
             ))}
           </select>
         </label>
-        {CHOICE_FLAGS.map(({ key, label, hint, fallback, options }) => (
-          <label key={key} className="flex items-center gap-3 text-sm text-gray-300" title={hint}>
-            <span>{label}</span>
-            <select
-              value={flags[key] ?? fallback}
-              onChange={(e) => saveFlags({ ...flags, [key]: e.target.value })}
-              className="rounded-lg bg-white/5 px-2 py-1.5 text-sm text-gray-200 outline-none"
-            >
-              {options.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
+        {CHOICE_FLAGS.map(({ key, label, hint, note, fallback, options }) => (
+          <div key={key} className={note ? '-mx-3 rounded-lg bg-fg/5 px-3 py-2' : undefined}>
+            <label className="flex items-center gap-3 text-sm text-gray-300" title={hint}>
+              <span>{label}</span>
+              <select
+                value={flags[key] ?? fallback}
+                onChange={(e) => saveFlags({ ...flags, [key]: e.target.value })}
+                className="rounded-lg bg-fg/5 px-2 py-1.5 text-sm text-gray-200 outline-none"
+              >
+                {options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {note && <p className="mt-1.5 border-l-2 border-fg/10 pl-2 text-xs text-gray-500">{note}</p>}
+          </div>
         ))}
       </div>
 
@@ -190,14 +177,14 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
       </p>
       <div className="mt-2 space-y-1.5">
         {presets.map((preset) => (
-          <div key={preset.id} className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2">
+          <div key={preset.id} className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2">
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm text-gray-200">{preset.name}</p>
               <p className="truncate text-xs text-gray-500">{describePreset(preset)}</p>
             </div>
             <button
               onClick={() => applyPreset(preset)}
-              className="flex items-center gap-1 rounded bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-500"
+              className="flex items-center gap-1 rounded bg-accent-600 px-2 py-1 text-xs text-white hover:bg-accent-500"
             >
               {appliedId === preset.id && <Check size={11} />}
               Apply
@@ -229,12 +216,12 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && createPreset()}
           placeholder="New preset from the current settings"
-          className="flex-1 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+          className="flex-1 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
         />
         <button
           onClick={createPreset}
           disabled={!newName.trim()}
-          className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
         >
           <Plus size={14} />
           Save

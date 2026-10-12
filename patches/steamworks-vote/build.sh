@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Idempotent build script for the steamworks.js vote-support patch. Safe to re-run: every step
+# Idempotent build script for the steamworks.js vote and favorites patch. Safe to re-run: every step
 # checks whether it already happened before doing anything.
 #
 # Usage: ./build.sh [path-to-projects-dir]
@@ -32,19 +32,23 @@ if [ ! -d "$STEAMWORKSJS" ]; then
   git clone https://github.com/ceifa/steamworks.js "$STEAMWORKSJS"
 fi
 
+# A clone patched before favorites were added has only the vote half, so anything short of the
+# full patch is reset to upstream first and patched again.
+apply_patch() {
+  local repo="$1" file="$2" marker="$3" patch="$4"
+  if grep -q "$marker" "$repo/$file"; then
+    echo "    already applied"
+    return
+  fi
+  git -C "$repo" checkout -- "$file"
+  git -C "$repo" apply "$patch"
+}
+
 echo "==> Applying steamworks-rs patch (skipped if already applied)"
-if grep -q "vote_up_item" "$STEAMWORKS_RS/src/ugc.rs"; then
-  echo "    already applied"
-else
-  git -C "$STEAMWORKS_RS" apply "$PATCHES_DIR/steamworks-rs-ugc.patch"
-fi
+apply_patch "$STEAMWORKS_RS" src/ugc.rs add_item_to_favorites "$PATCHES_DIR/steamworks-rs-ugc.patch"
 
 echo "==> Applying steamworks.js patch (skipped if already applied)"
-if grep -q "vote_item" "$STEAMWORKSJS/src/api/workshop.rs"; then
-  echo "    already applied"
-else
-  git -C "$STEAMWORKSJS" apply "$PATCHES_DIR/steamworks-js-workshop.patch"
-fi
+apply_patch "$STEAMWORKSJS" src/api/workshop.rs add_favorite "$PATCHES_DIR/steamworks-js-workshop.patch"
 
 echo "==> Pointing steamworks.js's Cargo.toml at the local patched steamworks-rs (skipped if already done)"
 if grep -qF 'Noxime/steamworks-rs' "$STEAMWORKSJS/Cargo.toml" && grep -q '\[patch\.' "$STEAMWORKSJS/Cargo.toml"; then

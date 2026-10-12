@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Download, Check, Loader2, Clock, AlertTriangle } from 'lucide-react'
 import type { WorkshopItem } from '@shared/types'
+import type { CardBorders } from '@shared/cardBorders'
+import type { CardSteamState } from '../../hooks/useCardBorders'
 import { isSubscribedState, type SubscribeState } from '../../hooks/useSubscriptionQueue'
 import { formatFileSize } from '../../utils/format'
 import { CardPreview, CornerBadge, GridCard, LikeAction, PlayButton, ProgressBar, SteamAction } from '../common/GridCard'
@@ -10,9 +12,8 @@ interface WorkshopCardProps {
   selected: boolean
   isDetailOpen: boolean
   ignored: boolean
-  isLiked: boolean
-  voteError?: string
-  showVoteBorder: boolean
+  steam: CardSteamState
+  borders: CardBorders
   canPlay: boolean
   lweInstalled: boolean
   subscribeState?: SubscribeState
@@ -30,9 +31,8 @@ export default function WorkshopCard({
   selected,
   isDetailOpen,
   ignored,
-  isLiked,
-  voteError,
-  showVoteBorder,
+  steam,
+  borders,
   canPlay,
   lweInstalled,
   subscribeState,
@@ -66,9 +66,8 @@ export default function WorkshopCard({
       data-workshop-id={item.publishedFileId}
       selected={selected}
       isDetailOpen={isDetailOpen}
-      isLiked={isLiked}
-      voteError={voteError}
-      showVoteBorder={showVoteBorder}
+      steam={steam}
+      borders={borders}
       onContextMenu={onContextMenu}
       onClick={onSelect}
     >
@@ -92,7 +91,7 @@ export default function WorkshopCard({
         )}
         {(subscribeState === 'download-queued' || subscribeState === 'downloading') && (
           <CornerBadge
-            className="bottom-2 right-2 bg-black/60 text-indigo-300"
+            className="bottom-2 right-2 bg-black/60 text-accent-300"
             title={
               subscribeState === 'downloading' && downloadPercentage != null
                 ? `Downloading... ${downloadPercentage}%`
@@ -113,7 +112,7 @@ export default function WorkshopCard({
           {fileSizeLabel ? ` · ${fileSizeLabel}` : ''}
         </p>
         <div className="mt-2 flex items-center gap-1.5">
-          <LikeAction id={item.publishedFileId} isLiked={isLiked} />
+          <LikeAction id={item.publishedFileId} isLiked={steam.isLiked} />
           <SteamAction id={item.publishedFileId} />
         </div>
       </div>
@@ -137,7 +136,7 @@ export default function WorkshopCard({
             <Clock size={14} />
           </div>
         ) : subscribeState === 'subscribing' ? (
-          <div className={`${STATUS_CLASS} bg-black/60 text-indigo-300`} title="Subscribing...">
+          <div className={`${STATUS_CLASS} bg-black/60 text-accent-300`} title="Subscribing...">
             <Loader2 size={14} className="animate-spin" />
           </div>
         ) : subscribeState === 'subscribe-error' ? (
@@ -151,7 +150,7 @@ export default function WorkshopCard({
         ) : (
           <button
             onClick={handleSubscribe}
-            className={`${STATUS_CLASS} bg-black/60 text-white opacity-0 transition-opacity hover:bg-indigo-600 group-hover:opacity-100`}
+            className={`${STATUS_CLASS} bg-black/60 text-white opacity-0 transition-opacity hover:bg-accent-600 group-hover:opacity-100`}
           >
             <Download size={14} />
           </button>

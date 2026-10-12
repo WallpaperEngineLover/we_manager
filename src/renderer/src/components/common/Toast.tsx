@@ -45,7 +45,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={t.id}
             className={clsx(
-              'flex max-w-sm items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-white shadow-2xl',
+              'flex max-w-sm items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium text-white shadow-2xl shadow-black/30 backdrop-blur-md',
               t.warning ? 'border-amber-500/30 bg-amber-600/90' : 'border-green-500/30 bg-green-600/90'
             )}
           >

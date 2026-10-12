@@ -162,6 +162,8 @@ export type MsaaQuality = 'none' | 'x2' | 'x4' | 'x8'
 /** Scene supersampling factor per axis, linux-wallpaperengine only */
 export type SsaaQuality = 'none' | 'x2' | 'x3' | 'x4'
 
+export type HwdecBackend = 'auto' | 'no' | 'vaapi' | 'vaapi-copy' | 'nvdec' | 'nvdec-copy' | 'vulkan'
+
 /** linux-wallpaperengine flags that only take effect on a fresh launch */
 export interface EngineFlags {
   disableParticles?: boolean
@@ -177,6 +179,7 @@ export interface EngineFlags {
   shadows?: LightingQuality
   msaa?: MsaaQuality
   ssaa?: SsaaQuality
+  hwdec?: HwdecBackend
   /** --layer background (plasmashell's desktop can cover the wallpaper on KDE, niri needs it); key kept for stored configs */
   kdeBackgroundLayer?: boolean
 }
@@ -355,6 +358,19 @@ export interface ApplyWallpaperOptions {
   /** Per-screen mode only: a screen name, or '*' for every screen */
   screen?: ScreenTarget
   backend?: WallpaperBackend
+}
+
+// write failed, or Steam's favorites list never showed it
+export interface FavoriteFailure {
+  add: boolean
+  message: string
+  readBack: boolean
+}
+
+export interface FavoriteStatus {
+  failed: Record<string, FavoriteFailure>
+  // written, not yet in the favorites list
+  checking: string[]
 }
 
 export interface DownloadProgressEvent {

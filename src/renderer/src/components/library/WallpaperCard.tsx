@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Loader2, Check, X, Trash2, Download, Archive, AlertTriangle, RotateCw, Plus, FolderOpen, WifiOff } from 'lucide-react'
 import type { BackupProgressEvent, WallpaperMeta } from '@shared/types'
+import type { CardBorders } from '@shared/cardBorders'
+import type { CardSteamState } from '../../hooks/useCardBorders'
 import clsx from 'clsx'
 import CompatBadge from '../common/CompatBadge'
 import { getPreviewSrc } from '../../utils/preview'
@@ -25,9 +27,8 @@ interface WallpaperCardProps {
   selected: boolean
   isDetailOpen: boolean
   lweInstalled: boolean
-  isLiked: boolean
-  voteError?: string
-  showVoteBorder: boolean
+  steam: CardSteamState
+  borders: CardBorders
   currentPlaylistId: string | null
   isInCurrentPlaylist: boolean
   previewSize: PreviewSize
@@ -41,9 +42,8 @@ export default function WallpaperCard({
   selected,
   isDetailOpen,
   lweInstalled,
-  isLiked,
-  voteError,
-  showVoteBorder,
+  steam,
+  borders,
   currentPlaylistId,
   isInCurrentPlaylist,
   previewSize,
@@ -163,9 +163,8 @@ export default function WallpaperCard({
       data-wallpaper-id={wallpaper.id}
       selected={selected}
       isDetailOpen={isDetailOpen}
-      isLiked={isLiked}
-      voteError={voteError}
-      showVoteBorder={showVoteBorder}
+      steam={steam}
+      borders={borders}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData('text/wallpaper-id', wallpaper.id)
@@ -178,12 +177,12 @@ export default function WallpaperCard({
       <CardPreview src={previewSrc} alt={wallpaper.title}>
         {wallpaper.downloading && (
           <CardOverlay>
-            <Download size={20} className="text-indigo-400 animate-bounce" />
+            <Download size={20} className="text-accent-400 animate-bounce" />
             <span className="text-xs text-gray-300">
               {downloadPercentage != null ? `Downloading... ${downloadPercentage}%` : 'Downloading...'}
             </span>
             {downloadPercentage != null && (
-              <ProgressBar percentage={downloadPercentage} className="h-1 w-full max-w-[140px] rounded-full bg-white/10" />
+              <ProgressBar percentage={downloadPercentage} className="h-1 w-full max-w-[140px] rounded-full bg-fg/10" />
             )}
           </CardOverlay>
         )}
@@ -194,7 +193,7 @@ export default function WallpaperCard({
             <button
               onClick={handleRedownload}
               disabled={isRedownloading}
-              className="flex items-center gap-1 rounded bg-indigo-600/80 px-2 py-1 text-xs text-white transition-colors hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-1 rounded bg-accent-600/80 px-2 py-1 text-xs text-white transition-colors hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isRedownloading ? <Loader2 size={11} className="animate-spin" /> : <RotateCw size={11} />}
               Redownload
@@ -203,13 +202,13 @@ export default function WallpaperCard({
         )}
         {backupProgress != null && (
           <CardOverlay>
-            <Archive size={20} className="text-indigo-400 animate-pulse" />
+            <Archive size={20} className="text-accent-400 animate-pulse" />
             <span className="text-xs text-gray-300">
               {backupProgress.status === 'verifying'
                 ? `Verifying... ${backupProgress.percentage}%`
                 : `${progressVerb([backupProgress])}... ${backupProgress.percentage}%`}
             </span>
-            <ProgressBar percentage={backupProgress.percentage} className="h-1 w-full max-w-[140px] rounded-full bg-white/10" />
+            <ProgressBar percentage={backupProgress.percentage} className="h-1 w-full max-w-[140px] rounded-full bg-fg/10" />
           </CardOverlay>
         )}
         {wallpaper.hdr && (
@@ -225,7 +224,7 @@ export default function WallpaperCard({
           </span>
         )}
         {backupProgress == null && hasBackup(wallpaper) && (
-          <CornerBadge className="bottom-2 right-2 bg-black/60 text-indigo-300" title="Backed up locally">
+          <CornerBadge className="bottom-2 right-2 bg-black/60 text-accent-300" title="Backed up locally">
             <Archive size={12} />
           </CornerBadge>
         )}
@@ -250,7 +249,7 @@ export default function WallpaperCard({
         {wallpaper.tags.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
             {wallpaper.tags.slice(0, 3).map((tag) => (
-              <span key={tag} className="rounded bg-white/5 px-1.5 py-0.5 text-xs text-gray-400">
+              <span key={tag} className="rounded bg-fg/5 px-1.5 py-0.5 text-xs text-gray-400">
                 {tag}
               </span>
             ))}
@@ -267,14 +266,14 @@ export default function WallpaperCard({
             onChange={(e) => setFpsInput(e.target.value)}
             onBlur={handleFpsBlur}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
-            className="w-16 rounded bg-white/5 px-1.5 py-0.5 text-xs text-gray-300 outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            className="w-16 rounded bg-fg/5 px-1.5 py-0.5 text-xs text-gray-300 outline-none focus:ring-1 focus:ring-accent-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
         </div>
         {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
         <div className={clsx('mt-2 flex items-center', compact ? 'gap-1' : 'gap-2')}>
           <LikeAction
             id={wallpaper.id}
-            isLiked={isLiked}
+            isLiked={steam.isLiked}
             unavailable={wallpaper.unavailable}
             compact={compact}
             onError={setError}
@@ -308,7 +307,7 @@ export default function WallpaperCard({
               <button
                 onClick={(e) => { e.stopPropagation(); setUnsubState('idle') }}
                 title="Cancel"
-                className={clsx('rounded bg-white/5 text-xs text-gray-400 hover:bg-white/10', compact ? 'p-1.5' : 'px-2 py-1')}
+                className={clsx('rounded bg-fg/5 text-xs text-gray-400 hover:bg-fg/10', compact ? 'p-1.5' : 'px-2 py-1')}
               >
                 {compact ? <X size={11} /> : 'No'}
               </button>

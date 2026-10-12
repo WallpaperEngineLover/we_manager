@@ -2,7 +2,7 @@ import { app, BrowserWindow, net, protocol, shell } from 'electron'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { IpcChannels } from '@shared/ipc-channels'
-import { isSteamRunning, startVotedItemsSync, onFailedVotesChange, bindSteamToWindow } from './services/steam.service'
+import { isSteamRunning, startUserListSync, onFailedVotesChange, onFavoriteStatusChange, bindSteamToWindow } from './services/steam.service'
 import { initLibrary, checkUnavailableWallpapers, backfillResolutions, onHdrDetected, queueHdrCheck } from './services/library.service'
 import { startWatcher } from './services/watcher.service'
 import { checkOutdatedBackups } from './services/backup.service'
@@ -15,23 +15,37 @@ import { killAllLweProcesses, getLweStatus } from './services/lwe.service'
 import { initDisplay } from './services/display.service'
 import { initSchedule } from './services/schedule.service'
 import { hasStatusNotifierHost } from './utils/platform'
+import { attachAppearance, prepareAppearance, windowAppearanceOptions } from './services/appearance.service'
 
 const startMinimized = process.argv.includes('--minimized')
+prepareAppearance()
+
+// fetch() for GIF still frames in PreviewImage.tsx
+protocol.registerSchemesAsPrivileged([{ scheme: 'wallpaper', privileges: { supportFetchAPI: true, corsEnabled: true } }])
 let isQuitting = false
 let hasKilledLweOnQuit = false
 
 const BACKGROUND_SYNC_INTERVAL_MS = 3 * 60 * 1000
 const TRAY_HOST_WAIT_MS = 10_000
 
-// Keeps "liked" state and library availability fresh without the user having to restart the
-// app or click "Check unavailable" - votes cast on Steam directly (client, community website)
-// and items taken down from the Workshop both eventually show up on their own.
+// picks up votes/favorites made outside the app and items taken down from the Workshop
 function startBackgroundSync(win: BrowserWindow): void {
-  startVotedItemsSync((ids) => {
-    if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_VOTED_IDS_CHANGED, ids)
+  startUserListSync({
+    onLikedChange: (ids) => {
+      if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_VOTED_IDS_CHANGED, ids)
+    },
+    onDislikedChange: (ids) => {
+      if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_DISLIKED_IDS_CHANGED, ids)
+    },
+    onFavoritesChange: (ids) => {
+      if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_FAVORITE_IDS_CHANGED, ids)
+    }
   })
   onFailedVotesChange((failed) => {
     if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_FAILED_VOTES_CHANGED, failed)
+  })
+  onFavoriteStatusChange((status) => {
+    if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_FAVORITE_STATUS_CHANGED, status)
   })
 
   const syncResolutions = async (): Promise<void> => {
@@ -100,8 +114,8 @@ function createWindow(): BrowserWindow {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: '#0f0f0f',
-    titleBarStyle: 'hiddenInset',
+    ...windowAppearanceOptions(),
+    autoHideMenuBar: true,
     show: !startHidden,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.cjs'),
@@ -110,6 +124,8 @@ function createWindow(): BrowserWindow {
       sandbox: false
     }
   })
+
+  attachAppearance(win)
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
@@ -141,7 +157,10 @@ app.whenReady().then(() => {
   protocol.handle('wallpaper', async (request) => {
     const filePath = decodeURIComponent(request.url.replace('wallpaper://', ''))
     try {
-      return await net.fetch(pathToFileURL(filePath).toString())
+      const res = await net.fetch(pathToFileURL(filePath).toString())
+      const headers = new Headers(res.headers)
+      headers.set('Access-Control-Allow-Origin', '*')
+      return new Response(res.body, { status: res.status, headers })
     } catch {
       // File not on disk yet (e.g. still downloading) - a rejected fetch here
       // would otherwise surface as an uncaught net::ERR_FILE_NOT_FOUND

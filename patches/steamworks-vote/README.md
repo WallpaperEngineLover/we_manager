@@ -1,4 +1,4 @@
-# steamworks.js vote support patch
+# steamworks.js vote and favorites patch
 
 `steamworks.js` (the Node wrapper this app uses for all Steam integration) doesn't bind
 `ISteamUGC::SetUserItemVote`/`GetUserItemVote` at all - confirmed by reading its actual source and
@@ -17,12 +17,19 @@ Once built and in place, `we_manager` detects and uses them automatically (see
 `getPatchedVoteApi()` in `steam.service.ts`) - the app keeps working without this patch too, just
 falling back to "trust the vote, sync later" instead of genuine confirmation.
 
+Favorites (`ISteamUGC::AddItemToFavorites`/`RemoveItemFromFavorites`, the Workshop's "Favorite"
+button) have the same problem and are in the same patches: `addFavorite(appId, itemId)` and
+`removeFavorite(appId, itemId)`, resolved through `UserFavoriteItemsListChanged_t` (callback id
+3407, `k_iSteamUGCCallbacks` + 7). Without them `we_manager` calls the flat C functions through
+koffi and reports success once the call is enqueued, like votes. `build.sh` upgrades a clone that
+only has the older vote-only patch.
+
 ## What's in this directory
 
-- `steamworks-rs-ugc.patch` - adds `UGC::vote_up_item`/`UGC::user_item_vote` to the `steamworks`
-  Rust crate (`Noxime/steamworks-rs`), mirroring its existing `subscribe_item`/`unsubscribe_item`
+- `steamworks-rs-ugc.patch` - adds `UGC::vote_up_item`/`UGC::user_item_vote` and
+  `UGC::add_item_to_favorites`/`UGC::remove_item_from_favorites` to the `steamworks` Rust crate (`Noxime/steamworks-rs`), mirroring its existing `subscribe_item`/`unsubscribe_item`
   exactly.
-- `steamworks-js-workshop.patch` - adds the corresponding `voteItem`/`getUserVote` napi-exposed
+- `steamworks-js-workshop.patch` - adds the corresponding `voteItem`/`getUserVote`/`addFavorite`/`removeFavorite` napi-exposed
   async functions to `steamworks.js`'s own `src/api/workshop.rs`, mirroring its existing
   `subscribe`/`unsubscribe`.
 - `steamworks-js-client-d-ts.patch` - adds the matching TypeScript declarations to `client.d.ts`.
@@ -36,10 +43,9 @@ All three were generated against and verified (`git apply --check`) to apply cle
 - `Noxime/steamworks-rs` at the exact commit `steamworks.js`'s own `Cargo.toml` pins
   (`fbb79635b06b4feea8261e5ca3e8ea3ef42facf9`).
 
-**Not yet compiled or run** - this sandbox has no Rust toolchain, so the Rust code was written and
-verified by hand against the real upstream source (exact struct layouts/callback ids
-cross-checked against actual `bindgen`-generated output, not guessed) but never built. Do a real
-build + a real vote/like click before trusting it fully.
+Built with `npm run build:debug` (the addon then lists `voteItem`, `getUserVote`, `addFavorite` and
+`removeFavorite` under `workshop`). Votes were confirmed against real Steam; favorites have not been
+clicked against a real Steam account yet.
 
 ## Building it (on your real machine, which has Steam installed and running - required by
 ## steamworks.js's own build)

@@ -1,5 +1,68 @@
 @import "tailwindcss";
 
+/* Runtime themable via Settings -> Appearance. "fg" is text and faint overlays (bg-fg/5). */
+@theme {
+  --color-app: rgb(14 15 18 / var(--surface-alpha, 1));
+  --color-chrome: rgb(10 11 13 / var(--surface-alpha, 1));
+  --color-pane: rgb(17 18 22 / var(--surface-alpha, 1));
+  --color-card: #17181c;
+  --color-popup: #1b1c21;
+  --color-sunken: #0c0d10;
+  --color-fg: #ffffff;
+
+  --color-accent-50: oklch(96.2% calc(0.018 * var(--accent-chroma, 1)) var(--accent-hue, 277));
+  --color-accent-100: oklch(93% calc(0.034 * var(--accent-chroma, 1)) var(--accent-hue, 277));
+  --color-accent-200: oklch(87% calc(0.065 * var(--accent-chroma, 1)) var(--accent-hue, 277));
+  --color-accent-300: oklch(78.5% calc(0.115 * var(--accent-chroma, 1)) var(--accent-hue, 277));
+  --color-accent-400: oklch(67.3% calc(0.182 * var(--accent-chroma, 1)) var(--accent-hue, 277));
+  --color-accent-500: oklch(58.5% calc(0.233 * var(--accent-chroma, 1)) var(--accent-hue, 277));
+  --color-accent-600: oklch(51.1% calc(0.262 * var(--accent-chroma, 1)) var(--accent-hue, 277));
+  --color-accent-700: oklch(45.7% calc(0.24 * var(--accent-chroma, 1)) var(--accent-hue, 277));
+  --color-accent-800: oklch(39.8% calc(0.195 * var(--accent-chroma, 1)) var(--accent-hue, 277));
+  --color-accent-900: oklch(35.9% calc(0.144 * var(--accent-chroma, 1)) var(--accent-hue, 277));
+  --color-accent-950: oklch(25.7% calc(0.09 * var(--accent-chroma, 1)) var(--accent-hue, 277));
+}
+
+/* Views assume a dark UI, so the light theme mirrors the gray and status tint scales.
+   Solid 500/600 fills stay. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-app: rgb(243 244 247 / var(--surface-alpha, 1));
+  --color-chrome: rgb(233 235 240 / var(--surface-alpha, 1));
+  --color-pane: rgb(248 249 251 / var(--surface-alpha, 1));
+  --color-card: #ffffff;
+  --color-popup: #ffffff;
+  --color-sunken: #e4e6eb;
+  --color-fg: #0f1115;
+
+  --color-gray-100: oklch(21% 0.034 264.665);
+  --color-gray-200: oklch(27.8% 0.033 256.848);
+  --color-gray-300: oklch(37.3% 0.034 259.733);
+  --color-gray-400: oklch(44.6% 0.03 256.802);
+  --color-gray-500: oklch(52% 0.027 264.364);
+  --color-gray-600: oklch(65% 0.022 261.325);
+  --color-gray-700: oklch(80% 0.01 258.338);
+
+  --color-accent-200: oklch(45.7% calc(0.24 * var(--accent-chroma, 1)) var(--accent-hue, 277));
+  --color-accent-300: oklch(48% calc(0.25 * var(--accent-chroma, 1)) var(--accent-hue, 277));
+  --color-accent-400: oklch(51.1% calc(0.262 * var(--accent-chroma, 1)) var(--accent-hue, 277));
+
+  --color-red-300: oklch(50.5% 0.213 27.518);
+  --color-red-400: oklch(57.7% 0.245 27.325);
+  --color-green-300: oklch(52.7% 0.154 150.069);
+  --color-green-400: oklch(52.7% 0.154 150.069);
+  --color-amber-300: oklch(55.5% 0.163 48.998);
+  --color-amber-400: oklch(55.5% 0.163 48.998);
+  --color-yellow-400: oklch(55.4% 0.135 66.442);
+  --color-yellow-500: oklch(55.4% 0.135 66.442);
+  --color-sky-300: oklch(50% 0.134 242.749);
+  --color-sky-400: oklch(58.8% 0.158 241.966);
+  --color-orange-400: oklch(55.3% 0.195 38.402);
+  --color-pink-300: oklch(52.5% 0.223 3.958);
+  --color-pink-400: oklch(59.2% 0.249 0.584);
+}
+
 @layer base {
   * {
     box-sizing: border-box;
@@ -16,14 +79,39 @@
   }
 
   body {
-    background-color: #0f0f0f;
-    color: #e5e5e5;
-    font-family: system-ui, -apple-system, sans-serif;
+    background-color: var(--color-app);
+    color: var(--color-gray-200);
+    font-family: "Inter Variable", Inter, system-ui, -apple-system, sans-serif;
+    font-feature-settings: "cv11", "ss01";
     -webkit-font-smoothing: antialiased;
   }
 
+  :root[data-translucent] body {
+    background-color: transparent;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"] {
+    accent-color: var(--color-accent-500);
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--color-accent-500) 35%, transparent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent-500);
+    outline-offset: 1px;
+  }
+
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: none;
+  }
+
   select {
-    color-scheme: dark;
     cursor: pointer;
   }
 
@@ -33,22 +121,52 @@
 
   select option,
   select optgroup {
-    background-color: #1a1a1a;
-    color: #d1d5db;
+    background-color: var(--color-popup);
+    color: var(--color-gray-300);
   }
 
   select option:disabled {
-    color: #6b7280;
+    color: var(--color-gray-600);
   }
 
   ::-webkit-scrollbar {
-    width: 6px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #333;
-    border-radius: 3px;
+    background: color-mix(in oklab, var(--color-fg) 14%, transparent);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--color-fg) 24%, transparent);
+  }
+}
+
+@layer components {
+  .hue-slider {
+    background: linear-gradient(
+      to right,
+      oklch(62% 0.19 0),
+      oklch(62% 0.19 60),
+      oklch(62% 0.19 120),
+      oklch(62% 0.19 180),
+      oklch(62% 0.19 240),
+      oklch(62% 0.19 300),
+      oklch(62% 0.19 360)
+    );
+  }
+
+  .hue-slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    background: white;
+    box-shadow: 0 0 0 2px rgb(0 0 0 / 0.25), 0 1px 4px rgb(0 0 0 / 0.3);
   }
 }

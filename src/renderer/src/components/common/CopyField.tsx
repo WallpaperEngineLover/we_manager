@@ -22,13 +22,13 @@ export default function CopyField({ text, label }: Props) {
   return (
     <div className="flex items-center gap-2">
       {label && <span className="w-24 shrink-0 truncate text-xs text-gray-500">{label}</span>}
-      <code className="min-w-0 flex-1 truncate rounded bg-white/5 px-2 py-1 text-xs text-gray-300" title={text}>
+      <code className="min-w-0 flex-1 truncate rounded bg-fg/5 px-2 py-1 text-xs text-gray-300" title={text}>
         {text}
       </code>
       <button
         onClick={copy}
         title="Copy"
-        className="shrink-0 rounded p-1.5 text-gray-500 hover:bg-white/5 hover:text-gray-200"
+        className="shrink-0 rounded p-1.5 text-gray-500 hover:bg-fg/5 hover:text-gray-200"
       >
         {copied ? <Check size={13} /> : <Copy size={13} />}
       </button>

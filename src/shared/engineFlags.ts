@@ -67,6 +67,7 @@ export function engineFlagArgs(flags: EngineFlags): string[] {
   if (flags.shadows && flags.shadows !== 'medium') args.push('--shadows', flags.shadows)
   if (flags.msaa && flags.msaa !== 'none') args.push('--msaa', flags.msaa)
   if (flags.ssaa && flags.ssaa !== 'none') args.push('--ssaa', flags.ssaa)
+  if (flags.hwdec && flags.hwdec !== 'auto') args.push('--hwdec', flags.hwdec)
   if (flags.kdeBackgroundLayer) args.push('--layer', 'background')
   return args
 }

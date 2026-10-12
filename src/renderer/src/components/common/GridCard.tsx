@@ -1,53 +1,64 @@
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 import { Check, ExternalLink, Loader2, Play, ThumbsUp, type LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
-import { voteBorderClass } from '../../hooks/useVoteBorders'
+import type { CardBorders } from '@shared/cardBorders'
+import { cardFrames, type CardSteamState } from '../../hooks/useCardBorders'
 import { useVoteAction } from '../../hooks/useVotes'
 import { openWorkshopPage } from '../../utils/steam'
+import PreviewImage from './PreviewImage'
 
 // Building blocks shared by the workshop and library wallpaper cards
 
 interface GridCardProps extends HTMLAttributes<HTMLDivElement> {
   selected: boolean
   isDetailOpen: boolean
-  isLiked: boolean
-  voteError?: string
-  showVoteBorder: boolean
+  steam: CardSteamState
+  borders: CardBorders
   [dataAttr: `data-${string}`]: string
 }
 
-export function GridCard({
-  selected,
-  isDetailOpen,
-  isLiked,
-  voteError,
-  showVoteBorder,
-  className,
-  children,
-  ...rest
-}: GridCardProps) {
+// outside the card, so a liked favorite shows both colors
+const FRAME_INSET_PX = [4, 7]
+
+export function GridCard({ selected, isDetailOpen, steam, borders, className, children, ...rest }: GridCardProps) {
+  const { frames, title } = cardFrames(borders, steam)
   return (
     <div
       {...rest}
-      title={showVoteBorder ? voteError : undefined}
+      data-preview-hover=""
+      title={title}
       className={clsx(
-        'group relative cursor-pointer select-none overflow-hidden rounded-lg bg-[#1a1a1a] transition-all',
-        isDetailOpen ? 'ring-2 ring-sky-400' : selected ? 'ring-2 ring-indigo-500' : 'hover:ring-1 hover:ring-indigo-500/50',
-        showVoteBorder && voteBorderClass(voteError, isLiked),
+        'group relative cursor-pointer select-none rounded-xl bg-card shadow-sm shadow-black/10 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/25',
+        isDetailOpen ? 'ring-2 ring-sky-400' : selected ? 'ring-2 ring-accent-500' : 'ring-1 ring-fg/5 hover:ring-accent-500/50',
         className
       )}
     >
-      <div
-        className={clsx(
-          'absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border transition-all',
-          selected
-            ? 'border-indigo-500 bg-indigo-600 text-white opacity-100'
-            : 'border-white/30 bg-black/50 text-transparent opacity-0 group-hover:opacity-100'
-        )}
-      >
-        <Check size={12} />
+      {frames.map((frame, i) => (
+        <div
+          key={frame.kind}
+          aria-hidden
+          className="pointer-events-none absolute border-2"
+          style={{
+            inset: -FRAME_INSET_PX[i],
+            borderRadius: 12 + FRAME_INSET_PX[i],
+            borderColor: frame.color,
+            borderStyle: frame.kind === 'failed' ? 'dashed' : 'solid'
+          }}
+        />
+      ))}
+      <div className="relative h-full overflow-hidden rounded-xl">
+        <div
+          className={clsx(
+            'absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border transition-all',
+            selected
+              ? 'border-accent-500 bg-accent-600 text-white opacity-100'
+              : 'border-white/30 bg-black/50 text-transparent opacity-0 group-hover:opacity-100'
+          )}
+        >
+          <Check size={12} />
+        </div>
+        {children}
       </div>
-      {children}
     </div>
   )
 }
@@ -64,17 +75,12 @@ export function CardPreview({
   children?: ReactNode
 }) {
   return (
-    <div className="relative aspect-video overflow-hidden bg-[#111]">
+    <div className="relative aspect-video overflow-hidden bg-sunken">
       {src ? (
-        <img
+        <PreviewImage
           src={src}
           alt={alt}
-          className={clsx(
-            'h-full w-full object-cover transition-transform duration-300 group-hover:scale-105',
-            dimmed && 'brightness-50'
-          )}
-          loading="lazy"
-          draggable={false}
+          className={clsx('transition-transform duration-300 group-hover:scale-105', dimmed && 'brightness-50')}
         />
       ) : (
         <div className="flex h-full items-center justify-center text-gray-600">No preview</div>
@@ -96,7 +102,7 @@ export function CardOverlay({ children }: { children: ReactNode }) {
 export function ProgressBar({ percentage, className }: { percentage: number; className: string }) {
   return (
     <div className={clsx('overflow-hidden', className)}>
-      <div className="h-full bg-indigo-500 transition-[width]" style={{ width: `${percentage}%` }} />
+      <div className="h-full bg-accent-500 transition-[width]" style={{ width: `${percentage}%` }} />
     </div>
   )
 }
@@ -113,10 +119,10 @@ export function CornerBadge({ className, title, children }: { className: string;
 type ActionTone = 'default' | 'active' | 'danger' | 'muted'
 
 const TONE_CLASS: Record<ActionTone, string> = {
-  default: 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50',
+  default: 'bg-fg/5 text-gray-400 hover:bg-fg/10 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50',
   active: 'bg-green-600/30 text-green-300 disabled:cursor-default',
-  danger: 'bg-white/5 text-gray-400 hover:bg-red-500/20 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50',
-  muted: 'bg-white/5 text-gray-600 opacity-50 disabled:cursor-not-allowed'
+  danger: 'bg-fg/5 text-gray-400 hover:bg-red-500/20 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50',
+  muted: 'bg-fg/5 text-gray-600 opacity-50 disabled:cursor-not-allowed'
 }
 
 interface CardActionProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -218,7 +224,7 @@ export function PlayButton({
       title={title}
       className={clsx(
         'flex h-7 w-7 items-center justify-center rounded-full bg-black/60 opacity-0 transition-opacity group-hover:opacity-100 disabled:cursor-not-allowed',
-        ready ? 'text-white hover:bg-indigo-600' : 'text-gray-500'
+        ready ? 'text-white hover:bg-accent-600' : 'text-gray-500'
       )}
     >
       {busy ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}

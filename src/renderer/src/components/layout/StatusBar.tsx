@@ -19,7 +19,7 @@ export default function StatusBar() {
   const active = players.filter((p) => p.playlistId)
 
   return (
-    <footer className="flex h-6 items-center gap-3 border-t border-white/5 bg-[#0a0a0a] px-3 text-xs text-gray-500">
+    <footer className="flex h-6 items-center gap-3 border-t border-fg/5 bg-chrome px-3 text-xs text-gray-500">
       <span className="flex items-center gap-1">
         {steamRunning ? (
           <>
@@ -36,8 +36,8 @@ export default function StatusBar() {
 
       {active.map((playback) => (
         <span key={playback.screen} className="flex items-center gap-1.5">
-          <span className="h-3 w-px bg-white/10" />
-          <ListVideo size={12} className="text-indigo-400" />
+          <span className="h-3 w-px bg-fg/10" />
+          <ListVideo size={12} className="text-accent-400" />
           {playlists?.find((p) => p.id === playback.playlistId)?.title ?? 'Playlist'}
           {playback.screen !== '*' && <span className="text-gray-600">on {screenLabel(playback.screen)}</span>}
           <button

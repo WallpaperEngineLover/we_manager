@@ -1,5 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '../shared/ipc-channels'
+import type { Appearance } from '../shared/appearance'
+import type { CardBorders } from '../shared/cardBorders'
+import type { DesktopEnvironment } from '../shared/desktop'
 import type {
   WorkshopQueryParams,
   WorkshopQueryResult,
@@ -35,7 +38,8 @@ import type {
   ScreenTarget,
   ScreenAssignment,
   ScheduleRule,
-  CrashEvent
+  CrashEvent,
+  FavoriteStatus
 } from '../shared/types'
 import type { VideoSegment } from '../shared/videoTrim'
 
@@ -72,10 +76,18 @@ const api = {
       ipcRenderer.invoke(IpcChannels.STEAM_OPEN_WORKSHOP, itemId),
     getVotedIds: (): Promise<string[]> =>
       ipcRenderer.invoke(IpcChannels.STEAM_GET_VOTED_IDS),
+    getDislikedIds: (): Promise<string[]> =>
+      ipcRenderer.invoke(IpcChannels.STEAM_GET_DISLIKED_IDS),
     getFailedVotes: (): Promise<Record<string, string>> =>
       ipcRenderer.invoke(IpcChannels.STEAM_GET_FAILED_VOTES),
     checkVote: (itemId: string): Promise<boolean | null> =>
       ipcRenderer.invoke(IpcChannels.STEAM_CHECK_VOTE, itemId),
+    favorite: (itemId: string, add: boolean): Promise<{ ok: boolean; confirmed: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.STEAM_FAVORITE, itemId, add),
+    getFavoriteIds: (): Promise<string[]> =>
+      ipcRenderer.invoke(IpcChannels.STEAM_GET_FAVORITE_IDS),
+    getFavoriteStatus: (): Promise<FavoriteStatus> =>
+      ipcRenderer.invoke(IpcChannels.STEAM_GET_FAVORITE_STATUS),
     getAuthorInfo: (steamId: string): Promise<WorkshopAuthorInfo | null> =>
       ipcRenderer.invoke(IpcChannels.STEAM_GET_AUTHOR_INFO, steamId)
   },
@@ -135,7 +147,7 @@ const api = {
       autostartMinimized: boolean
       autostartPlaylistId: string | null
       killLweOnQuit: boolean
-      voteBorders: boolean
+      cardBorders: CardBorders
       audioScreen: string | null
       ambientVolume: number | null
       defaultAudioSensitivity: number
@@ -146,6 +158,10 @@ const api = {
       engineFlags: EngineFlags
       engineFlagPresets: EngineFlagPreset[]
       displayMode: DisplayMode
+      appearance: Appearance
+      appearanceRestartNeeded: boolean
+      windowTranslucent: boolean
+      desktopEnv: DesktopEnvironment
     }> => ipcRenderer.invoke(IpcChannels.CONFIG_GET),
     setEngineFlags: (flags: EngineFlags): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_ENGINE_FLAGS, flags),
@@ -183,8 +199,10 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_TRAY_ENABLED, enabled),
     setKillLweOnQuit: (enabled: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_KILL_LWE_ON_QUIT, enabled),
-    setVoteBorders: (enabled: boolean): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke(IpcChannels.CONFIG_SET_VOTE_BORDERS, enabled),
+    setCardBorders: (borders: CardBorders): Promise<CardBorders> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_CARD_BORDERS, borders),
+    setAppearance: (appearance: Partial<Appearance>): Promise<Appearance> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_APPEARANCE, appearance),
     setAutostart: (
       enabled: boolean,
       minimized: boolean,
@@ -440,6 +458,21 @@ const api = {
       const listener = (_: Electron.IpcRendererEvent, ids: string[]) => cb(ids)
       ipcRenderer.on(IpcChannels.EVENT_VOTED_IDS_CHANGED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_VOTED_IDS_CHANGED, listener)
+    },
+    dislikedIdsChanged: (cb: (ids: string[]) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, ids: string[]) => cb(ids)
+      ipcRenderer.on(IpcChannels.EVENT_DISLIKED_IDS_CHANGED, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_DISLIKED_IDS_CHANGED, listener)
+    },
+    favoriteIdsChanged: (cb: (ids: string[]) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, ids: string[]) => cb(ids)
+      ipcRenderer.on(IpcChannels.EVENT_FAVORITE_IDS_CHANGED, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_FAVORITE_IDS_CHANGED, listener)
+    },
+    favoriteStatusChanged: (cb: (status: FavoriteStatus) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, status: FavoriteStatus) => cb(status)
+      ipcRenderer.on(IpcChannels.EVENT_FAVORITE_STATUS_CHANGED, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_FAVORITE_STATUS_CHANGED, listener)
     },
     failedVotesChanged: (cb: (failed: Record<string, string>) => void): (() => void) => {
       const listener = (_: Electron.IpcRendererEvent, failed: Record<string, string>) => cb(failed)

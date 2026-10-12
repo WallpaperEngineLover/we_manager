@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Search, X, Plus, Check } from 'lucide-react'
 import { getPreviewSrc } from '../../utils/preview'
+import PreviewImage from '../common/PreviewImage'
 
 interface WallpaperPickerModalProps {
   excludeIds: Set<string>
@@ -49,18 +50,18 @@ export default function WallpaperPickerModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-8">
-      <div className="flex h-full max-h-[600px] w-full max-w-2xl flex-col rounded-xl border border-white/10 bg-[#161616] shadow-2xl">
-        <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
+      <div className="flex h-full max-h-[600px] w-full max-w-2xl flex-col rounded-xl border border-fg/10 bg-popup shadow-2xl">
+        <div className="flex items-center justify-between border-b border-fg/5 px-4 py-3">
           <h3 className="text-sm font-semibold text-gray-100">Add wallpapers to playlist</h3>
           <button
             onClick={onClose}
-            className="rounded p-1 text-gray-500 hover:bg-white/5 hover:text-gray-300"
+            className="rounded p-1 text-gray-500 hover:bg-fg/5 hover:text-gray-300"
           >
             <X size={16} />
           </button>
         </div>
 
-        <div className="border-b border-white/5 px-4 py-2">
+        <div className="border-b border-fg/5 px-4 py-2">
           <div className="relative">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
             <input
@@ -69,7 +70,7 @@ export default function WallpaperPickerModal({
               placeholder="Search library..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-lg bg-white/5 py-1.5 pl-8 pr-3 text-sm text-gray-200 placeholder-gray-500 outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full rounded-lg bg-fg/5 py-1.5 pl-8 pr-3 text-sm text-gray-200 placeholder-gray-500 outline-none focus:ring-1 focus:ring-accent-500"
             />
           </div>
         </div>
@@ -87,18 +88,14 @@ export default function WallpaperPickerModal({
                 <button
                   key={w.id}
                   onClick={() => toggle(w.id)}
-                  className={`group relative overflow-hidden rounded-lg bg-[#1f1f1f] text-left transition-all ${
-                    isSelected ? 'ring-2 ring-indigo-500' : 'hover:ring-1 hover:ring-indigo-500/50'
+                  data-preview-hover=""
+                  className={`group relative overflow-hidden rounded-xl bg-card text-left transition-all ${
+                    isSelected ? 'ring-2 ring-accent-500' : 'hover:ring-1 hover:ring-accent-500/50'
                   }`}
                 >
-                  <div className="aspect-video bg-[#111]">
+                  <div className="aspect-video bg-sunken">
                     {previewSrc ? (
-                      <img
-                        src={previewSrc}
-                        alt={w.title}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                      />
+                      <PreviewImage src={previewSrc} alt={w.title} />
                     ) : (
                       <div className="flex h-full items-center justify-center text-xs text-gray-600">
                         No preview
@@ -109,7 +106,7 @@ export default function WallpaperPickerModal({
                     <span className="truncate text-xs text-gray-300" title={w.title}>
                       {w.title}
                     </span>
-                    {isSelected && <Check size={12} className="shrink-0 text-indigo-400" />}
+                    {isSelected && <Check size={12} className="shrink-0 text-accent-400" />}
                   </div>
                 </button>
               )
@@ -117,12 +114,12 @@ export default function WallpaperPickerModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-between border-t border-white/5 px-4 py-3">
+        <div className="flex items-center justify-between border-t border-fg/5 px-4 py-3">
           <span className="text-xs text-gray-500">{selected.size} selected</span>
           <button
             onClick={handleAdd}
             disabled={selected.size === 0}
-            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
           >
             <Plus size={14} />
             Add to playlist

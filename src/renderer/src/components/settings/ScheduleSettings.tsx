@@ -22,7 +22,7 @@ const EMPTY_DRAFT: Draft = {
   screen: '*'
 }
 
-const inputClass = 'rounded-lg bg-white/5 px-2 py-1.5 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500'
+const inputClass = 'rounded-lg bg-fg/5 px-2 py-1.5 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500'
 
 function describeTrigger(trigger: ScheduleTrigger): string {
   if (trigger.type === 'theme') return trigger.theme === 'dark' ? 'When the system goes dark' : 'When the system goes light'
@@ -128,9 +128,9 @@ export default function ScheduleSettings() {
           return (
             <div
               key={rule.id}
-              className={clsx('flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2', !rule.enabled && 'opacity-50')}
+              className={clsx('flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2', !rule.enabled && 'opacity-50')}
             >
-              <input type="checkbox" checked={rule.enabled} onChange={() => toggle(rule)} className="accent-indigo-500" />
+              <input type="checkbox" checked={rule.enabled} onChange={() => toggle(rule)} className="accent-accent-500" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm text-gray-200">{rule.name}</p>
                 <p className="truncate text-xs text-gray-500">
@@ -156,13 +156,13 @@ export default function ScheduleSettings() {
       {!draft ? (
         <button
           onClick={() => setDraft(EMPTY_DRAFT)}
-          className="mt-2 flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10"
+          className="mt-2 flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
         >
           <Plus size={14} />
           Add schedule
         </button>
       ) : (
-        <div className="mt-2 space-y-3 rounded-lg border border-white/10 p-3">
+        <div className="mt-2 space-y-3 rounded-lg border border-fg/10 p-3">
           <input
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -211,7 +211,7 @@ export default function ScheduleSettings() {
                     }
                     className={clsx(
                       'rounded px-2 py-1 text-xs',
-                      on ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-400 hover:text-gray-200'
+                      on ? 'bg-accent-600 text-white' : 'bg-fg/5 text-gray-400 hover:text-gray-200'
                     )}
                   >
                     {label}
@@ -284,10 +284,10 @@ export default function ScheduleSettings() {
           )}
 
           <div className="flex gap-2">
-            <button onClick={save} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">
+            <button onClick={save} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500">
               Save
             </button>
-            <button onClick={() => setDraft(null)} className="rounded-lg bg-white/5 px-4 py-2 text-sm text-gray-300 hover:bg-white/10">
+            <button onClick={() => setDraft(null)} className="rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10">
               Cancel
             </button>
           </div>

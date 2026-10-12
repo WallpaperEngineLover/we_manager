@@ -24,8 +24,8 @@ export default function PreviewSizeToggle({
           className={clsx(
             'px-2.5 py-2 transition-colors',
             value === opt.value
-              ? 'bg-indigo-600 text-white'
-              : 'bg-white/5 text-gray-400 hover:text-gray-200'
+              ? 'bg-accent-600 text-white'
+              : 'bg-fg/5 text-gray-400 hover:text-gray-200'
           )}
         >
           {opt.label}

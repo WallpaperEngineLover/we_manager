@@ -1,5 +1,6 @@
 import { useState, useEffect, Component, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import type { FavoriteStatus } from '@shared/types'
 import Sidebar from './components/layout/Sidebar'
 import WorkshopBrowser from './components/workshop/WorkshopBrowser'
 import LibraryView from './components/library/LibraryView'
@@ -9,6 +10,10 @@ import SetupScreen from './components/setup/SetupScreen'
 import StatusBar from './components/layout/StatusBar'
 import { useToast } from './components/common/Toast'
 import { screenLabel } from './utils/screens'
+import { useConfig } from './hooks/queries'
+import { FAVORITE_STATUS_KEY } from './hooks/useFavorites'
+import { DISLIKED_IDS_KEY } from './hooks/useVotes'
+import { applyAppearance, onSystemThemeChange } from './utils/appearance'
 
 type View = 'workshop' | 'library' | 'playlists' | 'settings'
 
@@ -45,6 +50,14 @@ export default function App() {
     setActiveView('workshop')
   }
 
+  const config = useConfig()
+  useEffect(() => {
+    if (!config) return
+    const apply = (): void => applyAppearance(config.appearance, config.windowTranslucent)
+    apply()
+    return onSystemThemeChange(apply)
+  }, [config])
+
   useEffect(() => {
     window.electronAPI.config.get().then((cfg) => {
       setDefaultPath(cfg.defaultWorkshopPath)
@@ -68,6 +81,36 @@ export default function App() {
       queryClient.setQueryData(['steam-voted-ids'], ids)
     })
   }, [queryClient])
+
+  useEffect(() => {
+    return window.electronAPI.on.dislikedIdsChanged((ids) => {
+      queryClient.setQueryData(DISLIKED_IDS_KEY, ids)
+    })
+  }, [queryClient])
+
+  useEffect(() => {
+    return window.electronAPI.on.favoriteIdsChanged((ids) => {
+      queryClient.setQueryData(['steam-favorite-ids'], ids)
+    })
+  }, [queryClient])
+
+  useEffect(() => {
+    return window.electronAPI.on.favoriteStatusChanged((status) => {
+      const before = queryClient.getQueryData<FavoriteStatus>(FAVORITE_STATUS_KEY)?.failed ?? {}
+      const newReadBackFailures = Object.entries(status.failed).filter(
+        ([id, failure]) => failure.readBack && !before[id]
+      ).length
+      queryClient.setQueryData(FAVORITE_STATUS_KEY, status)
+      if (newReadBackFailures > 0) {
+        showToast(
+          newReadBackFailures === 1
+            ? "A favorite change didn't show up in your Steam favorites - its card has a dashed border"
+            : `${newReadBackFailures} favorite changes didn't show up in your Steam favorites - their cards have a dashed border`,
+          { warning: true, durationMs: 8000 }
+        )
+      }
+    })
+  }, [queryClient, showToast])
 
   useEffect(() => {
     return window.electronAPI.on.failedVotesChanged((failed) => {
@@ -104,7 +147,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="flex h-full flex-col bg-[#0f0f0f] text-gray-100">
+      <div className="flex h-full flex-col bg-app text-gray-100">
         <div className="flex flex-1 overflow-hidden">
           <Sidebar activeView={activeView} onNavigate={setActiveView} />
           <main className="flex-1 overflow-hidden">

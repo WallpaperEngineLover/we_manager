@@ -12,12 +12,14 @@ function init(appId: number): void {
   client = steamworks.init(appId)
 }
 
-// ISteamUGC::SetUserItemVote and ISteamUser::BLoggedOn are not bound in steamworks.js, so they
-// go through the flat C API. libsteam_api.so is already loaded by steamworks.js, dlopen just
-// returns the existing handle.
+// not bound in steamworks.js, so called through the flat C API of the already loaded libsteam_api.so
 let steamLib: ReturnType<Koffi['load']> | null = null
-let setUserItemVote: ((ugc: unknown, itemId: bigint, voteUp: boolean) => bigint) | null = null
-let ugcPtr: unknown = null
+let ugc: {
+  ptr: unknown
+  setUserItemVote: (ugc: unknown, itemId: bigint, voteUp: boolean) => bigint
+  addItemToFavorites: (ugc: unknown, appId: number, itemId: bigint) => bigint
+  removeItemFromFavorites: (ugc: unknown, appId: number, itemId: bigint) => bigint
+} | null = null
 let isLoggedOn: (() => boolean) | null = null
 
 function getSteamLib(): ReturnType<Koffi['load']> {
@@ -33,18 +35,34 @@ function getSteamLib(): ReturnType<Koffi['load']> {
   return steamLib
 }
 
-function voteRaw(itemId: bigint, voteUp: boolean): bigint {
-  if (!setUserItemVote) {
+function getUgc(): NonNullable<typeof ugc> {
+  if (!ugc) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const koffi: Koffi = require('koffi')
     const lib = getSteamLib()
     const ugcPtrType = koffi.pointer(koffi.opaque('ISteamUGC'))
-    ugcPtr = lib.func('SteamAPI_SteamUGC_v020', ugcPtrType, [])()
-    setUserItemVote = lib.func('SteamAPI_ISteamUGC_SetUserItemVote', 'uint64', [ugcPtrType, 'uint64', 'bool'])
+    ugc = {
+      ptr: lib.func('SteamAPI_SteamUGC_v020', ugcPtrType, [])(),
+      setUserItemVote: lib.func('SteamAPI_ISteamUGC_SetUserItemVote', 'uint64', [ugcPtrType, 'uint64', 'bool']),
+      addItemToFavorites: lib.func('SteamAPI_ISteamUGC_AddItemToFavorites', 'uint64', [ugcPtrType, 'uint32', 'uint64']),
+      removeItemFromFavorites: lib.func('SteamAPI_ISteamUGC_RemoveItemFromFavorites', 'uint64', [ugcPtrType, 'uint32', 'uint64'])
+    }
   }
-  const handle = setUserItemVote(ugcPtr, itemId, voteUp)
-  // k_uAPICallInvalid = 0 means the call failed immediately
+  return ugc
+}
+
+// 0 = k_uAPICallInvalid
+function voteRaw(itemId: bigint, voteUp: boolean): bigint {
+  const api = getUgc()
+  const handle = api.setUserItemVote(api.ptr, itemId, voteUp)
   if (handle === 0n) throw new Error('SetUserItemVote failed')
+  return handle
+}
+
+function favoriteRaw(appId: number, itemId: bigint, add: boolean): bigint {
+  const api = getUgc()
+  const handle = add ? api.addItemToFavorites(api.ptr, appId, itemId) : api.removeItemFromFavorites(api.ptr, appId, itemId)
+  if (handle === 0n) throw new Error(add ? 'AddItemToFavorites failed' : 'RemoveItemFromFavorites failed')
   return handle
 }
 
@@ -68,6 +86,7 @@ async function call(method: string, args: unknown[]): Promise<unknown> {
   }
   if (!client) throw new Error('Steam not initialized')
   if (method === 'voteRaw') return voteRaw(args[0] as bigint, args[1] as boolean)
+  if (method === 'favoriteRaw') return favoriteRaw(args[0] as number, args[1] as bigint, args[2] as boolean)
   if (method === 'isOnline') return isOnline()
   if (method === 'hasMethod') {
     const [ns, fn] = (args[0] as string).split('.')

@@ -1,11 +1,11 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { ChevronRight, Folder, FolderInput, ThumbsDown, ThumbsUp, Trash2, type LucideIcon } from 'lucide-react'
+import { ChevronRight, Folder, FolderInput, Heart, HeartOff, ThumbsDown, ThumbsUp, Trash2, type LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 import type { WallpaperFolder } from '@shared/types'
 import { useClickOutside } from '../../hooks/useClickOutside'
 import { useClampedPosition, useFlipSide } from '../../hooks/useContextMenuPosition'
 
-const POPUP_CLASS = 'rounded-lg border border-white/10 bg-[#1a1a1a] py-1 shadow-xl'
+const POPUP_CLASS = 'rounded-xl border border-fg/10 bg-popup/95 p-1 shadow-2xl shadow-black/30 backdrop-blur-md'
 
 export function ContextMenu({
   x,
@@ -50,7 +50,7 @@ export function MenuItem({
     <button
       onClick={onClick}
       className={clsx(
-        'flex w-full items-center gap-2 px-3 py-1.5 hover:bg-white/5',
+        'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-fg/5',
         danger ? 'text-red-400' : 'text-gray-300'
       )}
     >
@@ -61,12 +61,12 @@ export function MenuItem({
 }
 
 export function MenuSeparator() {
-  return <div className="my-1 border-t border-white/5" />
+  return <div className="mx-1 my-1 border-t border-fg/5" />
 }
 
 export function MenuSelectionCount({ count }: { count: number }) {
   if (count < 2) return null
-  return <div className="mb-1 border-b border-white/5 px-3 py-1 text-xs text-gray-600">{count} items selected</div>
+  return <div className="mb-1 border-b border-fg/5 px-3 py-1 text-xs text-gray-600">{count} items selected</div>
 }
 
 export function VoteMenuItems({ onVote }: { onVote: (up: boolean) => void }) {
@@ -78,6 +78,34 @@ export function VoteMenuItems({ onVote }: { onVote: (up: boolean) => void }) {
       <MenuItem icon={ThumbsDown} onClick={() => onVote(false)}>
         Dislike
       </MenuItem>
+    </>
+  )
+}
+
+// a mixed selection shows both
+export function FavoriteMenuItems({
+  ids,
+  favorites,
+  onFavorite
+}: {
+  ids: string[]
+  favorites: Set<string>
+  onFavorite: (ids: string[], add: boolean) => void
+}) {
+  const toAdd = ids.filter((id) => !favorites.has(id))
+  const toRemove = ids.filter((id) => favorites.has(id))
+  return (
+    <>
+      {toAdd.length > 0 && (
+        <MenuItem icon={Heart} onClick={() => onFavorite(toAdd, true)}>
+          Add to favorites
+        </MenuItem>
+      )}
+      {toRemove.length > 0 && (
+        <MenuItem icon={HeartOff} onClick={() => onFavorite(toRemove, false)}>
+          Remove from favorites
+        </MenuItem>
+      )}
     </>
   )
 }
@@ -102,7 +130,7 @@ export function SubMenu({
     <div className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-gray-300 hover:bg-white/5"
+        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-fg/5"
       >
         <Icon size={12} /> {label}
         <ChevronRight size={12} className="ml-auto" />

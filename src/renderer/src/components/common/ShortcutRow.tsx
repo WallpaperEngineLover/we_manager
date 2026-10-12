@@ -103,7 +103,7 @@ export function ShortcutRow({
           onClick={() => setDraft(draft ? null : (current ?? { type: 'application', file: '', arguments: '' }))}
           disabled={busy}
           title={current ? 'Change shortcut' : 'Assign shortcut'}
-          className="rounded p-0.5 text-gray-400 hover:bg-white/10 hover:text-gray-200 disabled:opacity-40"
+          className="rounded p-0.5 text-gray-400 hover:bg-fg/10 hover:text-gray-200 disabled:opacity-40"
         >
           <Pencil size={12} />
         </button>
@@ -112,7 +112,7 @@ export function ShortcutRow({
             onClick={() => onCommit('')}
             disabled={busy}
             title="Remove shortcut"
-            className="rounded p-0.5 text-gray-400 hover:bg-white/10 hover:text-gray-200 disabled:opacity-40"
+            className="rounded p-0.5 text-gray-400 hover:bg-fg/10 hover:text-gray-200 disabled:opacity-40"
           >
             <X size={12} />
           </button>
@@ -120,7 +120,7 @@ export function ShortcutRow({
       </div>
 
       {draft && (
-        <div className="mt-1.5 space-y-1.5 rounded bg-white/5 p-1.5">
+        <div className="mt-1.5 space-y-1.5 rounded bg-fg/5 p-1.5">
           <div className="flex gap-1">
             {TYPES.map(({ type, label: typeLabel, icon: Icon }) => (
               <button
@@ -128,7 +128,7 @@ export function ShortcutRow({
                 onClick={() => setDraft({ type, file: '', arguments: '' })}
                 className={clsx(
                   'flex flex-1 items-center justify-center gap-1 rounded px-1 py-0.5',
-                  draft.type === type ? 'bg-indigo-500/30 text-indigo-200' : 'text-gray-400 hover:bg-white/5'
+                  draft.type === type ? 'bg-accent-500/30 text-accent-200' : 'text-gray-400 hover:bg-fg/5'
                 )}
               >
                 <Icon size={11} />
@@ -153,7 +153,7 @@ export function ShortcutRow({
                     title={app.file}
                     className={clsx(
                       'block w-full truncate rounded px-1.5 py-0.5 text-left',
-                      draft.file === app.file ? 'bg-indigo-500/30 text-indigo-200' : 'text-gray-300 hover:bg-white/5'
+                      draft.file === app.file ? 'bg-accent-500/30 text-accent-200' : 'text-gray-300 hover:bg-fg/5'
                     )}
                   >
                     {app.name}
@@ -173,7 +173,7 @@ export function ShortcutRow({
               />
               <button
                 onClick={() => pick(draft.type === 'directory' ? 'directory' : 'file')}
-                className="rounded bg-white/5 px-1.5 text-gray-300 hover:bg-white/10"
+                className="rounded bg-fg/5 px-1.5 text-gray-300 hover:bg-fg/10"
               >
                 Browse
               </button>
@@ -204,13 +204,13 @@ export function ShortcutRow({
           )}
 
           <div className="flex justify-end gap-1">
-            <button onClick={() => setDraft(null)} className="rounded px-2 py-0.5 text-gray-400 hover:bg-white/5">
+            <button onClick={() => setDraft(null)} className="rounded px-2 py-0.5 text-gray-400 hover:bg-fg/5">
               Cancel
             </button>
             <button
               onClick={save}
               disabled={!draft.file.trim() || busy}
-              className="rounded bg-indigo-500/80 px-2 py-0.5 text-white hover:bg-indigo-500 disabled:opacity-40"
+              className="rounded bg-accent-500/80 px-2 py-0.5 text-white hover:bg-accent-500 disabled:opacity-40"
             >
               Save
             </button>

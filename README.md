@@ -17,7 +17,7 @@ still works as a local library manager.
   `flatpak install --user we-manager.flatpak` (needs Flathub for the runtime). To build it yourself:
   `packaging/flatpak/fetch-sources.sh`, then
   `flatpak-builder --user --install --force-clean build-dir packaging/flatpak/io.github.WallpaperEngineLover.we_manager.yml`.
-- **AUR**: `we-manager-bin`, with `linux-wallpaperengine-kde-bin` or `-git` for the engine.
+- **AUR** (coming soon, AUR registration is paused right now): `we-manager-bin`, with `linux-wallpaperengine-kde-bin` or `-git` for the engine. Until then use the AppImage.
 
 ## Running
 

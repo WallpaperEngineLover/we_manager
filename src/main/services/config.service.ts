@@ -3,6 +3,8 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { app } from 'electron'
 import { WE_APP_ID } from '@shared/constants'
+import { normalizeAppearance, type Appearance } from '@shared/appearance'
+import { normalizeCardBorders, type CardBorders } from '@shared/cardBorders'
 import type { DisplayMode, EngineFlagPreset, EngineFlags, ExtraLibrary, SteamIdentity } from '@shared/types'
 
 interface AppConfig {
@@ -20,8 +22,9 @@ interface AppConfig {
   autostartMinimized: boolean
   autostartPlaylistId: string | null
   killLweOnQuit: boolean
-  /** Green outline on liked wallpapers, red on ones whose like failed */
+  /** Legacy, only read to migrate into cardBorders */
   voteBorders: boolean
+  cardBorders: CardBorders | null
   recommendedFpsEnabled: boolean
   recommendedWebFpsEnabled: boolean
   audioScreen: string | null
@@ -39,6 +42,7 @@ interface AppConfig {
   engineFlags: EngineFlags
   engineFlagPresets: EngineFlagPreset[]
   displayMode: DisplayMode
+  appearance: Appearance
 }
 
 const store = new Store<AppConfig>({
@@ -60,6 +64,7 @@ const store = new Store<AppConfig>({
     autostartPlaylistId: null,
     killLweOnQuit: false,
     voteBorders: true,
+    cardBorders: null,
     audioScreen: null,
     ambientVolume: null,
     defaultAudioSensitivity: 1,
@@ -69,7 +74,8 @@ const store = new Store<AppConfig>({
     ignoredCreators: [],
     engineFlags: {},
     engineFlagPresets: [],
-    displayMode: 'shared'
+    displayMode: 'shared',
+    appearance: normalizeAppearance(undefined)
   }
 })
 
@@ -152,12 +158,24 @@ export function setKillLweOnQuit(enabled: boolean): void {
   store.set('killLweOnQuit', enabled)
 }
 
-export function getVoteBorders(): boolean {
-  return store.get('voteBorders')
+export function getAppearance(): Appearance {
+  return normalizeAppearance(store.get('appearance'))
 }
 
-export function setVoteBorders(enabled: boolean): void {
-  store.set('voteBorders', enabled)
+export function setAppearance(appearance: Partial<Appearance>): Appearance {
+  const next = normalizeAppearance({ ...getAppearance(), ...appearance })
+  store.set('appearance', next)
+  return next
+}
+
+export function getCardBorders(): CardBorders {
+  return normalizeCardBorders(store.get('cardBorders'), store.get('voteBorders'))
+}
+
+export function setCardBorders(borders: CardBorders): CardBorders {
+  const next = normalizeCardBorders(borders)
+  store.set('cardBorders', next)
+  return next
 }
 
 /** 'wallpaper-engine' connects under WE's app id, 'standalone' under a neutral test app id. Read on every connect. */

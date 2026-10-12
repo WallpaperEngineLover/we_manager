@@ -10,7 +10,8 @@ import {
   MenuItem,
   MenuSelectionCount,
   MenuSeparator,
-  VoteMenuItems
+  VoteMenuItems,
+  FavoriteMenuItems
 } from '../common/ContextMenu'
 import {
   FiltersToggle,
@@ -20,7 +21,7 @@ import {
   ResetFiltersButton,
   SearchInput
 } from '../common/GridControls'
-import { CheckItem, FilterPanel, FilterSection, ResolutionFilterSection, TagFilterSection } from '../common/FilterPanel'
+import { CheckGroup, CheckItem, FilterPanel, FilterSection, ResolutionFilterSection, TagFilterSection } from '../common/FilterPanel'
 import type { WorkshopQueryType } from '@shared/types'
 import clsx from 'clsx'
 import {
@@ -34,8 +35,9 @@ import {
 } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
 import { usePersistentState } from '../../hooks/usePersistentState'
-import { useVoteBorders } from '../../hooks/useVoteBorders'
-import { useBatchVote, useVotedIds } from '../../hooks/useVotes'
+import { useCardBorders, useCardSteamState } from '../../hooks/useCardBorders'
+import { useBatchVote, useDislikedIds, useVotedIds } from '../../hooks/useVotes'
+import { useBatchFavorite, useFavoriteIds } from '../../hooks/useFavorites'
 import { useAllWallpapers, useFolders, useLweInstalled } from '../../hooks/queries'
 import { useApplyWallpaper, useUnsubscribe } from '../../hooks/useWallpaperActions'
 import { useSelectableGrid } from '../../hooks/useSelectableGrid'
@@ -66,6 +68,8 @@ interface WorkshopFilterState extends Record<TagCategory, string[]> {
   showOnly: string[]
   notDownloaded: boolean
   notLiked: boolean
+  notDisliked: boolean
+  notFavorited: boolean
   sizeFilterMode: 'none' | 'lt' | 'gt'
   sizeFilterMb: number
 }
@@ -81,6 +85,8 @@ const DEFAULT_STATE: WorkshopFilterState = {
   genres: ALL_TAGS.genres,
   notDownloaded: false,
   notLiked: false,
+  notDisliked: false,
+  notFavorited: false,
   sizeFilterMode: 'none',
   sizeFilterMb: 100
 }
@@ -141,8 +147,12 @@ export default function WorkshopBrowser({
   const [showIgnored, setShowIgnored] = useState(false)
 
   const votedSet = useVotedIds()
+  const dislikedSet = useDislikedIds()
   const batchVote = useBatchVote()
-  const { enabled: voteBordersEnabled, failed: failedVotes } = useVoteBorders()
+  const favoriteSet = useFavoriteIds()
+  const batchFavorite = useBatchFavorite()
+  const steamStateOf = useCardSteamState()
+  const cardBorders = useCardBorders()
   const lweInstalled = useLweInstalled()
   const applyWallpaper = useApplyWallpaper()
   const unsubscribe = useUnsubscribe()
@@ -168,11 +178,13 @@ export default function WorkshopBrowser({
     )
   ]
 
+  const statusFilterCount = [filters.notDownloaded, filters.notLiked, filters.notDisliked, filters.notFavorited].filter(
+    Boolean
+  ).length
   const activeCount =
     filters.showOnly.length +
     TAG_CATEGORIES.reduce((sum, key) => sum + effective[key].length, 0) +
-    (filters.notDownloaded ? 1 : 0) +
-    (filters.notLiked ? 1 : 0) +
+    statusFilterCount +
     (filters.sizeFilterMode !== 'none' ? 1 : 0)
 
   function clearAll() {
@@ -264,6 +276,8 @@ export default function WorkshopBrowser({
         return false
       if (filters.notDownloaded && playableSet.has(item.publishedFileId)) return false
       if (filters.notLiked && votedSet.has(item.publishedFileId)) return false
+      if (filters.notDisliked && dislikedSet.has(item.publishedFileId)) return false
+      if (filters.notFavorited && favoriteSet.has(item.publishedFileId)) return false
       if (filters.sizeFilterMode !== 'none') {
         if (item.fileSize == null) return false
         if (filters.sizeFilterMode === 'lt' && item.fileSize >= sizeThresholdBytes) return false
@@ -276,7 +290,7 @@ export default function WorkshopBrowser({
         return false
       return true
     })
-  }, [allItems, searchQuery, filters, effective, playableSet, votedSet])
+  }, [allItems, searchQuery, filters, effective, playableSet, votedSet, dislikedSet, favoriteSet])
 
   // Page boundaries are fixed against the full tag-filtered list (ignored creators' items
   // included) so a page's contents don't shift around as the ignore list changes. Within a
@@ -370,6 +384,11 @@ export default function WorkshopBrowser({
         <MenuItem onClick={run(() => unsubscribeIds(menu.ids))}>Unsubscribe</MenuItem>
         <MenuSeparator />
         <VoteMenuItems onVote={(up) => run(() => batchVote(menu.ids, up))()} />
+        <FavoriteMenuItems
+          ids={menu.ids}
+          favorites={favoriteSet}
+          onFavorite={(ids, add) => run(() => batchFavorite(ids, add))()}
+        />
         <MenuSeparator />
         <MenuItem icon={ExternalLink} onClick={run(() => menu.ids.forEach(openWorkshopPage))}>
           Open in Steam Workshop
@@ -404,7 +423,7 @@ export default function WorkshopBrowser({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
+      <div className="flex items-center gap-3 border-b border-fg/5 px-4 py-3">
         <FiltersToggle open={showFilters} activeCount={activeCount} onClick={() => setShowFilters((v) => !v)} />
         <SearchInput
           value={searchText}
@@ -415,7 +434,7 @@ export default function WorkshopBrowser({
         <select
           value={queryType}
           onChange={(e) => setQueryType(e.target.value as WorkshopQueryType)}
-          className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+          className="rounded-lg bg-card px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
         >
           <option value="RankedByVote">Top Rated</option>
           <option value="RankedByPublicationDate">Newest</option>
@@ -431,28 +450,28 @@ export default function WorkshopBrowser({
             <button
               onClick={() => enqueueSubscribe([...selection])}
               title={selectionSize?.title ?? 'Everything selected is already subscribed or queued'}
-              className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-500"
+              className="flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-2 text-sm text-white hover:bg-accent-500"
             >
               <Download size={14} /> Subscribe selection
-              {selectionSize && <span className="text-indigo-200">({selectionSize.label})</span>}
+              {selectionSize && <span className="text-accent-200">({selectionSize.label})</span>}
             </button>
           </>
         )}
       </div>
 
       {creatorFilter && (
-        <div className="flex items-center gap-2 border-b border-white/5 bg-indigo-600/10 px-4 py-2 text-xs text-indigo-200">
+        <div className="flex items-center gap-2 border-b border-fg/5 bg-accent-600/10 px-4 py-2 text-xs text-accent-200">
           <User size={12} />
           <span>Showing wallpapers from this creator</span>
           <button
             onClick={() => openProfilePage(creatorFilter)}
-            className="flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-gray-300 hover:bg-white/10"
+            className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10"
           >
             <ExternalLink size={11} /> View Steam profile
           </button>
           <button
             onClick={() => onClearCreatorFilter?.()}
-            className="ml-auto flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-gray-300 hover:bg-white/10"
+            className="ml-auto flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10"
           >
             <X size={11} /> Clear
           </button>
@@ -472,8 +491,8 @@ export default function WorkshopBrowser({
                     className={clsx(
                       'px-2.5 py-1 transition-colors',
                       filters.filterMode === mode
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-white/5 text-gray-400 hover:text-gray-200'
+                        ? 'bg-accent-600 text-white'
+                        : 'bg-fg/5 text-gray-400 hover:text-gray-200'
                     )}
                   >
                     {mode === 'or' ? 'Any (OR)' : 'All (AND)'}
@@ -484,7 +503,7 @@ export default function WorkshopBrowser({
 
             <FilterSection
               title="Status"
-              activeCount={(filters.notDownloaded ? 1 : 0) + (filters.notLiked ? 1 : 0)}
+              activeCount={statusFilterCount}
             >
               <CheckItem
                 label="Not downloaded"
@@ -492,16 +511,40 @@ export default function WorkshopBrowser({
                 onChange={() => setFilter('notDownloaded', !filters.notDownloaded)}
               />
               <CheckItem
-                label="Not liked"
-                checked={filters.notLiked}
-                onChange={() => setFilter('notLiked', !filters.notLiked)}
+                label="Not rated"
+                title="Hide wallpapers you've liked or disliked on Steam"
+                checked={filters.notLiked && filters.notDisliked}
+                indeterminate={filters.notLiked !== filters.notDisliked}
+                onChange={() => {
+                  const on = !(filters.notLiked && filters.notDisliked)
+                  setFilters((prev) => ({ ...prev, notLiked: on, notDisliked: on }))
+                }}
+              />
+              <CheckGroup>
+                <CheckItem
+                  nested
+                  label="Not liked"
+                  checked={filters.notLiked}
+                  onChange={() => setFilter('notLiked', !filters.notLiked)}
+                />
+                <CheckItem
+                  nested
+                  label="Not disliked"
+                  checked={filters.notDisliked}
+                  onChange={() => setFilter('notDisliked', !filters.notDisliked)}
+                />
+              </CheckGroup>
+              <CheckItem
+                label="Not favorited"
+                checked={filters.notFavorited}
+                onChange={() => setFilter('notFavorited', !filters.notFavorited)}
               />
             </FilterSection>
             <FilterSection title="File Size" activeCount={filters.sizeFilterMode !== 'none' ? 1 : 0}>
               <select
                 value={filters.sizeFilterMode}
                 onChange={(e) => setFilter('sizeFilterMode', e.target.value as WorkshopFilterState['sizeFilterMode'])}
-                className="w-full rounded bg-[#1a1a1a] px-1.5 py-1 text-xs text-gray-300 outline-none"
+                className="w-full rounded bg-card px-1.5 py-1 text-xs text-gray-300 outline-none"
               >
                 <option value="none">Any size</option>
                 <option value="lt">Less than</option>
@@ -514,7 +557,7 @@ export default function WorkshopBrowser({
                     min={0}
                     value={filters.sizeFilterMb}
                     onChange={(e) => setFilter('sizeFilterMb', Math.max(0, Number(e.target.value) || 0))}
-                    className="w-16 rounded bg-[#1a1a1a] px-1.5 py-1 text-xs text-gray-300 outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-16 rounded bg-card px-1.5 py-1 text-xs text-gray-300 outline-none focus:ring-1 focus:ring-accent-500"
                   />
                   <span className="text-xs text-gray-500">MB</span>
                 </div>
@@ -595,9 +638,8 @@ export default function WorkshopBrowser({
                 selected={selection.has(item.publishedFileId)}
                 isDetailOpen={detailId === item.publishedFileId}
                 ignored={ignoredCreatorSet.has(item.creatorSteamId)}
-                isLiked={votedSet.has(item.publishedFileId)}
-                voteError={failedVotes[item.publishedFileId]}
-                showVoteBorder={voteBordersEnabled}
+                steam={steamStateOf(item.publishedFileId)}
+                borders={cardBorders}
                 canPlay={playableSet.has(item.publishedFileId)}
                 lweInstalled={lweInstalled}
                 subscribeState={subscribeEntries.get(item.publishedFileId)?.state}
@@ -616,27 +658,27 @@ export default function WorkshopBrowser({
             </div>
           )}
           {pageIgnoredItems.length > 0 && (
-            <div className="mt-4 flex items-center justify-center gap-2 border-t border-white/5 pt-3 text-xs text-gray-500">
+            <div className="mt-4 flex items-center justify-center gap-2 border-t border-fg/5 pt-3 text-xs text-gray-500">
               <span>
                 {pageIgnoredItems.length} wallpaper{pageIgnoredItems.length === 1 ? '' : 's'} ignored on
                 this page
               </span>
               <button
                 onClick={() => setShowIgnored((v) => !v)}
-                className="rounded bg-white/5 px-2 py-1 text-gray-300 hover:bg-white/10"
+                className="rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10"
               >
                 {showIgnored ? 'Hide ignored' : 'Show ignored'}
               </button>
             </div>
           )}
           {totalFiltered > 0 && (
-            <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3">
+            <div className="mt-4 flex items-center justify-between border-t border-fg/5 pt-3">
               <div className="flex items-center gap-2 text-xs text-gray-400">
                 <span>Per page:</span>
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="rounded bg-[#1a1a1a] px-2 py-1 text-gray-300 outline-none"
+                  className="rounded bg-card px-2 py-1 text-gray-300 outline-none"
                 >
                   <option value={50}>50</option>
                   <option value={100}>100</option>

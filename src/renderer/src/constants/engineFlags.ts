@@ -1,6 +1,6 @@
 import type { EngineFlags, FullscreenPauseMode } from '@shared/types'
 
-type ChoiceFlag = 'postProcessing' | 'volumetrics' | 'shadows' | 'msaa' | 'ssaa'
+type ChoiceFlag = 'postProcessing' | 'volumetrics' | 'shadows' | 'msaa' | 'ssaa' | 'hwdec'
 // kdeBackgroundLayer is a global desktop setting with its own toggle, wallpapers don't override it
 type BooleanFlag = Exclude<keyof EngineFlags, 'fullscreenPause' | 'kdeBackgroundLayer' | ChoiceFlag>
 
@@ -37,6 +37,8 @@ export const CHOICE_FLAGS: {
   key: ChoiceFlag
   label: string
   hint: string
+  /** Shown under the setting in Settings -> Performance */
+  note?: string
   fallback: string
   options: { value: string; label: string }[]
 }[] = [
@@ -86,6 +88,22 @@ export const CHOICE_FLAGS: {
       { value: 'x2', label: '2x' },
       { value: 'x3', label: '3x' },
       { value: 'x4', label: '4x' }
+    ]
+  },
+  {
+    key: 'hwdec',
+    label: 'Video decoding',
+    hint: 'How video wallpapers and videos inside scenes are decoded. Automatic picks a GPU decoder; if videos crash, stay black or stutter (some NVIDIA drivers, some Intel iGPUs), try Software or a copy mode',
+    note: 'Only change this if videos misbehave. With the proprietary NVIDIA driver, Automatic can pick a decoder that is broken there (e.g. VA-API through nvidia-vaapi-driver), so videos crash, stay black or show green frames: try NVDEC (copy). Copy modes pass frames through system memory, a bit more CPU but they avoid most driver bugs. Software always works but decodes on the CPU. Applies to running wallpapers right away.',
+    fallback: 'auto',
+    options: [
+      { value: 'auto', label: 'Automatic' },
+      { value: 'no', label: 'Software' },
+      { value: 'vaapi', label: 'VA-API' },
+      { value: 'vaapi-copy', label: 'VA-API (copy)' },
+      { value: 'nvdec', label: 'NVDEC' },
+      { value: 'nvdec-copy', label: 'NVDEC (copy)' },
+      { value: 'vulkan', label: 'Vulkan' }
     ]
   }
 ]

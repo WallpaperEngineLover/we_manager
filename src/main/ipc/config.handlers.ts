@@ -3,6 +3,9 @@ import { IpcChannels } from '@shared/ipc-channels'
 import * as path from 'path'
 import type { DisplayMode, EngineFlagPreset, EngineFlags, ExtraLibrary, SteamIdentity } from '@shared/types'
 import { BUILT_IN_PRESETS } from '@shared/engineFlags'
+import { isTranslucent, type Appearance } from '@shared/appearance'
+import type { CardBorders } from '@shared/cardBorders'
+import { applyLiveAppearance, getLaunchAppearance, isAppearanceRestartNeeded } from '../services/appearance.service'
 import {
   getConfiguredWorkshopPath,
   setConfiguredWorkshopPath,
@@ -36,8 +39,10 @@ import {
   setAutostartPlaylistId,
   getKillLweOnQuit,
   setKillLweOnQuit,
-  getVoteBorders,
-  setVoteBorders,
+  getCardBorders,
+  getAppearance,
+  setAppearance,
+  setCardBorders,
   getAudioScreen,
   setAudioScreen,
   getAmbientVolume,
@@ -62,6 +67,7 @@ import {
 import { resetDisplays } from '../services/display.service'
 import { stopPlaylist } from '../services/playlist-player.service'
 import { getDefaultWorkshopPath } from '../utils/paths'
+import { detectDesktopEnv } from '../utils/platform'
 import { DEFAULT_LWE_REPO } from '@shared/constants'
 import { restartWatcher } from '../services/watcher.service'
 import { importWEConfig } from '../services/library.service'
@@ -91,7 +97,7 @@ export function registerConfigHandlers(): void {
     autostartMinimized: getAutostartMinimized(),
     autostartPlaylistId: getAutostartPlaylistId(),
     killLweOnQuit: getKillLweOnQuit(),
-    voteBorders: getVoteBorders(),
+    cardBorders: getCardBorders(),
     audioScreen: getAudioScreen(),
     ambientVolume: getAmbientVolume(),
     defaultAudioSensitivity: getDefaultAudioSensitivity(),
@@ -101,7 +107,11 @@ export function registerConfigHandlers(): void {
     ignoredCreators: getIgnoredCreators(),
     engineFlags: getGlobalEngineFlags(),
     engineFlagPresets: [...BUILT_IN_PRESETS, ...getEngineFlagPresets()],
-    displayMode: getDisplayMode()
+    displayMode: getDisplayMode(),
+    appearance: getAppearance(),
+    appearanceRestartNeeded: isAppearanceRestartNeeded(),
+    windowTranslucent: isTranslucent(getLaunchAppearance()),
+    desktopEnv: detectDesktopEnv()
   }))
 
   ipcMain.handle(IpcChannels.CONFIG_GET_AUTOSTART_SUPPORTED, () => isAutostartSupported())
@@ -132,9 +142,14 @@ export function registerConfigHandlers(): void {
     return { ok: true }
   })
 
-  ipcMain.handle(IpcChannels.CONFIG_SET_VOTE_BORDERS, (_e, enabled: boolean) => {
-    setVoteBorders(enabled)
-    return { ok: true }
+  ipcMain.handle(IpcChannels.CONFIG_SET_CARD_BORDERS, (_e, borders: CardBorders) => {
+    return setCardBorders(borders)
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_APPEARANCE, (_e, appearance: Partial<Appearance>) => {
+    const next = setAppearance(appearance)
+    applyLiveAppearance(next)
+    return next
   })
 
   ipcMain.handle(IpcChannels.CONFIG_SET_STEAM_IDENTITY, (_e, identity: SteamIdentity) => {

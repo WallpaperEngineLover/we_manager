@@ -16,7 +16,7 @@ export default function ScreenSelect({ targets, value, onChange, title = 'Screen
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded bg-white/5 px-1.5 py-1 text-xs text-gray-200 outline-none"
+        className="rounded bg-fg/5 px-1.5 py-1 text-xs text-gray-200 outline-none"
       >
         <option value="*">All screens</option>
         {targets.map((t) => (

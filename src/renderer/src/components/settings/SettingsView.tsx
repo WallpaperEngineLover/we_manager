@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
+import Toggle from '../common/Toggle'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull, Film, Globe, Shield, Bug } from 'lucide-react'
 import type { LweStatus, LwePrebuiltTarget, LweInstallProgress, LinuxDistro, SteamIdentity } from '../../../../shared/types'
 import PerformanceSettings from './PerformanceSettings'
 import DisplaySettings from './DisplaySettings'
-import VoteBorderSettings from './VoteBorderSettings'
+import CardBorderSettings from './CardBorderSettings'
+import AppearanceSettings from './AppearanceSettings'
 import LibraryFoldersSettings from './LibraryFoldersSettings'
 import ScheduleSettings from './ScheduleSettings'
 import CopyField from '../common/CopyField'
@@ -372,6 +374,8 @@ export default function SettingsView() {
       <h2 className="text-lg font-semibold text-gray-100">Settings</h2>
 
       <div className="mt-6 max-w-lg space-y-8">
+        <AppearanceSettings />
+
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
             Workshop folder
@@ -387,11 +391,11 @@ export default function SettingsView() {
                 setWorkshopPath(e.target.value)
                 setSaved(false)
               }}
-              className="flex-1 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+              className="flex-1 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
             />
             <button
               onClick={handleBrowse}
-              className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10"
+              className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
             >
               <FolderOpen size={16} />
               Browse
@@ -400,7 +404,7 @@ export default function SettingsView() {
           <button
             onClick={handleSave}
             disabled={!workshopPath}
-            className="mt-3 flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+            className="mt-3 flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
           >
             <Save size={14} />
             {saved ? 'Saved!' : 'Save'}
@@ -427,11 +431,11 @@ export default function SettingsView() {
                 setBackupSaved(false)
               }}
               placeholder="Not configured"
-              className="flex-1 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+              className="flex-1 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
             />
             <button
               onClick={handleBrowseBackup}
-              className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10"
+              className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
             >
               <FolderOpen size={16} />
               Browse
@@ -440,25 +444,14 @@ export default function SettingsView() {
           <button
             onClick={handleSaveBackup}
             disabled={!backupPath}
-            className="mt-3 flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+            className="mt-3 flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
           >
             <Save size={14} />
             {backupSaved ? 'Saved!' : 'Save'}
           </button>
 
           <label className="mt-4 flex items-center gap-3 cursor-pointer">
-            <button
-              onClick={handleAutoUnsubscribeToggle}
-              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                autoUnsubscribeAfterBackup ? 'bg-indigo-600' : 'bg-white/10'
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                  autoUnsubscribeAfterBackup ? 'translate-x-4' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
+            <Toggle on={autoUnsubscribeAfterBackup} onClick={handleAutoUnsubscribeToggle} />
             <span className="flex items-center gap-2 text-sm text-gray-300">
               <Archive size={16} />
               Unsubscribe from Steam Workshop after backup
@@ -488,11 +481,11 @@ export default function SettingsView() {
                   value={defaultFps}
                   onChange={(e) => { setDefaultFps(e.target.value); setFpsSaved(false) }}
                   onKeyDown={(e) => e.key === 'Enter' && handleSaveDefaultFps()}
-                  className="w-28 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-28 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                 />
                 <button
                   onClick={handleSaveDefaultFps}
-                  className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+                  className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
                 >
                   <Save size={14} />
                   {fpsSaved ? 'Saved!' : 'Save'}
@@ -501,18 +494,7 @@ export default function SettingsView() {
             </div>
             <div>
               <label className="mt-1 flex items-center gap-3 cursor-pointer">
-                <button
-                  onClick={handleRecommendedFpsToggle}
-                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                    recommendedFpsEnabled ? 'bg-indigo-600' : 'bg-white/10'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                      recommendedFpsEnabled ? 'translate-x-4' : 'translate-x-0.5'
-                    }`}
-                  />
-                </button>
+                <Toggle on={recommendedFpsEnabled} onClick={handleRecommendedFpsToggle} />
                 <span className="flex items-center gap-2 text-sm text-gray-300">
                   <Film size={16} />
                   Recommended video settings
@@ -527,18 +509,7 @@ export default function SettingsView() {
             </div>
             <div>
               <label className="mt-1 flex items-center gap-3 cursor-pointer">
-                <button
-                  onClick={handleRecommendedWebFpsToggle}
-                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                    recommendedWebFpsEnabled ? 'bg-indigo-600' : 'bg-white/10'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                      recommendedWebFpsEnabled ? 'translate-x-4' : 'translate-x-0.5'
-                    }`}
-                  />
-                </button>
+                <Toggle on={recommendedWebFpsEnabled} onClick={handleRecommendedWebFpsToggle} />
                 <span className="flex items-center gap-2 text-sm text-gray-300">
                   <Globe size={16} />
                   Recommended web wallpaper settings
@@ -568,7 +539,7 @@ export default function SettingsView() {
                   </button>
                   <button
                     onClick={() => setResetFpsConfirm(false)}
-                    className="rounded-lg bg-white/5 px-3 py-1.5 text-xs text-gray-400 hover:bg-white/10"
+                    className="rounded-lg bg-fg/5 px-3 py-1.5 text-xs text-gray-400 hover:bg-fg/10"
                   >
                     Cancel
                   </button>
@@ -576,7 +547,7 @@ export default function SettingsView() {
               ) : (
                 <button
                   onClick={handleResetFpsOverrides}
-                  className="flex items-center gap-2 rounded-lg bg-white/5 px-4 py-2 text-sm text-gray-300 hover:bg-white/10"
+                  className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
                 >
                   <RotateCcw size={14} />
                   Reset all FPS overrides
@@ -591,7 +562,7 @@ export default function SettingsView() {
 
         <DisplaySettings screens={screens} />
 
-        <VoteBorderSettings />
+        <CardBorderSettings />
 
         <ScheduleSettings />
 
@@ -613,7 +584,7 @@ export default function SettingsView() {
                 <select
                   value={audioScreen ?? ''}
                   onChange={(e) => handleAudioScreenChange(e.target.value || null)}
-                  className="w-56 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-56 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                 >
                   <option value="">All screens (default)</option>
                   {screens.map((s) => (
@@ -626,7 +597,7 @@ export default function SettingsView() {
                   type="button"
                   onClick={handleRefreshScreens}
                   disabled={screensRefreshing}
-                  className="rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 outline-none hover:bg-white/10 disabled:opacity-50"
+                  className="rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 outline-none hover:bg-fg/10 disabled:opacity-50"
                   title="Redetect connected screens"
                 >
                   {screensRefreshing ? '...' : 'Redetect'}
@@ -650,11 +621,11 @@ export default function SettingsView() {
                   value={ambientVolume}
                   onChange={(e) => { setAmbientVolume(e.target.value); setAmbientVolumeSaved(false) }}
                   onKeyDown={(e) => e.key === 'Enter' && handleSaveAmbientVolume()}
-                  className="w-44 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-44 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                 />
                 <button
                   onClick={handleSaveAmbientVolume}
-                  className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+                  className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
                 >
                   <Save size={14} />
                   {ambientVolumeSaved ? 'Saved!' : 'Save'}
@@ -677,12 +648,12 @@ export default function SettingsView() {
                   value={defaultAudioSensitivity}
                   onChange={(e) => { setDefaultAudioSensitivity(e.target.value); setDefaultAudioSensitivitySaved(false) }}
                   onKeyDown={(e) => e.key === 'Enter' && handleSaveDefaultAudioSensitivity()}
-                  className="w-44 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-44 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                 />
                 <span className="text-sm text-gray-500">%</span>
                 <button
                   onClick={handleSaveDefaultAudioSensitivity}
-                  className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+                  className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
                 >
                   <Save size={14} />
                   {defaultAudioSensitivitySaved ? 'Saved!' : 'Save'}
@@ -703,7 +674,7 @@ export default function SettingsView() {
           </p>
           <button
             onClick={handleImportConfig}
-            className="mt-3 flex items-center gap-2 rounded-lg bg-white/5 px-4 py-2 text-sm text-gray-300 hover:bg-white/10"
+            className="mt-3 flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
           >
             <Upload size={14} />
             Import config.json
@@ -757,7 +728,7 @@ export default function SettingsView() {
                   <button
                     onClick={handleInstallPrebuilt}
                     disabled={isBusy}
-                    className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                    className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
                   >
                     {lweInstalling ? (
                       <Loader2 size={14} className="animate-spin" />
@@ -810,7 +781,7 @@ export default function SettingsView() {
           )}
 
           {sourceBuildVisible && (
-            <div className="mt-2 space-y-2 rounded-lg bg-white/[0.02] p-3">
+            <div className="mt-2 space-y-2 rounded-lg bg-fg/[0.02] p-3">
               <label className="block text-xs text-gray-400">Source repository</label>
               <p className="text-xs text-gray-600">
                 A git URL or a local path. Leave empty to use the default repository.
@@ -820,7 +791,7 @@ export default function SettingsView() {
                 value={lweRepoUrl}
                 onChange={(e) => { setLweRepoUrl(e.target.value); setRepoSaved(false) }}
                 placeholder={defaultLweRepo}
-                className="w-full rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-full rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
               />
               <div className="flex gap-2 items-center">
                 <input
@@ -828,11 +799,11 @@ export default function SettingsView() {
                   value={lweRepoBranch}
                   onChange={(e) => { setLweRepoBranch(e.target.value); setRepoSaved(false) }}
                   placeholder="branch (default)"
-                  className="w-44 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-44 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                 />
                 <button
                   onClick={handleSaveRepo}
-                  className="flex items-center gap-2 rounded-lg bg-white/5 px-4 py-2 text-sm text-gray-300 hover:bg-white/10"
+                  className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
                 >
                   <Save size={14} />
                   {repoSaved ? 'Saved!' : 'Save'}
@@ -847,7 +818,7 @@ export default function SettingsView() {
                 value={lweCmakeArgs}
                 onChange={(e) => { setLweCmakeArgs(e.target.value); setRepoSaved(false) }}
                 placeholder="-DDISABLE_KDE_FEATURES=ON"
-                className="w-full rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                className="w-full rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500 font-mono"
               />
 
               {distro && distro !== 'unknown' && (
@@ -865,7 +836,7 @@ export default function SettingsView() {
                       ? 'Could not detect your distro. Install dependencies manually.'
                       : undefined
                   }
-                  className="flex items-center gap-2 rounded-lg bg-white/5 px-4 py-2 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
+                  className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
                 >
                   {depsInstalling ? (
                     <Loader2 size={14} className="animate-spin" />
@@ -878,7 +849,7 @@ export default function SettingsView() {
                 <button
                   onClick={handleInstallLwe}
                   disabled={isBusy}
-                  className="flex items-center gap-2 rounded-lg bg-white/5 px-4 py-2 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
+                  className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
                 >
                   {lweInstalling ? (
                     <Loader2 size={14} className="animate-spin" />
@@ -911,14 +882,14 @@ export default function SettingsView() {
                 ) : lweProgress.stage === 'done' ? (
                   <CheckCircle size={14} className="text-green-400 shrink-0" />
                 ) : (
-                  <Loader2 size={14} className="animate-spin text-indigo-400 shrink-0" />
+                  <Loader2 size={14} className="animate-spin text-accent-400 shrink-0" />
                 )}
                 <p className="text-xs text-gray-300 whitespace-pre-wrap break-all">{lweProgress.message}</p>
               </div>
               {lweProgress.stage !== 'error' && lweProgress.stage !== 'done' && (
-                <div className="h-1.5 w-full rounded-full bg-white/5">
+                <div className="h-1.5 w-full rounded-full bg-fg/5">
                   <div
-                    className="h-full rounded-full bg-indigo-500 transition-all duration-300"
+                    className="h-full rounded-full bg-accent-500 transition-all duration-300"
                     style={{ width: `${lweProgress.percentage}%` }}
                   />
                 </div>
@@ -947,18 +918,7 @@ export default function SettingsView() {
             )}
 
             <label className="mt-3 flex items-center gap-3 cursor-pointer">
-              <button
-                onClick={handleKillLweOnQuitToggle}
-                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                  killLweOnQuit ? 'bg-indigo-600' : 'bg-white/10'
-                }`}
-              >
-                <span
-                  className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                    killLweOnQuit ? 'translate-x-4' : 'translate-x-0.5'
-                  }`}
-                />
-              </button>
+              <Toggle on={killLweOnQuit} onClick={handleKillLweOnQuitToggle} />
               <span className="flex items-center gap-2 text-sm text-gray-300">
                 <Skull size={16} />
                 Kill all linux-wallpaperengine processes when WE Manager quits
@@ -982,18 +942,7 @@ export default function SettingsView() {
             already running needs to be replayed to pick it up.
           </p>
           <label className="mt-3 flex items-center gap-3 cursor-pointer">
-            <button
-              onClick={handleDisablePuppetAnimationToggle}
-              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                disablePuppetAnimation ? 'bg-indigo-600' : 'bg-white/10'
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                  disablePuppetAnimation ? 'translate-x-4' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
+            <Toggle on={disablePuppetAnimation} onClick={handleDisablePuppetAnimationToggle} />
             <span className="flex items-center gap-2 text-sm text-gray-300">
               <Bug size={16} />
               Disable puppet mesh animation
@@ -1010,18 +959,7 @@ export default function SettingsView() {
             that reads your KDE Folder View layout. Clicks pass through to the desktop underneath.
           </p>
           <label className="mt-3 flex items-center gap-3 cursor-pointer">
-            <button
-              onClick={handleDesktopIconsToggle}
-              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                desktopIconsEnabled ? 'bg-indigo-600' : 'bg-white/10'
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                  desktopIconsEnabled ? 'translate-x-4' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
+            <Toggle on={desktopIconsEnabled} onClick={handleDesktopIconsToggle} />
             <span className="flex items-center gap-2 text-sm text-gray-300">
               <Monitor size={16} />
               {desktopIconsEnabled ? 'Desktop icons visible' : 'Desktop icons hidden'}
@@ -1038,18 +976,7 @@ export default function SettingsView() {
           </p>
 
           <label className="mt-3 flex items-center gap-3 cursor-pointer">
-            <button
-              onClick={handleTrayToggle}
-              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                trayEnabled ? 'bg-indigo-600' : 'bg-white/10'
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                  trayEnabled ? 'translate-x-4' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
+            <Toggle on={trayEnabled} onClick={handleTrayToggle} />
             <span className="flex items-center gap-2 text-sm text-gray-300">
               <LayoutGrid size={16} />
               Enable system tray (closing the window minimizes to tray instead of quitting)
@@ -1058,19 +985,7 @@ export default function SettingsView() {
 
           <div className="mt-4 space-y-3">
             <label className="flex items-center gap-3 cursor-pointer">
-              <button
-                onClick={() => autostartSupported && saveAutostart({ enabled: !autostartEnabled })}
-                disabled={!autostartSupported}
-                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-40 ${
-                  autostartEnabled ? 'bg-indigo-600' : 'bg-white/10'
-                }`}
-              >
-                <span
-                  className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                    autostartEnabled ? 'translate-x-4' : 'translate-x-0.5'
-                  }`}
-                />
-              </button>
+              <Toggle on={autostartEnabled} onClick={() => autostartSupported && saveAutostart({ enabled: !autostartEnabled })} disabled={!autostartSupported} />
               <span className="flex items-center gap-2 text-sm text-gray-300">
                 <Power size={16} />
                 Launch on system startup
@@ -1092,21 +1007,11 @@ export default function SettingsView() {
             )}
 
             <label className="flex items-center gap-3 cursor-pointer pl-12">
-              <button
-                onClick={() =>
-                  trayEnabled && autostartEnabled && saveAutostart({ minimized: !autostartMinimized })
-                }
+              <Toggle
+                on={autostartMinimized}
+                onClick={() => saveAutostart({ minimized: !autostartMinimized })}
                 disabled={!trayEnabled || !autostartEnabled}
-                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-40 ${
-                  autostartMinimized ? 'bg-indigo-600' : 'bg-white/10'
-                }`}
-              >
-                <span
-                  className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                    autostartMinimized ? 'translate-x-4' : 'translate-x-0.5'
-                  }`}
-                />
-              </button>
+              />
               <span className="text-sm text-gray-300">
                 Start minimized to tray
                 {!trayEnabled && <span className="text-gray-600"> (enable system tray first)</span>}
@@ -1118,7 +1023,7 @@ export default function SettingsView() {
               <select
                 value={autostartPlaylistId ?? ''}
                 onChange={(e) => saveAutostart({ playlistId: e.target.value || null })}
-                className="w-56 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-56 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
               >
                 <option value="">None</option>
                 {playlists.map((p) => (
@@ -1147,8 +1052,8 @@ export default function SettingsView() {
               onClick={() => handleSteamIdentityChange('wallpaper-engine')}
               className={`flex items-center gap-2 px-3 py-2 transition-colors ${
                 steamIdentity === 'wallpaper-engine'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-white/5 text-gray-400 hover:text-gray-200'
+                  ? 'bg-accent-600 text-white'
+                  : 'bg-fg/5 text-gray-400 hover:text-gray-200'
               }`}
             >
               <Shield size={14} />
@@ -1158,8 +1063,8 @@ export default function SettingsView() {
               onClick={() => handleSteamIdentityChange('standalone')}
               className={`flex items-center gap-2 px-3 py-2 transition-colors ${
                 steamIdentity === 'standalone'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-white/5 text-gray-400 hover:text-gray-200'
+                  ? 'bg-accent-600 text-white'
+                  : 'bg-fg/5 text-gray-400 hover:text-gray-200'
               }`}
             >
               <Shield size={14} />

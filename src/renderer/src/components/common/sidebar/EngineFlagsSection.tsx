@@ -10,7 +10,7 @@ interface Props {
   onChange: (patch: Pick<WallpaperMeta, 'engineFlags' | 'fpsOverride'>) => Promise<void>
 }
 
-const selectClass = 'rounded bg-white/5 px-1.5 py-1 text-xs text-gray-200 outline-none disabled:opacity-50'
+const selectClass = 'rounded bg-fg/5 px-1.5 py-1 text-xs text-gray-200 outline-none disabled:opacity-50'
 
 const onOff = (value: boolean | undefined) => (value ? 'on' : 'off')
 
@@ -46,7 +46,7 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
   }
 
   return (
-    <div className="border-t border-white/5 pt-3">
+    <div className="border-t border-fg/5 pt-3">
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
@@ -55,7 +55,7 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
         <Gauge size={12} />
         <span className="flex-1 text-left">Performance</span>
         {hasEngineFlags(flags) && (
-          <span className="rounded-full bg-indigo-600/30 px-1.5 normal-case text-indigo-300">custom</span>
+          <span className="rounded-full bg-accent-600/30 px-1.5 normal-case text-accent-300">custom</span>
         )}
         {busy && <Loader2 size={11} className="animate-spin" />}
       </button>
@@ -86,7 +86,7 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
               <button
                 onClick={() => commit({ engineFlags: undefined })}
                 disabled={busy}
-                className="rounded bg-white/5 px-2 py-1 text-xs text-gray-400 hover:bg-white/10 disabled:opacity-50"
+                className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-400 hover:bg-fg/10 disabled:opacity-50"
               >
                 Reset
               </button>

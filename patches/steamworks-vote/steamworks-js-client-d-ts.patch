@@ -1,6 +1,8 @@
---- a/client.d.ts	2026-09-18 16:42:37.407700450 +0000
-+++ b/client.d.ts	2026-09-18 16:42:37.407700450 +0000
-@@ -268,6 +268,11 @@
+diff --git a/client.d.ts b/client.d.ts
+index a2501ab..5bb674b 100644
+--- a/client.d.ts
++++ b/client.d.ts
+@@ -268,6 +268,11 @@ export declare namespace workshop {
      current: bigint
      total: bigint
    }
@@ -12,22 +14,42 @@
    export const enum UpdateStatus {
      Invalid = 0,
      PreparingConfig = 1,
-@@ -297,6 +302,18 @@
+@@ -296,6 +301,30 @@ export declare namespace workshop {
+    * {@link https://partner.steamgames.com/doc/api/ISteamUGC#UnsubscribeItem}
     */
    export function unsubscribe(itemId: bigint): Promise<void>
-   /**
++  /**
 +   * Sets the current user's vote (up or down) on a workshop item.
 +   *
 +   * {@link https://partner.steamgames.com/doc/api/ISteamUGC#SetUserItemVote}
 +   */
 +  export function voteItem(itemId: bigint, voteUp: boolean): Promise<void>
 +  /**
++   * Adds a workshop item to the current user's favorites list.
++   *
++   * {@link https://partner.steamgames.com/doc/api/ISteamUGC#AddItemToFavorites}
++   */
++  export function addFavorite(appId: number, itemId: bigint): Promise<void>
++  /**
++   * Removes a workshop item from the current user's favorites list.
++   *
++   * {@link https://partner.steamgames.com/doc/api/ISteamUGC#RemoveItemFromFavorites}
++   */
++  export function removeFavorite(appId: number, itemId: bigint): Promise<void>
++  /**
 +   * Gets the current user's existing vote (if any) on a workshop item.
 +   *
 +   * {@link https://partner.steamgames.com/doc/api/ISteamUGC#GetUserItemVote}
 +   */
 +  export function getUserVote(itemId: bigint): Promise<UserItemVote>
-+  /**
+   /**
     * Gets the current state of a workshop item on this client. States can be combined.
     *
-    * @returns a number with the current item state, e.g. 9
+@@ -336,6 +365,7 @@ export declare namespace workshop {
+    * @returns an array of subscribed workshop item ids
+    */
+   export function getSubscribedItems(): Array<bigint>
++  export function deleteItem(itemId: bigint): Promise<void>
+   export const enum UGCQueryType {
+     RankedByVote = 0,
+     RankedByPublicationDate = 1,

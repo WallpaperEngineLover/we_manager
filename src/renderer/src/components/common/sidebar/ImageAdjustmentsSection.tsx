@@ -19,7 +19,7 @@ const COLOR_SLIDERS: { key: SliderKey; label: string }[] = [
   { key: 'hue', label: 'Hue shift' }
 ]
 
-const selectClass = 'w-full rounded bg-white/5 px-1.5 py-1 text-xs text-gray-200 outline-none disabled:opacity-50'
+const selectClass = 'w-full rounded bg-fg/5 px-1.5 py-1 text-xs text-gray-200 outline-none disabled:opacity-50'
 
 export default function ImageAdjustmentsSection({ adjustments = {}, live, onCommit, onPreview }: Props) {
   const [draft, setDraft] = useState<ImageAdjustments | null>(null)
@@ -60,7 +60,7 @@ export default function ImageAdjustmentsSection({ adjustments = {}, live, onComm
           onMouseUp={() => draft && commit(draft)}
           onTouchEnd={() => draft && commit(draft)}
           onKeyUp={() => draft && commit(draft)}
-          className="w-full accent-indigo-500 disabled:opacity-50"
+          className="w-full accent-accent-500 disabled:opacity-50"
         />
       </div>
     )
@@ -69,7 +69,7 @@ export default function ImageAdjustmentsSection({ adjustments = {}, live, onComm
   const colorsChanged = COLOR_SLIDERS.some(({ key }) => (current[key] ?? NEUTRAL_COLOR_VALUE) !== NEUTRAL_COLOR_VALUE)
 
   return (
-    <div className="border-t border-white/5 pt-3">
+    <div className="border-t border-fg/5 pt-3">
       <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
         <SlidersHorizontal size={12} />
         <span className="flex-1 text-left">Image</span>
@@ -103,7 +103,7 @@ export default function ImageAdjustmentsSection({ adjustments = {}, live, onComm
             checked={current.colorEnabled ?? false}
             disabled={busy}
             onChange={(e) => commit({ ...current, colorEnabled: e.target.checked })}
-            className="accent-indigo-500"
+            className="accent-accent-500"
           />
           <span className="flex-1">Color options</span>
           {current.colorEnabled && colorsChanged && (
@@ -136,7 +136,7 @@ export default function ImageAdjustmentsSection({ adjustments = {}, live, onComm
             checked={current.flip ?? false}
             disabled={busy}
             onChange={(e) => commit({ ...current, flip: e.target.checked })}
-            className="accent-indigo-500"
+            className="accent-accent-500"
           />
           Flip horizontally
         </label>

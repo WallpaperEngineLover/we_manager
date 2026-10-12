@@ -32,6 +32,8 @@ describe('engineFlagArgs', () => {
     expect(engineFlagArgs({ msaa: 'none' })).toEqual([])
     expect(engineFlagArgs({ ssaa: 'x2' })).toEqual(['--ssaa', 'x2'])
     expect(engineFlagArgs({ ssaa: 'none' })).toEqual([])
+    expect(engineFlagArgs({ hwdec: 'nvdec-copy' })).toEqual(['--hwdec', 'nvdec-copy'])
+    expect(engineFlagArgs({ hwdec: 'auto' })).toEqual([])
     expect(engineFlagArgs({ kdeBackgroundLayer: true })).toEqual(['--layer', 'background'])
     expect(engineFlagArgs({ kdeBackgroundLayer: false })).toEqual([])
   })

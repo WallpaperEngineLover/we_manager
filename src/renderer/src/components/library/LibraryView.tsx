@@ -42,8 +42,9 @@ import {
 } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
 import { usePersistentState } from '../../hooks/usePersistentState'
-import { useVoteBorders } from '../../hooks/useVoteBorders'
-import { useVotedIds } from '../../hooks/useVotes'
+import { useCardBorders, useCardSteamState } from '../../hooks/useCardBorders'
+import { useDislikedIds, useVotedIds } from '../../hooks/useVotes'
+import { useFavoriteIds } from '../../hooks/useFavorites'
 import { useConfig, useFolders, useLweInstalled, usePlaybackStates, usePlaylists } from '../../hooks/queries'
 import { useApplyWallpaper, useSubscribe, useUnsubscribe } from '../../hooks/useWallpaperActions'
 import { useSelectableGrid } from '../../hooks/useSelectableGrid'
@@ -59,6 +60,8 @@ interface LibraryFilterState {
   sources: string[]
   failedOnly: boolean
   likedOnly: boolean
+  dislikedOnly: boolean
+  favoritesOnly: boolean
   unavailableOnly: boolean
   outdatedBackupOnly: boolean
 }
@@ -71,6 +74,8 @@ const DEFAULT_STATE: LibraryFilterState = {
   sources: [],
   failedOnly: false,
   likedOnly: false,
+  dislikedOnly: false,
+  favoritesOnly: false,
   unavailableOnly: false,
   outdatedBackupOnly: false
 }
@@ -130,7 +135,7 @@ function TagsFilterSection({
         placeholder="Search tags..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="mb-1 w-full rounded bg-white/5 px-2 py-1 text-xs text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+        className="mb-1 w-full rounded bg-fg/5 px-2 py-1 text-xs text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
       />
       <div className="max-h-64 overflow-y-auto">
         {filtered.length === 0 && <p className="py-1 text-xs text-gray-600">No tags found</p>}
@@ -150,7 +155,7 @@ function TagsFilterSection({
 function folderRowClass(active: boolean): string {
   return clsx(
     'flex items-center gap-2 px-3 py-1.5 text-xs',
-    active ? 'bg-white/5 text-white' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+    active ? 'bg-fg/5 text-fg' : 'text-gray-400 hover:bg-fg/5 hover:text-gray-200'
   )
 }
 
@@ -187,7 +192,10 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
 
   const votedSet = useVotedIds()
-  const { enabled: voteBordersEnabled, failed: failedVotes } = useVoteBorders()
+  const dislikedSet = useDislikedIds()
+  const favoriteSet = useFavoriteIds()
+  const steamStateOf = useCardSteamState()
+  const cardBorders = useCardBorders()
   const lweInstalled = useLweInstalled()
   const isBackupConfigured = useConfig()?.isBackupConfigured ?? false
   const { folders, refetchFolders, moveToFolder } = useFolders()
@@ -199,13 +207,15 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     setFilterState((prev) => ({ ...prev, [key]: value }))
   }
 
-  function toggleFlag(key: 'failedOnly' | 'likedOnly' | 'unavailableOnly' | 'outdatedBackupOnly') {
+  function toggleFlag(key: 'failedOnly' | 'likedOnly' | 'dislikedOnly' | 'favoritesOnly' | 'unavailableOnly' | 'outdatedBackupOnly') {
     setFilterState((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
   const flagCount =
     (filterState.failedOnly ? 1 : 0) +
     (filterState.likedOnly ? 1 : 0) +
+    (filterState.dislikedOnly ? 1 : 0) +
+    (filterState.favoritesOnly ? 1 : 0) +
     (filterState.unavailableOnly ? 1 : 0) +
     (filterState.outdatedBackupOnly ? 1 : 0)
   const activeCount =
@@ -259,11 +269,13 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       if (filterState.sources.length > 0 && !sources.includes(w.source)) return false
       if (filterState.failedOnly && !w.downloadFailed) return false
       if (filterState.likedOnly && !votedSet.has(w.id)) return false
+      if (filterState.dislikedOnly && !dislikedSet.has(w.id)) return false
+      if (filterState.favoritesOnly && !favoriteSet.has(w.id)) return false
       if (filterState.unavailableOnly && !w.unavailable) return false
       if (filterState.outdatedBackupOnly && !isBackupOutdated(w)) return false
       return true
     })
-  }, [allWallpapers, filterState, votedSet])
+  }, [allWallpapers, filterState, votedSet, dislikedSet, favoriteSet])
 
   const existingIds = useMemo(() => new Set(allWallpapers.map((w) => w.id)), [allWallpapers])
 
@@ -271,10 +283,12 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     () => ({
       failed: allWallpapers.filter((w) => w.downloadFailed).length,
       liked: allWallpapers.filter((w) => votedSet.has(w.id)).length,
+      disliked: allWallpapers.filter((w) => dislikedSet.has(w.id)).length,
+      favorites: allWallpapers.filter((w) => favoriteSet.has(w.id)).length,
       unavailable: allWallpapers.filter((w) => w.unavailable).length,
       outdatedBackup: allWallpapers.filter(isBackupOutdated).length
     }),
-    [allWallpapers, votedSet]
+    [allWallpapers, votedSet, dislikedSet, favoriteSet]
   )
 
   // Removed-from-workshop items with local content that hasn't been backed up yet
@@ -545,14 +559,14 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center gap-3 border-b border-white/5 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-3 border-b border-fg/5 px-4 py-3">
         <FiltersToggle open={showFilters} activeCount={activeCount} onClick={() => setShowFilters((v) => !v)} />
         <PanelToggle icon={Folder} label="Folders" open={showFolders} onClick={() => setShowFolders((v) => !v)} />
         <SearchInput value={search} placeholder="Search library..." onChange={setSearch} />
         <select
           value={sort.sortBy ?? 'updatedAt'}
           onChange={(e) => setSort((prev) => ({ ...prev, sortBy: e.target.value as LibraryFilters['sortBy'] }))}
-          className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+          className="rounded-lg bg-card px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
         >
           <option value="title">Name</option>
           <option value="updatedAt">Date Updated</option>
@@ -564,14 +578,14 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
         <button
           onClick={() => setSort((prev) => ({ ...prev, sortDir: prev.sortDir === 'asc' ? 'desc' : 'asc' }))}
           title={sort.sortDir === 'asc' ? 'Ascending' : 'Descending'}
-          className="rounded-lg bg-white/5 px-2 py-2 text-sm text-gray-300 hover:bg-white/10"
+          className="rounded-lg bg-fg/5 px-2 py-2 text-sm text-gray-300 hover:bg-fg/10"
         >
           {sort.sortDir === 'asc' ? '↑' : '↓'}
         </button>
         <select
           value={pageSize}
           onChange={(e) => setPageSize(Number(e.target.value))}
-          className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+          className="rounded-lg bg-card px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
         >
           <option value={50}>50 / page</option>
           <option value={100}>100 / page</option>
@@ -609,7 +623,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
         </ToolbarButton>
       </div>
 
-      <div className="flex min-h-10 items-center gap-2 border-b border-white/5 px-4 py-1.5">
+      <div className="flex min-h-10 items-center gap-2 border-b border-fg/5 px-4 py-1.5">
         <span className="text-xs text-gray-600">
           {selectedIds.size > 0
             ? `${selectedIds.size} selected / ${wallpapers.length} wallpapers`
@@ -640,7 +654,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
               onClick={handleBackupSelection}
               disabled={runningTasks.has('backup-selection') || !isBackupConfigured}
               title={isBackupConfigured ? 'Back up selected wallpapers' : BACKUP_FOLDER_HINT}
-              className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/10 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg bg-fg/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-fg/10 disabled:opacity-50"
             >
               {runningTasks.has('backup-selection') ? (
                 <Loader2 size={12} className="animate-spin" />
@@ -654,13 +668,13 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       </div>
 
       {scanResult && (
-        <div className="border-b border-white/5 px-4 py-2 text-xs text-gray-400">
+        <div className="border-b border-fg/5 px-4 py-2 text-xs text-gray-400">
           Scan complete: {scanResult.imported} imported{scanResult.removed > 0 ? `, ${scanResult.removed} removed` : ''}
         </div>
       )}
 
       {backupProgress.size > 0 && (
-        <div className="border-b border-white/5 px-4 py-2 text-xs text-gray-400">
+        <div className="border-b border-fg/5 px-4 py-2 text-xs text-gray-400">
           {progressVerb(Array.from(backupProgress.values()))} {backupProgress.size} wallpaper
           {backupProgress.size === 1 ? '' : 's'}
           {Array.from(backupProgress.values()).some((p) => p.status === 'verifying')
@@ -676,7 +690,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       )}
 
       {backupStatus && (
-        <div className="border-b border-white/5 px-4 py-2 text-xs text-gray-400">
+        <div className="border-b border-fg/5 px-4 py-2 text-xs text-gray-400">
           {backupStatus}
         </div>
       )}
@@ -698,6 +712,20 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 count={statusCounts.liked}
                 checked={filterState.likedOnly}
                 onChange={() => toggleFlag('likedOnly')}
+              />
+              <CheckItem
+                label="Disliked"
+                title="Show only wallpapers you've disliked on Steam"
+                count={statusCounts.disliked}
+                checked={filterState.dislikedOnly}
+                onChange={() => toggleFlag('dislikedOnly')}
+              />
+              <CheckItem
+                label="Favorites"
+                title="Show only wallpapers in your Steam favorites"
+                count={statusCounts.favorites}
+                checked={filterState.favoritesOnly}
+                onChange={() => toggleFlag('favoritesOnly')}
               />
               <CheckItem
                 label="Unavailable"
@@ -751,7 +779,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
         )}
 
         {showFolders && (
-        <div className="flex w-48 flex-shrink-0 flex-col border-r border-white/5 overflow-y-auto">
+        <div className="flex w-48 flex-shrink-0 flex-col border-r border-fg/5 overflow-y-auto">
           <div className="flex items-center justify-between px-3 pt-3 pb-1">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
               Folders
@@ -782,7 +810,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
           </div>
 
           {importStatus && (
-            <div className="px-3 py-1.5 text-[10px] text-gray-400 border-b border-white/5">
+            <div className="px-3 py-1.5 text-[10px] text-gray-400 border-b border-fg/5">
               {importStatus}
             </div>
           )}
@@ -848,11 +876,11 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
             <div className="mb-3 flex items-center gap-1.5 text-xs text-gray-400">
               <button
                 onClick={() => setActiveFolder(null)}
-                className="flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-gray-300 hover:bg-white/10"
+                className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10"
               >
                 <ChevronLeft size={12} /> Default
               </button>
-              <FolderOpen size={12} className="ml-1 text-indigo-400" />
+              <FolderOpen size={12} className="ml-1 text-accent-400" />
               <span className="truncate text-gray-200">{activeFolderTitle}</span>
             </div>
           )}
@@ -882,18 +910,18 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                   onContextMenu={(e) => openFolderMenu(e, folder)}
                   onDragOver={(e) => {
                     e.preventDefault()
-                    e.currentTarget.classList.add('ring-2', 'ring-indigo-500')
+                    e.currentTarget.classList.add('ring-2', 'ring-accent-500')
                   }}
                   onDragLeave={(e) => {
-                    e.currentTarget.classList.remove('ring-2', 'ring-indigo-500')
+                    e.currentTarget.classList.remove('ring-2', 'ring-accent-500')
                   }}
                   onDrop={(e) => {
-                    e.currentTarget.classList.remove('ring-2', 'ring-indigo-500')
+                    e.currentTarget.classList.remove('ring-2', 'ring-accent-500')
                     handleDrop(folder.id, dropWallpaperId(e))
                   }}
-                  className="group flex cursor-pointer items-center gap-3 rounded-lg bg-[#1a1a1a] p-4 transition-all hover:ring-1 hover:ring-indigo-500/50"
+                  className="group flex cursor-pointer items-center gap-3 rounded-lg bg-card p-4 transition-all hover:ring-1 hover:ring-accent-500/50"
                 >
-                  <Folder size={28} className="shrink-0 text-indigo-400" />
+                  <Folder size={28} className="shrink-0 text-accent-400" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-gray-200">
                       {folder.title}
@@ -915,12 +943,11 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 selected={selectedIds.has(wallpaper.id)}
                 isDetailOpen={detailId === wallpaper.id}
                 lweInstalled={lweInstalled}
-                isLiked={votedSet.has(wallpaper.id)}
-                voteError={failedVotes[wallpaper.id]}
-                showVoteBorder={voteBordersEnabled}
+                steam={steamStateOf(wallpaper.id)}
+                borders={cardBorders}
                 currentPlaylistId={currentPlaylistId}
-                isInCurrentPlaylist={currentPlaylistItemIds.has(wallpaper.id)}
                 previewSize={previewSize}
+                isInCurrentPlaylist={currentPlaylistItemIds.has(wallpaper.id)}
                 backupProgress={backupProgress.get(wallpaper.id) ?? null}
                 onSelect={(e) => handleCardSelect(wallpaper.id, e)}
                 onContextMenu={(e) => openWallpaperCtxMenu(e, wallpaper.id)}

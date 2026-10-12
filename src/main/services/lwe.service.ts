@@ -16,6 +16,7 @@ import type {
   CrashPhase,
   EngineFlags,
   ScreenTarget,
+  HwdecBackend,
   XrayMode
 } from '@shared/types'
 import {
@@ -1278,6 +1279,10 @@ function supportsAnimationHotswap(): boolean {
   return supportsFlag('disable-animations=on')
 }
 
+function supportsHwdecHotswap(): boolean {
+  return supportsFlag('hwdec=<backend>')
+}
+
 // flags a hotswap can't change, a running engine launched with different ones has to be restarted
 function launchKey(options: LweLaunchOptions): string {
   const flags = options.engineFlags ?? {}
@@ -1286,7 +1291,7 @@ function launchKey(options: LweLaunchOptions): string {
     disabledEffects: supportsEffectHotswap() ? [] : (options.disabledEffects ?? []),
     enabledEffects: supportsEffectHotswap() ? [] : (options.enabledEffects ?? []),
     disableAnimations: supportsAnimationHotswap() ? false : !!flags.disableAnimations,
-    flags: engineFlagArgs(flags)
+    flags: engineFlagArgs(supportsHwdecHotswap() ? { ...flags, hwdec: undefined } : flags)
   })
 }
 
@@ -1322,6 +1327,7 @@ export interface HotswapOptions {
   disabledEffects?: string[]
   enabledEffects?: string[]
   disableAnimations?: boolean
+  hwdec?: HwdecBackend
 }
 
 /**
@@ -1344,6 +1350,7 @@ export function buildHotswapLines(options: HotswapOptions): string[] {
     for (const id of options.enabledEffects ?? []) lines.push(`enable-effect=${id}`)
   }
   if (options.disableAnimations !== undefined) lines.push(`disable-animations=${options.disableAnimations ? 'on' : 'off'}`)
+  if (options.hwdec !== undefined) lines.push(`hwdec=${options.hwdec}`)
   if (options.volume !== undefined) lines.push(`volume=${options.volume}`)
   if (options.fps !== undefined) lines.push(`fps=${options.fps}`)
   // on/off keeps engines without the disabled mode working
@@ -1476,7 +1483,8 @@ function hotswapOptionsFor(wallpaperPath: string, options: LweLaunchOptions): Ho
     ...(supportsEffectHotswap()
       ? { disabledEffects: options.disabledEffects ?? [], enabledEffects: options.enabledEffects ?? [] }
       : {}),
-    ...(supportsAnimationHotswap() ? { disableAnimations: !!options.engineFlags?.disableAnimations } : {})
+    ...(supportsAnimationHotswap() ? { disableAnimations: !!options.engineFlags?.disableAnimations } : {}),
+    ...(supportsHwdecHotswap() ? { hwdec: options.engineFlags?.hwdec ?? 'auto' } : {})
   }
 }
 

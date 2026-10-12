@@ -42,7 +42,7 @@ export default function DisplaySettings({ screens }: { screens: string[] }) {
             onClick={() => switchTo(mode)}
             disabled={switching}
             className={`flex items-center gap-2 px-3 py-2 transition-colors ${
-              current === mode ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-400 hover:text-gray-200'
+              current === mode ? 'bg-accent-600 text-white' : 'bg-fg/5 text-gray-400 hover:text-gray-200'
             }`}
           >
             {switching && current !== mode ? <Loader2 size={14} className="animate-spin" /> : <Icon size={14} />}

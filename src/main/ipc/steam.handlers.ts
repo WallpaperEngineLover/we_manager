@@ -120,6 +120,23 @@ export function registerSteamHandlers(win: BrowserWindow): void {
     return steam.getVotedUpItemIds()
   })
 
+  ipcMain.handle(IpcChannels.STEAM_GET_DISLIKED_IDS, () => {
+    return steam.getVotedDownItemIds()
+  })
+
+  ipcMain.handle(IpcChannels.STEAM_FAVORITE, async (_e, itemId: string, add: boolean) => {
+    const confirmed = await steam.setFavorite(BigInt(itemId), add)
+    return { ok: true, confirmed }
+  })
+
+  ipcMain.handle(IpcChannels.STEAM_GET_FAVORITE_IDS, () => {
+    return steam.getFavoriteItemIds()
+  })
+
+  ipcMain.handle(IpcChannels.STEAM_GET_FAVORITE_STATUS, () => {
+    return steam.getFavoriteStatus()
+  })
+
   ipcMain.handle(IpcChannels.STEAM_GET_FAILED_VOTES, () => {
     return steam.getFailedVotes()
   })

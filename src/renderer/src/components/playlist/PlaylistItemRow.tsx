@@ -59,7 +59,7 @@ export default function PlaylistItemRow({
       onContextMenu={onContextMenu}
       className={clsx(
         'rounded-lg border transition-colors',
-        isCurrent ? 'border-indigo-500/60 bg-indigo-500/10' : 'border-white/5 bg-[#1a1a1a]'
+        isCurrent ? 'border-accent-500/60 bg-accent-500/10' : 'border-fg/5 bg-card'
       )}
     >
       <div className="flex items-center gap-2 p-2">
@@ -68,7 +68,7 @@ export default function PlaylistItemRow({
         <button
           onClick={onPlay}
           title={isCurrent && isPlaying ? 'Now playing' : 'Play this wallpaper'}
-          className="group relative h-10 w-16 shrink-0 overflow-hidden rounded bg-[#111]"
+          className="group relative h-10 w-16 shrink-0 overflow-hidden rounded bg-sunken"
         >
           {previewSrc && (
             <img src={previewSrc} alt="" className="h-full w-full object-cover" loading="lazy" />
@@ -92,7 +92,7 @@ export default function PlaylistItemRow({
           title="View details"
           className="min-w-0 flex-1 text-left"
         >
-          <p className="truncate text-sm text-gray-200 hover:text-white" title={wallpaper?.title}>
+          <p className="truncate text-sm text-gray-200 hover:text-fg" title={wallpaper?.title}>
             {wallpaper?.title ?? item.wallpaperId}
           </p>
           <p className="text-xs text-gray-600">
@@ -102,7 +102,7 @@ export default function PlaylistItemRow({
         <button
           onClick={() => setExpanded((v) => !v)}
           title="Per-wallpaper overrides"
-          className="rounded p-1.5 text-gray-500 hover:bg-white/5 hover:text-gray-300"
+          className="rounded p-1.5 text-gray-500 hover:bg-fg/5 hover:text-gray-300"
         >
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
@@ -116,7 +116,7 @@ export default function PlaylistItemRow({
       </div>
 
       {expanded && (
-        <div className="flex flex-wrap items-center gap-4 border-t border-white/5 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-4 border-t border-fg/5 px-3 py-2">
           <label className="flex items-center gap-2 text-xs text-gray-400">
             <Volume2 size={12} />
             Volume
@@ -126,7 +126,7 @@ export default function PlaylistItemRow({
               max={100}
               value={item.volume ?? defaultVolume}
               onChange={(e) => onUpdate({ volume: Number(e.target.value) })}
-              className="w-24 accent-indigo-500"
+              className="w-24 accent-accent-500"
             />
             <span className="w-8 text-gray-300">{item.volume ?? defaultVolume}</span>
             {item.volume !== undefined && (
@@ -150,7 +150,7 @@ export default function PlaylistItemRow({
                 const v = e.target.value.trim()
                 onUpdate({ durationSec: v === '' ? undefined : Number(v) })
               }}
-              className="w-20 rounded bg-white/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-20 rounded bg-fg/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
             />
           </label>
         </div>

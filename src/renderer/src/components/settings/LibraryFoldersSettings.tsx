@@ -68,7 +68,7 @@ export default function LibraryFoldersSettings() {
       {libraries.length > 0 && (
         <ul className="mt-2 space-y-1">
           {libraries.map((l) => (
-            <li key={l.path} className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-200">
+            <li key={l.path} className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200">
               <HardDrive size={14} className="shrink-0 text-gray-500" />
               <input
                 type="text"
@@ -79,7 +79,7 @@ export default function LibraryFoldersSettings() {
                   if (e.key === 'Enter') e.currentTarget.blur()
                 }}
                 title="Library name"
-                className="w-32 shrink-0 rounded bg-transparent px-1 text-gray-100 outline-none focus:bg-white/5 focus:ring-1 focus:ring-indigo-500"
+                className="w-32 shrink-0 rounded bg-transparent px-1 text-gray-100 outline-none focus:bg-fg/5 focus:ring-1 focus:ring-accent-500"
               />
               <span className="flex-1 truncate text-xs text-gray-500" title={l.path}>
                 {l.path}
@@ -88,7 +88,7 @@ export default function LibraryFoldersSettings() {
                 onClick={() => saveAndScan(libraries.filter((x) => x.path !== l.path))}
                 disabled={scanning}
                 title="Remove from the library"
-                className="rounded p-0.5 text-gray-500 hover:bg-white/10 hover:text-gray-200 disabled:opacity-50"
+                className="rounded p-0.5 text-gray-500 hover:bg-fg/10 hover:text-gray-200 disabled:opacity-50"
               >
                 <X size={14} />
               </button>
@@ -99,7 +99,7 @@ export default function LibraryFoldersSettings() {
       <button
         onClick={handleAdd}
         disabled={scanning}
-        className="mt-3 flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300 hover:bg-white/10 disabled:opacity-50"
+        className="mt-3 flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
       >
         {scanning ? <Loader2 size={16} className="animate-spin" /> : <FolderPlus size={16} />}
         {scanning ? 'Scanning...' : 'Add folder'}

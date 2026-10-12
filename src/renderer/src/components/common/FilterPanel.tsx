@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import clsx from 'clsx'
 import { WE_RESOLUTION_GROUPS, setGroupSelected, type FilterItem } from '../../constants/weFilters'
 import { toggle } from '../../utils/array'
 
@@ -7,7 +8,7 @@ import { toggle } from '../../utils/array'
 
 export function FilterPanel({ children }: { children: ReactNode }) {
   return (
-    <div className="w-52 flex-shrink-0 space-y-3 overflow-y-auto border-r border-white/5 bg-[#0d0d0d] px-3 py-3">
+    <div className="w-52 flex-shrink-0 space-y-3 overflow-y-auto border-r border-fg/5 bg-pane px-3 py-3">
       {children}
     </div>
   )
@@ -16,26 +17,50 @@ export function FilterPanel({ children }: { children: ReactNode }) {
 export function CheckItem({
   label,
   checked,
+  indeterminate = false,
+  nested = false,
   count,
   title,
   onChange
 }: {
   label: string
   checked: boolean
+  indeterminate?: boolean
+  // drawn as a CheckGroup branch
+  nested?: boolean
   count?: number
   title?: string
   onChange: () => void
 }) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.indeterminate = indeterminate
+  }, [indeterminate])
   return (
     <label
       title={title}
-      className="flex cursor-pointer items-center gap-2 py-0.5 text-xs text-gray-400 hover:text-gray-200"
+      className={clsx(
+        'relative flex cursor-pointer items-center gap-2 py-0.5 text-xs text-gray-400 hover:text-gray-200',
+        nested &&
+          'before:absolute before:-left-2.5 before:top-1/2 before:w-2 before:border-t before:border-fg/15 after:absolute after:-left-2.5 after:top-0 after:h-full after:border-l after:border-fg/15 last:after:h-1/2'
+      )}
     >
-      <input type="checkbox" checked={checked} onChange={onChange} className="cursor-pointer accent-indigo-500" />
+      <input
+        ref={inputRef}
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="cursor-pointer accent-accent-500"
+      />
       <span className="flex-1 truncate">{label}</span>
       {count !== undefined && <span className="text-[11px] text-gray-600">{count}</span>}
     </label>
   )
+}
+
+// children of a CheckItem
+export function CheckGroup({ children }: { children: ReactNode }) {
+  return <div className="ml-[6px] pl-2.5">{children}</div>
 }
 
 export function AllNoneButtons({ onAll, onNone }: { onAll: () => void; onNone: () => void }) {
@@ -71,7 +96,7 @@ export function FilterSection({
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         <span className="flex-1 text-left">{title}</span>
-        {activeCount > 0 && <span className="rounded-full bg-indigo-600/40 px-1.5 text-indigo-300">{activeCount}</span>}
+        {activeCount > 0 && <span className="rounded-full bg-accent-600/40 px-1.5 text-accent-300">{activeCount}</span>}
       </button>
       {open && (
         <div className="mt-1 space-y-0.5 pl-1">

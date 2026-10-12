@@ -24,7 +24,7 @@ const SEAM_LEAD = 3
 const NEW_PART_LENGTH = 30
 
 const timeInputClass =
-  'w-16 rounded bg-white/5 px-1 py-0.5 text-right text-gray-300 outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50'
+  'w-16 rounded bg-fg/5 px-1 py-0.5 text-right text-gray-300 outline-none focus:ring-1 focus:ring-accent-500 disabled:opacity-50'
 
 export default function VideoTrimSection({ segments, duration, live, onCommit, onPreview }: Props) {
   const [draft, setDraft] = useState<VideoSegment[] | null>(null)
@@ -152,14 +152,14 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
           onTouchEnd={() => draft && commit(draft)}
           onKeyUp={() => draft && commit(draft)}
           title={side === 'start' ? 'Where this part starts' : 'Where this part ends and the next one starts'}
-          className="w-full accent-indigo-500 disabled:opacity-50"
+          className="w-full accent-accent-500 disabled:opacity-50"
         />
       </div>
     )
   }
 
   return (
-    <div className="border-t border-white/5 pt-3">
+    <div className="border-t border-fg/5 pt-3">
       <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
         <Scissors size={12} />
         <span className="flex-1 text-left">Video trim</span>
@@ -182,14 +182,14 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
 
       <div className="space-y-1.5 text-[11px] text-gray-400">
         {duration !== null && (
-          <div className="relative h-2.5 overflow-hidden rounded bg-white/5">
+          <div className="relative h-2.5 overflow-hidden rounded bg-fg/5">
             {(rows.length ? rows : [{ start: 0 }]).map((s, i) => (
               <button
                 key={i}
                 disabled={!rows.length}
                 onClick={() => setSelected(i)}
                 title={`${formatVideoTime(s.start)} - ${formatVideoTime(endOf(s) ?? duration)}`}
-                className={`absolute inset-y-0 ${rows.length && i === index ? 'bg-indigo-400' : 'bg-indigo-500/50'}`}
+                className={`absolute inset-y-0 ${rows.length && i === index ? 'bg-accent-400' : 'bg-accent-500/50'}`}
                 style={{
                   left: `${(Math.min(s.start, duration) / duration) * 100}%`,
                   width: `${((Math.min(endOf(s) ?? duration, duration) - Math.min(s.start, duration)) / duration) * 100}%`
@@ -201,7 +201,7 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
 
         {rows.length === 0 && <p className="text-gray-600">Plays the whole video.</p>}
         {rows.map((s, i) => (
-          <div key={i} className={`flex items-center gap-1.5 rounded px-1 ${i === index ? 'bg-white/5' : ''}`}>
+          <div key={i} className={`flex items-center gap-1.5 rounded px-1 ${i === index ? 'bg-fg/5' : ''}`}>
             <button
               onClick={() => setSelected(i)}
               className={`flex-1 text-left ${i === index ? 'text-gray-200' : 'text-gray-500 hover:text-gray-300'}`}
@@ -235,7 +235,7 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
             disabled={busy || newPart() === null}
             onClick={addPart}
             title="Add another part after the last one"
-            className="flex items-center gap-1 rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-300 hover:bg-white/15 disabled:opacity-40"
+            className="flex items-center gap-1 rounded bg-fg/10 px-1.5 py-0.5 text-[10px] text-gray-300 hover:bg-fg/15 disabled:opacity-40"
           >
             <Plus size={9} />
             Add part
@@ -245,7 +245,7 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
               disabled={busy}
               onClick={() => onPreview(segments, seamSeek(part))}
               title={`Jumps ${SEAM_LEAD} seconds before the end of part ${index + 1}, to see the cut into the next one`}
-              className="flex items-center gap-1 rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-300 hover:bg-white/15 disabled:opacity-40"
+              className="flex items-center gap-1 rounded bg-fg/10 px-1.5 py-0.5 text-[10px] text-gray-300 hover:bg-fg/15 disabled:opacity-40"
             >
               <Play size={9} />
               Cut

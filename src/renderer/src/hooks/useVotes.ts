@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useToast } from '../components/common/Toast'
 
 const VOTED_IDS_KEY = ['steam-voted-ids']
+export const DISLIKED_IDS_KEY = ['steam-disliked-ids']
 
 export function useVotedIds(): Set<string> {
   const { data } = useQuery({
@@ -13,17 +14,26 @@ export function useVotedIds(): Set<string> {
   return useMemo(() => new Set(data ?? []), [data])
 }
 
-// Writes confirmed votes into both the liked list and the per-item check the detail sidebar runs,
-// so every view agrees right away instead of waiting for the next background sync
+export function useDislikedIds(): Set<string> {
+  const { data } = useQuery({
+    queryKey: DISLIKED_IDS_KEY,
+    queryFn: () => window.electronAPI.steam.getDislikedIds(),
+    staleTime: Infinity
+  })
+  return useMemo(() => new Set(data ?? []), [data])
+}
+
+// updates every view right away instead of waiting for the next sync
 export function useRecordVotes(): (ids: string[], up: boolean) => void {
   const queryClient = useQueryClient()
   return useCallback(
     (ids: string[], up: boolean) => {
       if (ids.length === 0) return
       const changed = new Set(ids)
-      queryClient.setQueryData<string[]>(VOTED_IDS_KEY, (old = []) =>
-        up ? [...new Set([...old, ...ids])] : old.filter((id) => !changed.has(id))
-      )
+      const put = (old: string[] = []): string[] => [...new Set([...old, ...ids])]
+      const drop = (old: string[] = []): string[] => old.filter((id) => !changed.has(id))
+      queryClient.setQueryData<string[]>(VOTED_IDS_KEY, up ? put : drop)
+      queryClient.setQueryData<string[]>(DISLIKED_IDS_KEY, up ? drop : put)
       for (const id of ids) queryClient.setQueryData(['steam-vote', id], up)
     },
     [queryClient]
@@ -37,15 +47,17 @@ export function useVoteAction(onError?: (message: string) => void) {
   const [pending, setPending] = useState<'like' | 'dislike' | null>(null)
   const report = onError ?? showToast
 
-  async function vote(id: string, up: boolean): Promise<void> {
-    if (pending) return
+  async function vote(id: string, up: boolean): Promise<boolean> {
+    if (pending) return false
     setPending(up ? 'like' : 'dislike')
     try {
       const { confirmed } = await window.electronAPI.steam.vote(id, up)
       if (confirmed) recordVotes([id], up)
       else report(`Could not confirm the ${up ? 'like' : 'dislike'} on Steam - try again`)
+      return confirmed
     } catch (err) {
       report((err as Error).message)
+      return false
     } finally {
       setPending(null)
     }
@@ -74,7 +86,8 @@ export function useBatchVote(): (ids: string[], up: boolean) => Promise<void> {
     showToast(
       failed === 0
         ? `${done} ${confirmedIds.length} on Steam`
-        : `${done} ${confirmedIds.length}, ${failed} could not be confirmed`
+        : `${done} ${confirmedIds.length}, ${failed} failed - their cards have a dashed border, right-click to try again`,
+      failed === 0 ? undefined : { warning: true, durationMs: 5000 }
     )
   }
 }
