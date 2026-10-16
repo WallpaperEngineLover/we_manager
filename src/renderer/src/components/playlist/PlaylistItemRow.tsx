@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import CompatBadge from '../common/CompatBadge'
 import type { PlaylistItem, WallpaperMeta } from '@shared/types'
 import { getPreviewSrc } from '../../utils/preview'
+import { t } from '../../i18n'
 
 interface PlaylistItemRowProps {
   item: PlaylistItem
@@ -67,7 +68,7 @@ export default function PlaylistItemRow({
         <span className="w-5 shrink-0 text-center text-xs text-gray-600">{index + 1}</span>
         <button
           onClick={onPlay}
-          title={isCurrent && isPlaying ? 'Now playing' : 'Play this wallpaper'}
+          title={isCurrent && isPlaying ? t('playlist.nowPlaying') : t('playlist.playThis')}
           className="group relative h-10 w-16 shrink-0 overflow-hidden rounded bg-sunken"
         >
           {previewSrc && (
@@ -89,26 +90,26 @@ export default function PlaylistItemRow({
         </button>
         <button
           onClick={onOpenDetail}
-          title="View details"
+          title={t('playlist.viewDetails')}
           className="min-w-0 flex-1 text-left"
         >
           <p className="truncate text-sm text-gray-200 hover:text-fg" title={wallpaper?.title}>
             {wallpaper?.title ?? item.wallpaperId}
           </p>
           <p className="text-xs text-gray-600">
-            {item.durationSec ?? defaultDurationSec}s · Vol {item.volume ?? defaultVolume}
+            {t('playlist.itemSummary', { seconds: item.durationSec ?? defaultDurationSec, volume: item.volume ?? defaultVolume })}
           </p>
         </button>
         <button
           onClick={() => setExpanded((v) => !v)}
-          title="Per-wallpaper overrides"
+          title={t('playlist.overrides')}
           className="rounded p-1.5 text-gray-500 hover:bg-fg/5 hover:text-gray-300"
         >
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
         <button
           onClick={onRemove}
-          title="Remove from playlist"
+          title={t('playlist.removeItem')}
           className="rounded p-1.5 text-gray-500 hover:bg-red-500/20 hover:text-red-400"
         >
           <Trash2 size={14} />
@@ -119,7 +120,7 @@ export default function PlaylistItemRow({
         <div className="flex flex-wrap items-center gap-4 border-t border-fg/5 px-3 py-2">
           <label className="flex items-center gap-2 text-xs text-gray-400">
             <Volume2 size={12} />
-            Volume
+            {t('playlist.volume')}
             <input
               type="range"
               min={0}
@@ -134,13 +135,13 @@ export default function PlaylistItemRow({
                 onClick={() => onUpdate({ volume: undefined })}
                 className="text-gray-600 hover:text-gray-300"
               >
-                Reset
+                {t('common.reset')}
               </button>
             )}
           </label>
           <label className="flex items-center gap-2 text-xs text-gray-400">
             <Clock size={12} />
-            Duration (s)
+            {t('playlist.durationSeconds')}
             <input
               type="number"
               min={1}

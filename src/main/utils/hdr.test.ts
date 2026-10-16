@@ -2,7 +2,7 @@ import { describe, expect, it, afterAll } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { readPkgEntry, sceneUsesHdr } from './hdr'
+import { readPkgEntry, sceneUsesHdr, sceneUsesSpatialSound } from './hdr'
 
 function u32(v: number): Buffer {
   const b = Buffer.alloc(4)
@@ -66,5 +66,21 @@ describe('sceneUsesHdr', () => {
     const scene = { general: { hdr: true, bloom: { user: 'hdr', value: true } } }
     expect(sceneUsesHdr(scene, {})).toBe(true)
     expect(sceneUsesHdr(scene, { hdr: { value: false } })).toBe(false)
+  })
+})
+
+describe('sceneUsesSpatialSound', () => {
+  it('needs a sound object with spatialization on', () => {
+    expect(sceneUsesSpatialSound({ objects: [{ sound: ['a.wav'], spatialization: true }] }, {})).toBe(true)
+    expect(sceneUsesSpatialSound({ objects: [{ sound: ['a.wav'] }] }, {})).toBe(false)
+    expect(sceneUsesSpatialSound({ objects: [{ image: 'x.json', spatialization: true }] }, {})).toBe(false)
+    expect(sceneUsesSpatialSound({ objects: [{ sound: [], spatialization: true }] }, {})).toBe(false)
+    expect(sceneUsesSpatialSound({}, {})).toBe(false)
+  })
+
+  it('resolves user property bindings', () => {
+    const scene = { objects: [{ sound: ['a.wav'], spatialization: { user: 'positional', value: true } }] }
+    expect(sceneUsesSpatialSound(scene, {})).toBe(true)
+    expect(sceneUsesSpatialSound(scene, { positional: { value: false } })).toBe(false)
   })
 })

@@ -8,11 +8,9 @@ import {
   onPlaybackStateChanged
 } from './playlist-player.service'
 import { getAllPlaylists } from './playlist.service'
+import { t } from '../i18n'
+import appIcon from '../../../resources/icon.png?asset'
 
-// 32x32 solid indigo circle on a transparent background, generated once and inlined so
-// the app doesn't need a bundled icon asset just for the tray.
-const TRAY_ICON_DATA_URL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAcklEQVR4nO3O2w3AIAxDUabrL/sPwBztArxM7ARVseTve0rJgatPe2cPC8sgaJgKscZNCFb8CMGOQwhVfBsRClDHl4hQgFd8iEhAAhIQDvBEdONXADwQ0/gVACViK65CQHE24ijOQpjiFggtjEJk4d/uAxec83TU+/bHAAAAAElFTkSuQmCC'
 
 let tray: Tray | null = null
 let trayWin: BrowserWindow | null = null
@@ -25,7 +23,7 @@ function buildMenu(): Menu {
 
   return Menu.buildFromTemplate([
     {
-      label: trayWin?.isVisible() ? 'Hide WE Manager' : 'Show WE Manager',
+      label: trayWin?.isVisible() ? t('tray.hide') : t('tray.show'),
       click: () => {
         if (!trayWin) return
         if (trayWin.isVisible()) trayWin.hide()
@@ -34,36 +32,34 @@ function buildMenu(): Menu {
     },
     { type: 'separator' },
     {
-      label: activePlaylist
-        ? `Playing: ${activePlaylist.title}`
-        : 'No playlist active',
+      label: activePlaylist ? t('tray.playing', { title: activePlaylist.title }) : t('tray.noPlaylist'),
       enabled: false
     },
     {
-      label: state.isPlaying ? 'Pause' : 'Resume',
+      label: state.isPlaying ? t('common.pause') : t('common.resume'),
       enabled: state.playlistId !== null,
       click: () => {
         if (state.isPlaying) pausePlaylist()
         else resumePlaylist()
-        refreshMenu()
+        refreshTray()
       }
     },
     {
-      label: 'Next Wallpaper',
+      label: t('tray.next'),
       enabled: state.playlistId !== null,
       click: () => {
-        void nextItem().then(refreshMenu)
+        void nextItem().then(refreshTray)
       }
     },
     { type: 'separator' },
     {
-      label: 'Quit',
+      label: t('tray.quit'),
       click: () => app.quit()
     }
   ])
 }
 
-function refreshMenu(): void {
+export function refreshTray(): void {
   if (tray) tray.setContextMenu(buildMenu())
 }
 
@@ -71,7 +67,7 @@ export function createTray(win: BrowserWindow): void {
   if (tray) return
   trayWin = win
 
-  const icon = nativeImage.createFromDataURL(TRAY_ICON_DATA_URL)
+  const icon = nativeImage.createFromPath(appIcon).resize({ width: 32, height: 32, quality: 'best' })
   tray = new Tray(icon)
   tray.setToolTip('WE Manager')
   tray.setContextMenu(buildMenu())
@@ -81,7 +77,7 @@ export function createTray(win: BrowserWindow): void {
     else trayWin.show()
   })
 
-  unsubscribePlayback = onPlaybackStateChanged(refreshMenu)
+  unsubscribePlayback = onPlaybackStateChanged(refreshTray)
 }
 
 export function destroyTray(): void {

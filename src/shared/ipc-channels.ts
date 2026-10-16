@@ -20,6 +20,8 @@ export const IpcChannels = {
   STEAM_GET_FAVORITE_IDS: 'steam:get-favorite-ids',
   STEAM_GET_FAVORITE_STATUS: 'steam:get-favorite-status',
   STEAM_REDOWNLOAD: 'steam:redownload',
+  STEAM_VERIFY: 'steam:verify',
+  STEAM_REPAIR: 'steam:repair',
   STEAM_GET_AUTHOR_INFO: 'steam:get-author-info',
 
   LIBRARY_GET_ALL: 'library:get-all',
@@ -51,6 +53,8 @@ export const IpcChannels = {
   WALLPAPER_GET_ASSIGNMENTS: 'wallpaper:get-assignments',
   WALLPAPER_GET_TARGETS: 'wallpaper:get-targets',
   WALLPAPER_STOP: 'wallpaper:stop',
+  WALLPAPER_SET_SPLIT: 'wallpaper:set-split',
+  WALLPAPER_SHOW_SPLIT: 'wallpaper:show-split',
   WALLPAPER_TEST_LAUNCH: 'wallpaper:test-launch',
   WALLPAPER_GENERATE_THUMBNAIL: 'wallpaper:generate-thumbnail',
   WALLPAPER_PICK_THUMBNAIL: 'wallpaper:pick-thumbnail',
@@ -114,7 +118,9 @@ export const IpcChannels = {
   CONFIG_SET_TRAY_ENABLED: 'config:set-tray-enabled',
   CONFIG_SET_KILL_LWE_ON_QUIT: 'config:set-kill-lwe-on-quit',
   CONFIG_SET_CARD_BORDERS: 'config:set-card-borders',
+  CONFIG_SET_CARD_BADGES: 'config:set-card-badges',
   CONFIG_SET_APPEARANCE: 'config:set-appearance',
+  CONFIG_SET_LANGUAGE: 'config:set-language',
   CONFIG_SET_AUTOSTART: 'config:set-autostart',
   CONFIG_GET_AUTOSTART_SUPPORTED: 'config:get-autostart-supported',
 
@@ -150,12 +156,20 @@ export const IpcChannels = {
   GNOME_EXTENSION_STATUS: 'gnome-extension:status',
   GNOME_EXTENSION_INSTALL: 'gnome-extension:install',
 
+  UPDATES_STATUS: 'updates:status',
+  UPDATES_SET_CHECKS: 'updates:set-checks',
+  UPDATES_CHECK: 'updates:check',
+  UPDATES_DISMISS: 'updates:dismiss',
+  UPDATES_INSTALL_APP: 'updates:install-app',
+  UPDATES_RESTART: 'updates:restart',
+
   // Events pushed from main to renderer
   EVENT_DOWNLOAD_PROGRESS: 'event:download-progress',
   EVENT_WALLPAPER_IMPORTED: 'event:wallpaper-imported',
   EVENT_STEAM_STATUS: 'event:steam-status',
   EVENT_LWE_INSTALL_PROGRESS: 'event:lwe-install-progress',
   EVENT_BACKUP_PROGRESS: 'event:backup-progress',
+  EVENT_VERIFY_PROGRESS: 'event:verify-progress',
   EVENT_PLAYLIST_STATE_CHANGED: 'event:playlist-state-changed',
   EVENT_VOTED_IDS_CHANGED: 'event:voted-ids-changed',
   EVENT_DISLIKED_IDS_CHANGED: 'event:disliked-ids-changed',
@@ -165,7 +179,8 @@ export const IpcChannels = {
   EVENT_LIBRARY_CHANGED: 'event:library-changed',
   EVENT_DISPLAY_CHANGED: 'event:display-changed',
   EVENT_WALLPAPER_CRASHED: 'event:wallpaper-crashed',
-  EVENT_SCHEDULE_FIRED: 'event:schedule-fired'
+  EVENT_SCHEDULE_FIRED: 'event:schedule-fired',
+  EVENT_UPDATE_STATUS: 'event:update-status'
 } as const
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]

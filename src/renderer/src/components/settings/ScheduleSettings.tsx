@@ -9,8 +9,13 @@ import { useDisplayTargets } from '../../hooks/useDisplayTargets'
 import { screenLabel } from '../../utils/screens'
 import { useToast } from '../common/Toast'
 import { useAllWallpapers, usePlaylists } from '../../hooks/queries'
+import { t, currentLanguage } from '../../i18n'
 
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+// 2024-01-07 was a Sunday, day 0 like Date.getDay()
+function dayLabels(): string[] {
+  const format = new Intl.DateTimeFormat(currentLanguage(), { weekday: 'short' })
+  return Array.from({ length: 7 }, (_, day) => format.format(new Date(2024, 0, 7 + day)))
+}
 
 type Draft = Omit<ScheduleRule, 'id'> & { id?: string }
 
@@ -25,10 +30,11 @@ const EMPTY_DRAFT: Draft = {
 const inputClass = 'rounded-lg bg-fg/5 px-2 py-1.5 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500'
 
 function describeTrigger(trigger: ScheduleTrigger): string {
-  if (trigger.type === 'theme') return trigger.theme === 'dark' ? 'When the system goes dark' : 'When the system goes light'
+  if (trigger.type === 'theme') return trigger.theme === 'dark' ? t('schedule.whenDark') : t('schedule.whenLight')
+  const labels = dayLabels()
   const days = trigger.days.length === 0 || trigger.days.length === 7
-    ? 'every day'
-    : [...trigger.days].sort().map((d) => DAY_LABELS[d]).join(', ')
+    ? t('schedule.everyDay')
+    : [...trigger.days].sort().map((d) => labels[d]).join(', ')
   return `${trigger.time}, ${days}`
 }
 
@@ -46,13 +52,13 @@ export default function ScheduleSettings() {
   const wallpapers = useAllWallpapers()
   const playlists = usePlaylists()
 
-  const wallpaperTitle = (id: string) => wallpapers.find((w) => w.id === id)?.title ?? 'missing wallpaper'
-  const playlistTitle = (id: string) => playlists.find((p) => p.id === id)?.title ?? 'missing playlist'
+  const wallpaperTitle = (id: string) => wallpapers.find((w) => w.id === id)?.title ?? t('schedule.missingWallpaper')
+  const playlistTitle = (id: string) => playlists.find((p) => p.id === id)?.title ?? t('schedule.missingPlaylist')
 
   function describeAction(action: ScheduleAction): string {
-    if (action.type === 'wallpaper') return `Show ${wallpaperTitle(action.wallpaperId)}`
-    if (action.type === 'playlist') return `Play ${playlistTitle(action.playlistId)}`
-    return 'Stop the wallpaper'
+    if (action.type === 'wallpaper') return t('schedule.show', { title: wallpaperTitle(action.wallpaperId) })
+    if (action.type === 'playlist') return t('schedule.play', { title: playlistTitle(action.playlistId) })
+    return t('schedule.stop')
   }
 
   const selectedWallpaperId = draft?.action.type === 'wallpaper' ? draft.action.wallpaperId : ''
@@ -72,15 +78,15 @@ export default function ScheduleSettings() {
   async function save() {
     if (!draft) return
     if (draft.trigger.type === 'time' && !parseTime(draft.trigger.time)) {
-      showToast('Enter the time as HH:MM', { warning: true })
+      showToast(t('schedule.badTime'), { warning: true })
       return
     }
     if (draft.action.type === 'wallpaper' && !draft.action.wallpaperId) {
-      showToast('Pick a wallpaper', { warning: true })
+      showToast(t('schedule.pickWallpaper'), { warning: true })
       return
     }
     if (draft.action.type === 'playlist' && !draft.action.playlistId) {
-      showToast('Pick a playlist', { warning: true })
+      showToast(t('schedule.pickPlaylist'), { warning: true })
       return
     }
     await window.electronAPI.schedule.save({ ...draft, name: draft.name.trim() || describeAction(draft.action) })
@@ -116,10 +122,9 @@ export default function ScheduleSettings() {
 
   return (
     <div>
-      <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">Schedule</label>
+      <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">{t('schedule.title')}</label>
       <p className="mt-1 text-xs text-gray-600">
-        Switch wallpapers or playlists at set times, or when the system switches between dark and light. A time
-        that passed while WE Manager was closed still runs when it starts, only the latest one per screen.
+        {t('schedule.description')}
       </p>
 
       <div className="mt-3 space-y-1.5">
@@ -136,16 +141,16 @@ export default function ScheduleSettings() {
                 <p className="truncate text-xs text-gray-500">
                   {describeTrigger(rule.trigger)} · {describeAction(rule.action)}
                   {perScreen && ` · ${screenLabel(rule.screen)}`}
-                  {next && ` · next ${next.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`}
+                  {next && ` · ${t('schedule.next', { time: next.toLocaleString(currentLanguage(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }) })}`}
                 </p>
               </div>
-              <button onClick={() => runNow(rule)} title="Run now" className="rounded p-1 text-gray-500 hover:text-gray-200">
+              <button onClick={() => runNow(rule)} title={t('schedule.runNow')} className="rounded p-1 text-gray-500 hover:text-gray-200">
                 <Play size={13} />
               </button>
-              <button onClick={() => setDraft(rule)} title="Edit" className="rounded p-1 text-gray-500 hover:text-gray-200">
+              <button onClick={() => setDraft(rule)} title={t('common.edit')} className="rounded p-1 text-gray-500 hover:text-gray-200">
                 <Pencil size={13} />
               </button>
-              <button onClick={() => remove(rule.id)} title="Delete" className="rounded p-1 text-gray-500 hover:text-red-400">
+              <button onClick={() => remove(rule.id)} title={t('common.delete')} className="rounded p-1 text-gray-500 hover:text-red-400">
                 <Trash2 size={13} />
               </button>
             </div>
@@ -159,14 +164,14 @@ export default function ScheduleSettings() {
           className="mt-2 flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
         >
           <Plus size={14} />
-          Add schedule
+          {t('schedule.add')}
         </button>
       ) : (
         <div className="mt-2 space-y-3 rounded-lg border border-fg/10 p-3">
           <input
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-            placeholder="Name (optional)"
+            placeholder={t('schedule.namePlaceholder')}
             className={`${inputClass} w-full`}
           />
 
@@ -183,9 +188,9 @@ export default function ScheduleSettings() {
               }
               className={inputClass}
             >
-              <option value="time">At a time</option>
-              <option value="dark">When the system goes dark</option>
-              <option value="light">When the system goes light</option>
+              <option value="time">{t('schedule.atTime')}</option>
+              <option value="dark">{t('schedule.whenDark')}</option>
+              <option value="light">{t('schedule.whenLight')}</option>
             </select>
             {draft.trigger.type === 'time' && (
               <input
@@ -200,7 +205,7 @@ export default function ScheduleSettings() {
 
           {draft.trigger.type === 'time' && (
             <div className="flex flex-wrap gap-1">
-              {DAY_LABELS.map((label, day) => {
+              {dayLabels().map((label, day) => {
                 const trigger = draft.trigger as Extract<ScheduleTrigger, { type: 'time' }>
                 const on = trigger.days.includes(day)
                 return (
@@ -218,7 +223,7 @@ export default function ScheduleSettings() {
                   </button>
                 )
               })}
-              <span className="self-center text-xs text-gray-600">none picked = every day</span>
+              <span className="self-center text-xs text-gray-600">{t('schedule.noneEveryDay')}</span>
             </div>
           )}
 
@@ -237,9 +242,9 @@ export default function ScheduleSettings() {
               }}
               className={inputClass}
             >
-              <option value="wallpaper">Show a wallpaper</option>
-              <option value="playlist">Play a playlist</option>
-              <option value="stop">Stop the wallpaper</option>
+              <option value="wallpaper">{t('schedule.showWallpaper')}</option>
+              <option value="playlist">{t('schedule.playPlaylist')}</option>
+              <option value="stop">{t('schedule.stop')}</option>
             </select>
             {perScreen && (
               <ScreenSelect targets={targets} value={draft.screen} onChange={(screen) => setDraft({ ...draft, screen })} />
@@ -265,7 +270,7 @@ export default function ScheduleSettings() {
               <input
                 value={wallpaperFilter}
                 onChange={(e) => setWallpaperFilter(e.target.value)}
-                placeholder="Search the library"
+                placeholder={t('schedule.searchLibrary')}
                 className={`${inputClass} w-full`}
               />
               <select
@@ -285,10 +290,10 @@ export default function ScheduleSettings() {
 
           <div className="flex gap-2">
             <button onClick={save} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500">
-              Save
+              {t('common.save')}
             </button>
             <button onClick={() => setDraft(null)} className="rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10">
-              Cancel
+              {t('common.cancel')}
             </button>
           </div>
         </div>

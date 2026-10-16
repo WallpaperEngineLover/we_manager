@@ -11,11 +11,13 @@ import { initDesktopIcons, cleanupDesktopIcons } from './services/desktop-icons.
 import { getTrayEnabled, getAutostartPlaylistId, getKillLweOnQuit } from './services/config.service'
 import { createTray } from './services/tray.service'
 import { initPlaylistPlayer, startPlaylist } from './services/playlist-player.service'
-import { killAllLweProcesses, getLweStatus } from './services/lwe.service'
+import { checkEarlierRunEngines, killAllLweProcesses, getLweStatus } from './services/lwe.service'
 import { initDisplay } from './services/display.service'
 import { initSchedule } from './services/schedule.service'
+import { initUpdates } from './services/update.service'
 import { hasStatusNotifierHost } from './utils/platform'
 import { attachAppearance, prepareAppearance, windowAppearanceOptions } from './services/appearance.service'
+import appIcon from '../../resources/icon.png?asset'
 
 const startMinimized = process.argv.includes('--minimized')
 prepareAppearance()
@@ -88,9 +90,7 @@ function startBackgroundSync(win: BrowserWindow): void {
       const { changed } = await checkUnavailableWallpapers()
       if (changed && !win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_LIBRARY_CHANGED)
       await syncResolutions()
-    } catch {
-      // transient Steam hiccup - try again next tick
-    }
+    } catch { /* retried next tick */ }
   }, BACKGROUND_SYNC_INTERVAL_MS)
 }
 
@@ -116,6 +116,7 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     ...windowAppearanceOptions(),
     autoHideMenuBar: true,
+    icon: appIcon,
     show: !startHidden,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.cjs'),
@@ -132,9 +133,7 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' }
   })
 
-  // When the tray is enabled, closing the window hides it instead of quitting so the
-  // tray icon remains the only way back in (and the app keeps running for playlists).
-  // Without a StatusNotifier host there is no icon to come back through, so it quits.
+  // closing hides to the tray, or quits without a StatusNotifier host
   win.on('close', (event) => {
     if (getTrayEnabled() && !isQuitting && hasStatusNotifierHost()) {
       event.preventDefault()
@@ -153,7 +152,7 @@ function createWindow(): BrowserWindow {
   return win
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   protocol.handle('wallpaper', async (request) => {
     const filePath = decodeURIComponent(request.url.replace('wallpaper://', ''))
     try {
@@ -162,8 +161,8 @@ app.whenReady().then(() => {
       headers.set('Access-Control-Allow-Origin', '*')
       return new Response(res.body, { status: res.status, headers })
     } catch {
-      // File not on disk yet (e.g. still downloading) - a rejected fetch here
-      // would otherwise surface as an uncaught net::ERR_FILE_NOT_FOUND
+      // may still be downloading
+
       return new Response(null, { status: 404 })
     }
   })
@@ -176,6 +175,7 @@ app.whenReady().then(() => {
   startWatcher(win)
   startBackgroundSync(win)
   initDesktopIcons()
+  await checkEarlierRunEngines()
   initDisplay(win)
   const resumed = initPlaylistPlayer(win)
 
@@ -190,6 +190,7 @@ app.whenReady().then(() => {
     }
   }
   initSchedule(win)
+  initUpdates(win)
 })
 
 app.on('before-quit', (event) => {

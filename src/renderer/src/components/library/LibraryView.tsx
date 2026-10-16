@@ -13,6 +13,7 @@ import {
   Archive,
   WifiOff,
   ShieldAlert,
+  ShieldCheck,
   ChevronLeft
 } from 'lucide-react'
 import WallpaperCard from './WallpaperCard'
@@ -42,15 +43,16 @@ import {
 } from '../../constants/weFilters'
 import { usePreviewSize, previewGridStyle } from '../../hooks/usePreviewSize'
 import { loadPageSize, usePersistentState, useSessionState } from '../../hooks/usePersistentState'
-import { useCardBorders, useCardSteamState } from '../../hooks/useCardBorders'
+import { useCardBadges, useCardBorders, useCardSteamState } from '../../hooks/useCardBorders'
 import { useDislikedIds, useVotedIds } from '../../hooks/useVotes'
 import { useFavoriteIds } from '../../hooks/useFavorites'
 import { useConfig, useFolders, useLweInstalled, usePlaybackStates, usePlaylists } from '../../hooks/queries'
-import { useApplyWallpaper, useSubscribe, useUnsubscribe } from '../../hooks/useWallpaperActions'
+import { useApplyWallpaper, useSubscribe, useUnsubscribe, useVerifyFiles } from '../../hooks/useWallpaperActions'
 import { useSelectableGrid } from '../../hooks/useSelectableGrid'
 import { toggle } from '../../utils/array'
 import { isEditingText } from '../../utils/dom'
-import { backupSummary, detailSidebarProps, isBackupOutdated, progressVerb } from '../../utils/wallpaper'
+import { backupSummary, detailSidebarProps, hasDamagedFiles, isBackupOutdated, progressVerb } from '../../utils/wallpaper'
+import { t, tagLabel } from '../../i18n'
 
 interface LibraryFilterState {
   types: string[]
@@ -64,6 +66,9 @@ interface LibraryFilterState {
   favoritesOnly: boolean
   unavailableOnly: boolean
   outdatedBackupOnly: boolean
+  damagedOnly: boolean
+  hdrOnly: boolean
+  hrtfOnly: boolean
 }
 
 const DEFAULT_STATE: LibraryFilterState = {
@@ -77,7 +82,10 @@ const DEFAULT_STATE: LibraryFilterState = {
   dislikedOnly: false,
   favoritesOnly: false,
   unavailableOnly: false,
-  outdatedBackupOnly: false
+  outdatedBackupOnly: false,
+  damagedOnly: false,
+  hdrOnly: false,
+  hrtfOnly: false
 }
 
 function loadFilters(stored: unknown): LibraryFilterState {
@@ -110,9 +118,7 @@ interface SortState {
 
 const DEFAULT_SORT: SortState = { sortBy: 'updatedAt', sortDir: 'desc' }
 
-const BACKUP_FOLDER_HINT = 'Configure a backup folder in Settings first'
-
-const LIBRARY_TYPES = WE_TYPES.filter((t) => t.tag in TYPE_MAP)
+const LIBRARY_TYPES = WE_TYPES.filter((type) => type.tag in TYPE_MAP)
 const SOURCES = Object.keys(SOURCE_MAP).map((tag) => ({ tag, label: tag }))
 
 // genre/custom tags, too many to list without a search box
@@ -126,23 +132,26 @@ function TagsFilterSection({
   onChange: (tags: string[]) => void
 }) {
   const [search, setSearch] = useState('')
-  const filtered = available.filter((t) => t.toLowerCase().includes(search.toLowerCase()))
+  const needle = search.toLowerCase()
+  const filtered = available.filter(
+    (tag) => tag.toLowerCase().includes(needle) || tagLabel(tag).toLowerCase().includes(needle)
+  )
 
   return (
-    <FilterSection title="Tags" defaultOpen={false} activeCount={selected.length}>
+    <FilterSection title={t('filters.tags')} defaultOpen={false} activeCount={selected.length}>
       <input
         type="text"
-        placeholder="Search tags..."
+        placeholder={t('filters.searchTags')}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         className="mb-1 w-full rounded bg-fg/5 px-2 py-1 text-xs text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
       />
       <div className="max-h-64 overflow-y-auto">
-        {filtered.length === 0 && <p className="py-1 text-xs text-gray-600">No tags found</p>}
+        {filtered.length === 0 && <p className="py-1 text-xs text-gray-600">{t('filters.noTags')}</p>}
         {filtered.map((tag) => (
           <CheckItem
             key={tag}
-            label={tag}
+            label={tagLabel(tag)}
             checked={selected.includes(tag)}
             onChange={() => onChange(toggle(selected, tag))}
           />
@@ -163,7 +172,7 @@ function dropWallpaperId(e: React.DragEvent): string {
   return e.dataTransfer.getData('text/wallpaper-id')
 }
 
-type BackgroundTask = 'backup-selection' | 'scan-backups' | 'check-unavailable' | 'backup-unavailable'
+type BackgroundTask = 'backup-selection' | 'scan-backups' | 'check-unavailable' | 'backup-unavailable' | 'verify-files'
 
 interface LibraryViewProps {
   onBrowseCreator?: (creatorSteamId: string) => void
@@ -187,7 +196,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   const [activeFolder, setActiveFolder] = usePersistentState<string | null>('we-library-folder', null, (v) =>
     typeof v === 'string' ? v : null
-  ) // null = "All"
+  )
   const [folderMenu, setFolderMenu] = useState<{ folder: WallpaperFolder; x: number; y: number } | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -198,6 +207,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   const favoriteSet = useFavoriteIds()
   const steamStateOf = useCardSteamState()
   const cardBorders = useCardBorders()
+  const cardBadges = useCardBadges()
   const lweInstalled = useLweInstalled()
   const isBackupConfigured = useConfig()?.isBackupConfigured ?? false
   const { folders, foldersLoaded, refetchFolders, moveToFolder } = useFolders()
@@ -208,12 +218,24 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   const applyWallpaper = useApplyWallpaper()
   const subscribe = useSubscribe()
   const unsubscribe = useUnsubscribe()
+  const verifyFiles = useVerifyFiles()
 
   function setFilter<K extends keyof LibraryFilterState>(key: K, value: LibraryFilterState[K]) {
     setFilterState((prev) => ({ ...prev, [key]: value }))
   }
 
-  function toggleFlag(key: 'failedOnly' | 'likedOnly' | 'dislikedOnly' | 'favoritesOnly' | 'unavailableOnly' | 'outdatedBackupOnly') {
+  function toggleFlag(
+    key:
+      | 'failedOnly'
+      | 'likedOnly'
+      | 'dislikedOnly'
+      | 'favoritesOnly'
+      | 'unavailableOnly'
+      | 'outdatedBackupOnly'
+      | 'damagedOnly'
+      | 'hdrOnly'
+      | 'hrtfOnly'
+  ) {
     setFilterState((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
@@ -223,17 +245,19 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     (filterState.dislikedOnly ? 1 : 0) +
     (filterState.favoritesOnly ? 1 : 0) +
     (filterState.unavailableOnly ? 1 : 0) +
-    (filterState.outdatedBackupOnly ? 1 : 0)
+    (filterState.outdatedBackupOnly ? 1 : 0) +
+    (filterState.damagedOnly ? 1 : 0)
+  const featureCount = (filterState.hdrOnly ? 1 : 0) + (filterState.hrtfOnly ? 1 : 0)
   const activeCount =
     filterState.types.length +
     filterState.ageRatings.length +
     filterState.genres.length +
     filterState.resolutions.length +
     filterState.sources.length +
-    flagCount
+    flagCount +
+    featureCount
 
-  // Refresh the library once a background download (subscribe or redownload) settles,
-  // so the downloading/downloadFailed badges stay in sync without a manual Scan.
+  // keeps the download badges in sync
   useEffect(() => {
     return window.electronAPI.on.downloadProgress((progress) => {
       if (progress.status === 'completed' || progress.status === 'error') {
@@ -261,9 +285,8 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     queryFn: () => window.electronAPI.library.getAll(filters)
   })
 
-  // Client-side OR filtering for multiple types / ratings / genres
   const filtered = useMemo(() => {
-    const types = filterState.types.map((t) => TYPE_MAP[t]).filter(Boolean)
+    const types = filterState.types.map((type) => TYPE_MAP[type]).filter(Boolean)
     const ratings = filterState.ageRatings.map((r) => RATING_MAP[r]).filter(Boolean)
     const sources = filterState.sources.map((s) => SOURCE_MAP[s]).filter(Boolean)
     return allWallpapers.filter((w) => {
@@ -279,6 +302,9 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       if (filterState.favoritesOnly && !favoriteSet.has(w.id)) return false
       if (filterState.unavailableOnly && !w.unavailable) return false
       if (filterState.outdatedBackupOnly && !isBackupOutdated(w)) return false
+      if (filterState.damagedOnly && !hasDamagedFiles(w)) return false
+      if (filterState.hdrOnly && !w.hdr) return false
+      if (filterState.hrtfOnly && !w.hrtf) return false
       return true
     })
   }, [allWallpapers, filterState, votedSet, dislikedSet, favoriteSet])
@@ -292,18 +318,20 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       disliked: allWallpapers.filter((w) => dislikedSet.has(w.id)).length,
       favorites: allWallpapers.filter((w) => favoriteSet.has(w.id)).length,
       unavailable: allWallpapers.filter((w) => w.unavailable).length,
-      outdatedBackup: allWallpapers.filter(isBackupOutdated).length
+      outdatedBackup: allWallpapers.filter(isBackupOutdated).length,
+      damaged: allWallpapers.filter(hasDamagedFiles).length,
+      hdr: allWallpapers.filter((w) => w.hdr).length,
+      hrtf: allWallpapers.filter((w) => w.hrtf).length
     }),
     [allWallpapers, votedSet, dislikedSet, favoriteSet]
   )
 
-  // Removed-from-workshop items with local content that hasn't been backed up yet
+  // unavailable items not backed up yet
   const unavailableNotBackedUp = useMemo(
     () => allWallpapers.filter((w) => w.unavailable && !w.backedUp),
     [allWallpapers]
   )
 
-  // Set of all IDs that belong to at least one folder AND exist in the library
   const allFolderItemIds = useMemo(() => {
     const set = new Set<string>()
     for (const f of folders) {
@@ -314,7 +342,6 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     return set
   }, [folders, existingIds])
 
-  // Real item count per folder (only items that exist in the library)
   const folderCounts = useMemo(() => {
     const map = new Map<string, number>()
     for (const f of folders) {
@@ -323,12 +350,9 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     return map
   }, [folders, existingIds])
 
-  // Unsorted items, what the "Default" folder shows
   const unsorted = useMemo(() => filtered.filter((w) => !allFolderItemIds.has(w.id)), [filtered, allFolderItemIds])
 
-  // Folder filtering:
-  // Default (null) = everything NOT inside any folder (unsorted)
-  // Specific folder = only that folder's items
+  // null = items in no folder
   const allWallpapersForView = useMemo(() => {
     if (!activeFolder) return unsorted
     const folder = folders.find((f) => f.id === activeFolder)
@@ -382,7 +406,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   })
 
   const playbackStates = usePlaybackStates()
-  // the playlist "add to current" goes to, the first one playing when several screens have their own
+  // target of "add to current", the first playing one
   const currentPlaylistId =
     (playbackStates.find((s) => s.isPlaying) ?? playbackStates.find((s) => s.playlistId))?.playlistId ?? null
 
@@ -396,7 +420,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     if (!currentPlaylistId || ids.length === 0) return
     await window.electronAPI.playlist.addItems(currentPlaylistId, ids)
     queryClient.invalidateQueries({ queryKey: ['playlists'] })
-    showToast('Added to current playlist')
+    showToast(t('playlist.addedToCurrent'))
   }
 
   const [runningTasks, setRunningTasks] = useState<Set<BackgroundTask>>(new Set())
@@ -417,20 +441,21 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
         return next
       })
       if (progress.status === 'error') {
-        const what = progress.action === 'copy' ? 'Copy' : progress.action === 'move' ? 'Move' : 'Backup'
-        showToast(`${what} failed: ${progress.message ?? 'verification error'}`)
+        const key = progress.action === 'copy' ? 'transfer.copyFailed' : progress.action === 'move' ? 'transfer.moveFailed' : 'backup.failed'
+        showToast(t(key, { error: progress.message ?? t('backup.verificationError') }))
       }
     })
   }, [showToast])
 
-  // keep the last text between items so the progress line doesn't flicker
   const backupTaskRunning = runningTasks.has('backup-selection') || runningTasks.has('backup-unavailable')
   const progressItems = Array.from(backupProgress.values())
   const liveProgress =
     progressItems.length > 0
-      ? `${progressVerb(progressItems)} ${progressItems.length} wallpaper${progressItems.length === 1 ? '' : 's'}` +
-        `${progressItems.some((p) => p.status === 'verifying') ? ' (verifying copies)' : ''}... ` +
-        `${Math.round(progressItems.reduce((sum, p) => sum + p.percentage, 0) / progressItems.length)}% avg`
+      ? t(progressItems.some((p) => p.status === 'verifying') ? 'backup.liveProgressVerifying' : 'backup.liveProgress', {
+          verb: progressVerb(progressItems),
+          count: progressItems.length,
+          percent: Math.round(progressItems.reduce((sum, p) => sum + p.percentage, 0) / progressItems.length)
+        })
       : null
   const [lingeringProgress, setLingeringProgress] = useState<string | null>(null)
 
@@ -446,9 +471,8 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   const statusLine =
     liveProgress ??
-    (backupTaskRunning ? (lingeringProgress ?? 'Backing up...') : (backupStatus ?? lingeringProgress))
+    (backupTaskRunning ? (lingeringProgress ?? `${t('backup.backingUp')}...`) : (backupStatus ?? lingeringProgress))
 
-  // backup and availability checks report into the status line and can change any wallpaper's flags
   async function runTask(task: BackgroundTask, work: () => Promise<string>) {
     setRunningTasks((prev) => new Set(prev).add(task))
     setBackupStatus(null)
@@ -468,7 +492,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     if (selectedIds.size === 0) return
     const toBackUp = wallpapers.filter((w) => selectedIds.has(w.id) && w.source === 'workshop')
     if (toBackUp.length === 0) {
-      setBackupStatus('No workshop wallpapers selected.')
+      setBackupStatus(t('backup.noneSelected'))
       return
     }
     void runTask('backup-selection', async () =>
@@ -480,14 +504,20 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     void runTask('scan-backups', async () => {
       const result = await window.electronAPI.backup.scan()
       const dropped = result.removed + result.unlinked
-      return `Backup scan: ${result.imported} imported, ${result.linked} linked${dropped > 0 ? `, ${dropped} broken removed` : ''}${result.previewsFixed > 0 ? `, ${result.previewsFixed} thumbnail${result.previewsFixed === 1 ? '' : 's'} fixed` : ''}${result.corrupted.length > 0 ? `, ${result.corrupted.length} corrupted folder${result.corrupted.length === 1 ? '' : 's'} skipped (${result.corrupted.join(', ')})` : ''}.`
+      let summary = t('backup.scanSummary', { imported: result.imported, linked: result.linked })
+      if (dropped > 0) summary += ', ' + t('backup.scanBrokenRemoved', { count: dropped })
+      if (result.previewsFixed > 0) summary += ', ' + t('backup.scanThumbnailsFixed', { count: result.previewsFixed })
+      if (result.corrupted.length > 0) {
+        summary += ', ' + t('backup.scanCorrupted', { count: result.corrupted.length, folders: result.corrupted.join(', ') })
+      }
+      return `${summary}.`
     })
   }
 
   function handleCheckUnavailable() {
     void runTask('check-unavailable', async () => {
       const result = await window.electronAPI.library.checkUnavailable()
-      return `Checked ${result.checked} workshop item(s): ${result.unavailable} no longer available on the workshop.`
+      return t('library.checkedUnavailable', { count: result.checked, unavailable: result.unavailable })
     })
   }
 
@@ -496,6 +526,10 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     void runTask('backup-unavailable', async () =>
       `${backupSummary(await window.electronAPI.backup.selection(unavailableNotBackedUp.map((w) => w.id)))}.`
     )
+  }
+
+  function handleVerifyFiles() {
+    void runTask('verify-files', () => verifyFiles(undefined, setBackupStatus))
   }
 
   async function handleScan() {
@@ -508,7 +542,6 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     queryClient.invalidateQueries({ queryKey: ['library-tags'] })
   }
 
-  // Folder creation uses an inline input instead of prompt()
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [importStatus, setImportStatus] = useState<string | null>(null)
@@ -531,9 +564,9 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       const result = await window.electronAPI.config.importWE(filePath)
       refetchFolders()
       queryClient.invalidateQueries({ queryKey: ['library'] })
-      setImportStatus(`Imported ${result.folders} folders and ${result.playlists} playlists.`)
+      setImportStatus(t('library.importedConfig', { folders: result.folders, playlists: result.playlists }))
     } catch (err) {
-      setImportStatus(`Import failed: ${(err as Error).message}`)
+      setImportStatus(t('setup.importFailed', { error: (err as Error).message }))
     }
   }
 
@@ -542,8 +575,8 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     refetchFolders()
     setImportStatus(
       removed > 0
-        ? `Cleaned up ${removed} non-existent wallpaper(s) from folders.`
-        : 'All folder items are valid, nothing to clean up.'
+        ? t('library.cleanedUp', { count: removed })
+        : t('library.nothingToClean')
     )
   }
 
@@ -599,23 +632,23 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     <div className="flex h-full flex-col">
       <div className="flex flex-wrap items-center gap-3 border-b border-fg/5 px-4 py-3">
         <FiltersToggle open={showFilters} activeCount={activeCount} onClick={() => setShowFilters((v) => !v)} />
-        <PanelToggle icon={Folder} label="Folders" open={showFolders} onClick={() => setShowFolders((v) => !v)} />
-        <SearchInput value={search} placeholder="Search library..." onChange={setSearch} />
+        <PanelToggle icon={Folder} label={t('library.folders')} open={showFolders} onClick={() => setShowFolders((v) => !v)} />
+        <SearchInput value={search} placeholder={t('picker.search')} onChange={setSearch} />
         <select
           value={sort.sortBy ?? 'updatedAt'}
           onChange={(e) => setSort((prev) => ({ ...prev, sortBy: e.target.value as LibraryFilters['sortBy'] }))}
           className="rounded-lg bg-card px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
         >
-          <option value="title">Name</option>
-          <option value="updatedAt">Date Updated</option>
-          <option value="createdAt">Date Added</option>
-          <option value="fileSize">File Size</option>
-          <option value="lastApplied">Last Applied</option>
-          <option value="appliedCount">Most Applied</option>
+          <option value="title">{t('library.sortName')}</option>
+          <option value="updatedAt">{t('library.sortUpdated')}</option>
+          <option value="createdAt">{t('library.sortAdded')}</option>
+          <option value="fileSize">{t('library.sortSize')}</option>
+          <option value="lastApplied">{t('library.sortLastApplied')}</option>
+          <option value="appliedCount">{t('library.sortMostApplied')}</option>
         </select>
         <button
           onClick={() => setSort((prev) => ({ ...prev, sortDir: prev.sortDir === 'asc' ? 'desc' : 'asc' }))}
-          title={sort.sortDir === 'asc' ? 'Ascending' : 'Descending'}
+          title={sort.sortDir === 'asc' ? t('library.ascending') : t('library.descending')}
           className="rounded-lg bg-fg/5 px-2 py-2 text-sm text-gray-300 hover:bg-fg/10"
         >
           {sort.sortDir === 'asc' ? '↑' : '↓'}
@@ -625,9 +658,9 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
           onChange={(e) => setPageSize(Number(e.target.value))}
           className="rounded-lg bg-card px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
         >
-          <option value={50}>50 / page</option>
-          <option value={100}>100 / page</option>
-          <option value={200}>200 / page</option>
+          <option value={50}>{t('library.perPage', { count: 50 })}</option>
+          <option value={100}>{t('library.perPage', { count: 100 })}</option>
+          <option value={200}>{t('library.perPage', { count: 200 })}</option>
         </select>
         <PreviewSizeToggle value={previewSize} onChange={setPreviewSize} />
         {activeCount > 0 && <ResetFiltersButton onClick={() => setFilterState(DEFAULT_STATE)} />}
@@ -636,36 +669,45 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
           icon={<RefreshCw size={14} />}
           busy={scanning}
           disabled={scanning}
-          title="Scan workshop folder"
+          title={t('library.scanHint')}
           onClick={handleScan}
         >
-          Scan
+          {t('library.scan')}
         </ToolbarButton>
         <ToolbarButton
           icon={<Archive size={14} />}
           busy={runningTasks.has('scan-backups')}
           disabled={runningTasks.has('scan-backups') || !isBackupConfigured}
-          title={isBackupConfigured ? 'Scan backup folder' : BACKUP_FOLDER_HINT}
+          title={isBackupConfigured ? t('library.scanBackupsHint') : t('backup.configureFirst')}
           onClick={handleScanBackups}
         >
-          Scan backups
+          {t('library.scanBackups')}
         </ToolbarButton>
         <ToolbarButton
           icon={<WifiOff size={14} />}
           busy={runningTasks.has('check-unavailable')}
           disabled={runningTasks.has('check-unavailable')}
-          title="Check the workshop for wallpapers that have been removed"
+          title={t('library.checkUnavailableHint')}
           onClick={handleCheckUnavailable}
         >
-          Check unavailable
+          {t('library.checkUnavailable')}
+        </ToolbarButton>
+        <ToolbarButton
+          icon={<ShieldCheck size={14} />}
+          busy={runningTasks.has('verify-files')}
+          disabled={runningTasks.has('verify-files')}
+          title={t('verify.hint')}
+          onClick={handleVerifyFiles}
+        >
+          {t('verify.action')}
         </ToolbarButton>
       </div>
 
       <div className="flex min-h-10 items-center gap-2 border-b border-fg/5 px-4 py-1.5">
         <span className="text-xs text-gray-600">
           {selectedIds.size > 0
-            ? `${selectedIds.size} selected / ${wallpapers.length} wallpapers`
-            : `${wallpapers.length} wallpapers`}
+            ? t('library.countSelected', { selected: selectedIds.size, count: wallpapers.length })
+            : t('playlist.count', { count: wallpapers.length })}
         </span>
         <div className="ml-auto flex items-center gap-2">
           {unavailableNotBackedUp.length > 0 && (
@@ -674,8 +716,11 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
               disabled={runningTasks.has('backup-unavailable') || !isBackupConfigured}
               title={
                 isBackupConfigured
-                  ? `Back up the ${unavailableNotBackedUp.length} removed-from-workshop wallpaper(s) that don't have a backup yet (${statusCounts.unavailable - unavailableNotBackedUp.length} already do)`
-                  : BACKUP_FOLDER_HINT
+                  ? t('library.backupUnavailableHint', {
+                      count: unavailableNotBackedUp.length,
+                      done: statusCounts.unavailable - unavailableNotBackedUp.length
+                    })
+                  : t('backup.configureFirst')
               }
               className="flex items-center gap-1.5 rounded-lg bg-amber-600/80 px-3 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
             >
@@ -684,14 +729,14 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
               ) : (
                 <ShieldAlert size={12} />
               )}
-              Backup all unavailable ({unavailableNotBackedUp.length})
+              {t('library.backupUnavailable', { count: unavailableNotBackedUp.length })}
             </button>
           )}
           {selectedIds.size > 0 && (
             <button
               onClick={handleBackupSelection}
               disabled={runningTasks.has('backup-selection') || !isBackupConfigured}
-              title={isBackupConfigured ? 'Back up selected wallpapers' : BACKUP_FOLDER_HINT}
+              title={isBackupConfigured ? t('library.backupSelectionHint') : t('backup.configureFirst')}
               className="flex items-center gap-1.5 rounded-lg bg-fg/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-fg/10 disabled:opacity-50"
             >
               {runningTasks.has('backup-selection') ? (
@@ -699,7 +744,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
               ) : (
                 <Archive size={12} />
               )}
-              Backup selection
+              {t('library.backupSelection')}
             </button>
           )}
         </div>
@@ -707,7 +752,9 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
       {scanResult && (
         <div className="border-b border-fg/5 px-4 py-2 text-xs text-gray-400">
-          Scan complete: {scanResult.imported} imported{scanResult.removed > 0 ? `, ${scanResult.removed} removed` : ''}
+          {scanResult.removed > 0
+            ? t('library.scanCompleteRemoved', { imported: scanResult.imported, removed: scanResult.removed })
+            : t('library.scanComplete', { imported: scanResult.imported })}
         </div>
       )}
 
@@ -720,68 +767,91 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       <div className="flex flex-1 overflow-hidden">
         {showFilters && (
           <FilterPanel>
-            <FilterSection title="Status" activeCount={flagCount}>
+            <FilterSection title={t('filters.status')} activeCount={flagCount}>
               <CheckItem
-                label="Download failed"
-                title="Show only wallpapers whose download failed (e.g. disk ran out of space)"
+                label={t('subscribe.downloadFailed')}
+                title={t('filters.failedHint')}
                 count={statusCounts.failed}
                 checked={filterState.failedOnly}
                 onChange={() => toggleFlag('failedOnly')}
               />
               <CheckItem
-                label="Liked"
-                title="Show only wallpapers you've liked on Steam"
+                label={t('vote.liked')}
+                title={t('filters.likedHint')}
                 count={statusCounts.liked}
                 checked={filterState.likedOnly}
                 onChange={() => toggleFlag('likedOnly')}
               />
               <CheckItem
-                label="Disliked"
-                title="Show only wallpapers you've disliked on Steam"
+                label={t('borders.disliked')}
+                title={t('filters.dislikedHint')}
                 count={statusCounts.disliked}
                 checked={filterState.dislikedOnly}
                 onChange={() => toggleFlag('dislikedOnly')}
               />
               <CheckItem
-                label="Favorites"
-                title="Show only wallpapers in your Steam favorites"
+                label={t('filters.favorites')}
+                title={t('filters.favoritesHint')}
                 count={statusCounts.favorites}
                 checked={filterState.favoritesOnly}
                 onChange={() => toggleFlag('favoritesOnly')}
               />
               <CheckItem
-                label="Unavailable"
+                label={t('filters.unavailable')}
                 title={
                   unavailableNotBackedUp.length > 0
-                    ? `Show only wallpapers removed from the Steam Workshop (${unavailableNotBackedUp.length} of these have no backup yet)`
-                    : 'Show only wallpapers removed from the Steam Workshop'
+                    ? t('filters.unavailableHintBackup', { count: unavailableNotBackedUp.length })
+                    : t('filters.unavailableHint')
                 }
                 count={statusCounts.unavailable}
                 checked={filterState.unavailableOnly}
                 onChange={() => toggleFlag('unavailableOnly')}
               />
               <CheckItem
-                label="Outdated backup"
-                title="Show only wallpapers whose backup is an older version than the one on the Steam Workshop"
+                label={t('filters.outdatedBackup')}
+                title={t('filters.outdatedBackupHint')}
                 count={statusCounts.outdatedBackup}
                 checked={filterState.outdatedBackupOnly}
                 onChange={() => toggleFlag('outdatedBackupOnly')}
               />
+              <CheckItem
+                label={t('verify.damaged')}
+                title={t('verify.damagedHint')}
+                count={statusCounts.damaged}
+                checked={filterState.damagedOnly}
+                onChange={() => toggleFlag('damagedOnly')}
+              />
+            </FilterSection>
+            <FilterSection title={t('filters.features')} activeCount={featureCount}>
+              <CheckItem
+                label="HDR"
+                title={t('filters.hdrHint')}
+                count={statusCounts.hdr}
+                checked={filterState.hdrOnly}
+                onChange={() => toggleFlag('hdrOnly')}
+              />
+              <CheckItem
+                label="HRTF"
+                title={t('filters.hrtfHint')}
+                count={statusCounts.hrtf}
+                checked={filterState.hrtfOnly}
+                onChange={() => toggleFlag('hrtfOnly')}
+              />
             </FilterSection>
             <TagFilterSection
-              title="Type"
+              title={t('filters.type')}
               options={LIBRARY_TYPES}
               selected={filterState.types}
               onChange={(tags) => setFilter('types', tags)}
             />
             <TagFilterSection
-              title="Age Rating"
+              title={t('filters.ageRating')}
               options={WE_LIBRARY_AGE_RATINGS}
               selected={filterState.ageRatings}
               onChange={(tags) => setFilter('ageRatings', tags)}
             />
             <TagFilterSection
-              title="Source"
+              title={t('filters.source')}
               options={SOURCES}
               selected={filterState.sources}
               onChange={(tags) => setFilter('sources', tags)}
@@ -804,26 +874,26 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
         <div className="flex w-48 flex-shrink-0 flex-col border-r border-fg/5 overflow-y-auto">
           <div className="flex items-center justify-between px-3 pt-3 pb-1">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
-              Folders
+              {t('library.folders')}
             </span>
             <div className="flex gap-1">
               <button
                 onClick={handleImportWEConfig}
-                title="Import from WE config.json"
+                title={t('library.importConfig')}
                 className="rounded p-0.5 text-gray-600 hover:text-gray-300"
               >
                 <Upload size={12} />
               </button>
               <button
                 onClick={handleCleanupFolders}
-                title="Clean up folders (remove non-existent wallpapers)"
+                title={t('library.cleanup')}
                 className="rounded p-0.5 text-gray-600 hover:text-gray-300"
               >
                 <Eraser size={12} />
               </button>
               <button
                 onClick={() => { setCreatingFolder(true); setNewFolderName('') }}
-                title="Create folder"
+                title={t('library.createFolder')}
                 className="rounded p-0.5 text-gray-600 hover:text-gray-300"
               >
                 <FolderPlus size={12} />
@@ -839,7 +909,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
           <button onClick={() => setActiveFolder(null)} className={folderRowClass(activeFolder === null)}>
             <Folder size={14} />
-            <span className="flex-1 text-left truncate">Default</span>
+            <span className="flex-1 text-left truncate">{t('library.defaultFolder')}</span>
             <span className="text-gray-600">{unsorted.length}</span>
           </button>
 
@@ -855,7 +925,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                   if (e.key === 'Enter') handleCreateFolderSubmit()
                   if (e.key === 'Escape') setCreatingFolder(false)
                 }}
-                placeholder="Folder name..."
+                placeholder={t('library.folderName')}
                 className="flex-1 bg-transparent text-xs text-gray-200 outline-none placeholder-gray-600"
               />
             </div>
@@ -900,7 +970,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 onClick={() => setActiveFolder(null)}
                 className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10"
               >
-                <ChevronLeft size={12} /> Default
+                <ChevronLeft size={12} /> {t('library.defaultFolder')}
               </button>
               <FolderOpen size={12} className="ml-1 text-accent-400" />
               <span className="truncate text-gray-200">{activeFolderTitle}</span>
@@ -911,14 +981,14 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
             <div className="flex h-40 flex-col items-center justify-center gap-2 text-gray-500">
               <p>
                 {activeFolder
-                  ? 'This folder is empty. Drag wallpapers here.'
+                  ? t('library.folderEmpty')
                   : activeCount > 0
-                    ? 'No wallpapers match your filters'
-                    : 'Your library is empty'}
+                    ? t('library.noMatches')
+                    : t('library.empty')}
               </p>
               {activeCount === 0 && !activeFolder && (
                 <p className="text-xs">
-                  Click Scan to import wallpapers from your workshop folder
+                  {t('library.emptyHint')}
                 </p>
               )}
             </div>
@@ -949,7 +1019,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                       {folder.title}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {folderCounts.get(folder.id) ?? 0} items
+                      {t('library.folderItems', { count: folderCounts.get(folder.id) ?? 0 })}
                     </p>
                   </div>
                 </div>
@@ -967,6 +1037,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 lweInstalled={lweInstalled}
                 steam={steamStateOf(wallpaper.id)}
                 borders={cardBorders}
+                badges={cardBadges}
                 currentPlaylistId={currentPlaylistId}
                 previewSize={previewSize}
                 isInCurrentPlaylist={currentPlaylistItemIds.has(wallpaper.id)}
@@ -980,7 +1051,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
           {totalPages > 1 && (
             <div className="mt-6 flex justify-center">
               <Pagination page={safePage} totalPages={totalPages} onPage={setPage}>
-                Page {safePage} of {totalPages} ({totalItems} items)
+                {t('pagination.page', { page: safePage, total: totalPages })} {t('pagination.items', { count: totalItems })}
               </Pagination>
             </div>
           )}
@@ -1016,10 +1087,10 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
               setFolderMenu(null)
             }}
           >
-            Rename
+            {t('common.rename')}
           </MenuItem>
           <MenuItem icon={Trash2} danger onClick={() => handleDeleteFolder(folderMenu.folder.id)}>
-            Delete
+            {t('common.delete')}
           </MenuItem>
         </ContextMenu>
       )}

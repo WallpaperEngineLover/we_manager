@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { FavoriteFailure, FavoriteStatus } from '@shared/types'
 import { useToast } from '../components/common/Toast'
+import { t } from '../i18n'
 
 export const FAVORITE_IDS_KEY = ['steam-favorite-ids']
 export const FAVORITE_STATUS_KEY = ['steam-favorite-status']
@@ -58,7 +59,7 @@ export function useFavoriteAction(onError?: (message: string) => void) {
     try {
       const { confirmed } = await window.electronAPI.steam.favorite(id, add)
       if (confirmed) recordFavorites([id], add)
-      else report('Could not confirm the favorite on Steam - try again')
+      else report(t('favorite.unconfirmed'))
     } catch (err) {
       report((err as Error).message)
     } finally {
@@ -75,7 +76,7 @@ export function useBatchFavorite(): (ids: string[], add: boolean) => Promise<voi
   const recordFavorites = useRecordFavorites()
 
   return async (ids: string[], add: boolean) => {
-    if (ids.length > 1) showToast(`${add ? 'Adding' : 'Removing'} ${ids.length} favorites on Steam...`)
+    if (ids.length > 1) showToast(t(add ? 'favorite.adding' : 'favorite.removing', { count: ids.length }))
 
     const results = await Promise.allSettled(ids.map((id) => window.electronAPI.steam.favorite(id, add)))
     const confirmedIds = ids.filter((_, i) => {
@@ -85,12 +86,11 @@ export function useBatchFavorite(): (ids: string[], add: boolean) => Promise<voi
     recordFavorites(confirmedIds, add)
 
     const failed = ids.length - confirmedIds.length
-    const done = add ? 'Added' : 'Removed'
-    const what = confirmedIds.length === 1 ? 'favorite' : 'favorites'
+    const count = confirmedIds.length
     showToast(
       failed === 0
-        ? `${done} ${confirmedIds.length} ${what} on Steam`
-        : `${done} ${confirmedIds.length} ${what}, ${failed} failed - their cards have a dashed border, right-click to try again`,
+        ? t(add ? 'favorite.addedCount' : 'favorite.removedCount', { count })
+        : t(add ? 'favorite.addedSomeFailed' : 'favorite.removedSomeFailed', { count, failed }),
       failed === 0 ? undefined : { warning: true, durationMs: 5000 }
     )
   }

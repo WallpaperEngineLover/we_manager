@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
+import { t } from '../../i18n'
 
 interface Props {
   text: string
@@ -27,7 +28,7 @@ export default function CopyField({ text, label }: Props) {
       </code>
       <button
         onClick={copy}
-        title="Copy"
+        title={t('common.copy')}
         className="shrink-0 rounded p-1.5 text-gray-500 hover:bg-fg/5 hover:text-gray-200"
       >
         {copied ? <Check size={13} /> : <Copy size={13} />}

@@ -57,6 +57,16 @@ describe('compositorAutostartLine', () => {
     )
   })
 
+  it('takes a command with arguments, as a Flatpak is started', () => {
+    const flatpak = ['flatpak', 'run', 'io.github.WallpaperEngineLover.we_manager']
+    expect(compositorAutostartLine('hyprland', flatpak)).toBe(
+      'exec-once = flatpak run io.github.WallpaperEngineLover.we_manager --minimized'
+    )
+    expect(compositorAutostartLine('niri', flatpak)).toBe(
+      'spawn-at-startup "flatpak" "run" "io.github.WallpaperEngineLover.we_manager" "--minimized"'
+    )
+  })
+
   it('has nothing for sessions that run the autostart entry themselves', () => {
     expect(compositorAutostartLine('kde', '/usr/bin/we-manager')).toBeNull()
     expect(compositorAutostartLine('gnome', '/usr/bin/we-manager')).toBeNull()

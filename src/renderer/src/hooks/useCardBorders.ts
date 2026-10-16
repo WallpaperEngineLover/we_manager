@@ -1,12 +1,17 @@
 import { useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { DEFAULT_CARD_BORDERS, type CardBorderKind, type CardBorders } from '@shared/cardBorders'
+import { DEFAULT_CARD_BADGES, type CardBadges } from '@shared/cardBadges'
 import { useConfig } from './queries'
 import { useDislikedIds, useVotedIds } from './useVotes'
 import { useFavoriteIds, useFavoriteStatus } from './useFavorites'
 
 export function useCardBorders(): CardBorders {
   return useConfig()?.cardBorders ?? DEFAULT_CARD_BORDERS
+}
+
+export function useCardBadges(): CardBadges {
+  return useConfig()?.cardBadges ?? DEFAULT_CARD_BADGES
 }
 
 export function useFailedVotes(): Record<string, string> {

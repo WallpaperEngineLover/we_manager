@@ -1,5 +1,18 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Archive, Copy, ExternalLink, Eye, FolderOpen, HardDrive, MoveRight, Trash2, User } from 'lucide-react'
+import {
+  Archive,
+  Columns3,
+  Copy,
+  ExternalLink,
+  Eye,
+  FolderOpen,
+  HardDrive,
+  Monitor,
+  MoveRight,
+  ShieldCheck,
+  Trash2,
+  User
+} from 'lucide-react'
 import type { ExtraLibrary, WallpaperMeta } from '@shared/types'
 import {
   ContextMenu,
@@ -13,9 +26,10 @@ import {
 } from './ContextMenu'
 import { useToast } from './Toast'
 import { useConfig, useFolders } from '../../hooks/queries'
+import { useDisplayTargets } from '../../hooks/useDisplayTargets'
 import { useBatchVote } from '../../hooks/useVotes'
 import { useBatchFavorite, useFavoriteIds } from '../../hooks/useFavorites'
-import { useUnsubscribe } from '../../hooks/useWallpaperActions'
+import { useUnsubscribe, useVerifyFiles } from '../../hooks/useWallpaperActions'
 import { isWorkshopId, openWorkshopPage } from '../../utils/steam'
 import {
   backupSummary,
@@ -26,9 +40,10 @@ import {
   transferSummary,
   videoPath
 } from '../../utils/wallpaper'
+import { t } from '../../i18n'
 
-// Right-click menu for library wallpapers, shared by the library grid and playlists.
-// ids is what was right-clicked (the selection), wallpapers the ones of those that are loaded.
+// ids is the selection, wallpapers the loaded ones of it
+
 export default function WallpaperContextMenu({
   x,
   y,
@@ -54,11 +69,14 @@ export default function WallpaperContextMenu({
   const batchFavorite = useBatchFavorite()
   const favoriteIds = useFavoriteIds()
   const unsubscribe = useUnsubscribe()
+  const verifyFiles = useVerifyFiles()
+  const { targets, perScreen } = useDisplayTargets()
 
   const backupable = wallpapers.filter((w) => w.source === 'workshop')
   const transferable = wallpapers.filter(isPlayable)
   const backups = wallpapers.filter(hasBackup)
   const video = wallpapers.map(videoPath).find(Boolean)
+  const splittable = wallpapers.filter((w) => isPlayable(w) && ['scene', 'video', 'web'].includes(w.type))
   const creatorSource = wallpapers.length === 1 && canBrowseCreator(wallpapers[0]) ? wallpapers[0] : undefined
   const { hasFolder, moveTargets } = menuState(ids)
 
@@ -73,30 +91,36 @@ export default function WallpaperContextMenu({
     try {
       if (backupable.length === 1) {
         const result = await window.electronAPI.backup.item(backupable[0].id)
-        const done = result.alreadyBackedUp ? 'Backup already up to date' : 'Backed up'
-        showToast(result.unsubscribed ? `${done}, unsubscribed` : done)
+        const done = result.alreadyBackedUp ? t('backup.alreadyCurrent') : t('backup.done')
+        showToast(result.unsubscribed ? t('backup.doneUnsubscribed', { done }) : done)
       } else {
         showToast(backupSummary(await window.electronAPI.backup.selection(backupable.map((w) => w.id))))
       }
     } catch (err) {
-      showToast(`Backup failed: ${(err as Error).message}`)
+      showToast(t('backup.failed', { error: (err as Error).message }))
     }
     queryClient.invalidateQueries({ queryKey: ['library'] })
   }
 
   async function removeBackup() {
     const backupOnly = backups.filter((w) => w.source === 'backup').length
-    const what = backups.length === 1 ? `the backup of "${backups[0].title}"` : `${backups.length} backups`
+    const question =
+      backups.length === 1
+        ? t('backup.deleteOne', { title: backups[0].title })
+        : t('backup.deleteMany', { count: backups.length })
     const note =
-      backupOnly > 0
-        ? `\n\n${backupOnly === 1 && backups.length === 1 ? 'It is' : `${backupOnly} of them are`} not subscribed on Steam anymore and will be removed from the library.`
-        : ''
-    if (!confirm(`Delete ${what} from the backup folder?${note}`)) return
+      backupOnly === 0
+        ? ''
+        : backups.length === 1
+          ? t('backup.deleteOneNote')
+          : t('backup.deleteManyNote', { count: backupOnly })
+    if (!confirm(note ? `${question}\n\n${note}` : question)) return
 
     const result = await window.electronAPI.backup.remove(backups.map((w) => w.id))
-    showToast(
-      `Removed ${result.removed} backup${result.removed === 1 ? '' : 's'}${result.keptDirs.length > 0 ? ` (${result.keptDirs.length} outside the backup folder kept on disk)` : ''}${result.failed > 0 ? `, ${result.failed} failed` : ''}`
-    )
+    let summary = t('backup.removed', { count: result.removed })
+    if (result.keptDirs.length > 0) summary += ' ' + t('backup.keptOutside', { count: result.keptDirs.length })
+    if (result.failed > 0) summary += ', ' + t('common.failedCount', { count: result.failed })
+    showToast(summary)
     queryClient.invalidateQueries({ queryKey: ['library'] })
     queryClient.invalidateQueries({ queryKey: ['folders'] })
   }
@@ -106,12 +130,10 @@ export default function WallpaperContextMenu({
       const workshop = transferable.filter((w) => w.source === 'workshop').length
       const backupOnly = transferable.filter((w) => w.source === 'backup').length
       const notes = [
-        workshop > 0 &&
-          `${workshop === 1 ? 'The workshop wallpaper' : `${workshop} workshop wallpapers`} will be unsubscribed on Steam, otherwise Steam downloads ${workshop === 1 ? 'it' : 'them'} again.`,
-        backupOnly > 0 &&
-          `${backupOnly === 1 ? 'The backup' : `${backupOnly} backups`} will leave the backup folder.`
+        workshop > 0 && t('transfer.moveUnsubscribes', { count: workshop }),
+        backupOnly > 0 && t('transfer.moveLeavesBackup', { count: backupOnly })
       ].filter(Boolean)
-      if (notes.length > 0 && !confirm(`Move to "${library.name}"?\n\n${notes.join('\n')}`)) return
+      if (notes.length > 0 && !confirm(`${t('transfer.moveConfirm', { library: library.name })}\n\n${notes.join('\n')}`)) return
     }
     try {
       const result = await window.electronAPI.library.transfer(
@@ -121,9 +143,17 @@ export default function WallpaperContextMenu({
       )
       showToast(transferSummary(result, mode, library.name))
     } catch (err) {
-      showToast(`${mode === 'copy' ? 'Copy' : 'Move'} failed: ${(err as Error).message}`)
+      showToast(t(mode === 'copy' ? 'transfer.copyFailed' : 'transfer.moveFailed', { error: (err as Error).message }))
     }
     queryClient.invalidateQueries({ queryKey: ['library'] })
+  }
+
+  async function addToSplit(screen: string) {
+    const split = config?.splitScreens?.[screen] ?? { layout: 'aspect' as const, slots: [] }
+    const slots = [...split.slots, ...splittable.map((w) => ({ wallpaperId: w.id }))]
+    await window.electronAPI.wallpaper.setSplit(screen, { ...split, slots })
+    queryClient.invalidateQueries({ queryKey: ['config'] })
+    showToast(t('split.added', { count: splittable.length, screen }))
   }
 
   async function openLocally() {
@@ -135,7 +165,7 @@ export default function WallpaperContextMenu({
     if (!creatorSource) return
     const creatorSteamId = await resolveCreatorSteamId(creatorSource)
     if (creatorSteamId) onBrowseCreator?.(creatorSteamId)
-    else showToast('Could not find creator info for this wallpaper')
+    else showToast(t('creator.notFound'))
   }
 
   return (
@@ -144,16 +174,21 @@ export default function WallpaperContextMenu({
 
       {backupable.length > 0 && isBackupConfigured && (
         <MenuItem icon={Archive} onClick={run(backup)}>
-          Backup
+          {t('backup.action')}
         </MenuItem>
       )}
       {backups.length > 0 && (
         <MenuItem icon={Trash2} danger onClick={run(removeBackup)}>
-          Delete backup
+          {t('backup.delete')}
+        </MenuItem>
+      )}
+      {backupable.length > 0 && (
+        <MenuItem icon={ShieldCheck} onClick={run(async () => showToast(await verifyFiles(backupable.map((w) => w.id), () => {})))}>
+          {t('verify.action')}
         </MenuItem>
       )}
       <MenuItem danger onClick={run(() => unsubscribe(ids))}>
-        Unsubscribe
+        {t('subscribe.unsubscribe')}
       </MenuItem>
 
       <MenuSeparator />
@@ -166,33 +201,44 @@ export default function WallpaperContextMenu({
 
       <MenuSeparator />
       <MenuItem icon={ExternalLink} onClick={run(() => ids.forEach(openWorkshopPage))}>
-        Open in Steam Workshop
+        {t('menu.openWorkshop')}
       </MenuItem>
       <MenuItem icon={FolderOpen} onClick={run(openLocally)}>
-        Open wallpaper locally
+        {t('menu.openLocally')}
       </MenuItem>
       {video && (
         <MenuItem icon={Eye} onClick={run(() => window.electronAPI.shell.openWithDefault(video))}>
-          Preview in media player
+          {t('menu.previewMedia')}
         </MenuItem>
       )}
       {creatorSource && (
         <MenuItem icon={User} onClick={run(browseCreator)}>
-          Browse wallpapers from this creator
+          {t('menu.browseCreator')}
         </MenuItem>
+      )}
+      {perScreen && splittable.length > 0 && (
+        <SubMenu icon={Columns3} label={t('split.addTo')}>
+          {targets
+            .filter((screen) => screen !== '*')
+            .map((screen) => (
+              <MenuItem key={screen} icon={Monitor} onClick={run(() => addToSplit(screen))}>
+                {screen}
+              </MenuItem>
+            ))}
+        </SubMenu>
       )}
 
       {libraries.length > 0 && transferable.length > 0 && (
         <>
           <MenuSeparator />
-          <SubMenu icon={Copy} label="Copy to library">
+          <SubMenu icon={Copy} label={t('transfer.copyTo')}>
             {libraries.map((l) => (
               <MenuItem key={l.path} icon={HardDrive} onClick={run(() => transfer(l, 'copy'))}>
                 <span title={l.path}>{l.name}</span>
               </MenuItem>
             ))}
           </SubMenu>
-          <SubMenu icon={MoveRight} label="Move to library">
+          <SubMenu icon={MoveRight} label={t('transfer.moveTo')}>
             {libraries.map((l) => (
               <MenuItem key={l.path} icon={HardDrive} onClick={run(() => transfer(l, 'move'))}>
                 <span title={l.path}>{l.name}</span>

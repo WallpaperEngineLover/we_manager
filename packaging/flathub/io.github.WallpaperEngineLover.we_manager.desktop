@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=WE Manager
+Comment=Wallpaper Engine workshop manager
+Exec=we-manager %U
+Icon=io.github.WallpaperEngineLover.we_manager
+Terminal=false
+Categories=Utility;
+# Electron names its window after package.json
+StartupWMClass=we-manager

@@ -4,15 +4,15 @@ import { Puzzle } from 'lucide-react'
 import type { GnomeExtensionStatus } from '@shared/types'
 import { useToast } from '../common/Toast'
 import CopyField from '../common/CopyField'
+import { t } from '../../i18n'
+import type { MessageKey } from '@shared/i18n'
 
-const MESSAGES: Record<GnomeExtensionStatus['state'], string> = {
-  'not-needed': '',
-  active: '',
-  outdated: 'A newer version of the GNOME Shell extension is installed, it loads after you log out and back in.',
-  'needs-relogin': 'The GNOME Shell extension is installed. Log out and back in once so GNOME Shell loads it.',
-  disabled: 'The linux-wallpaperengine GNOME Shell extension is turned off, wallpapers cannot start without it.',
-  'not-installed': 'GNOME on Wayland needs the linux-wallpaperengine GNOME Shell extension to show wallpapers.',
-  error: 'The linux-wallpaperengine GNOME Shell extension failed to load.'
+const MESSAGES: Record<Exclude<GnomeExtensionStatus['state'], 'not-needed' | 'active'>, MessageKey> = {
+  outdated: 'gnome.outdated',
+  'needs-relogin': 'gnome.needsRelogin',
+  disabled: 'gnome.disabled',
+  'not-installed': 'gnome.notInstalled',
+  error: 'gnome.error'
 }
 
 export default function GnomeExtensionNotice() {
@@ -24,7 +24,7 @@ export default function GnomeExtensionNotice() {
     queryFn: () => window.electronAPI.gnomeExtension.status()
   })
 
-  if (!status || !status.needed || status.state === 'active') return null
+  if (!status || !status.needed || status.state === 'active' || status.state === 'not-needed') return null
 
   const canInstall = status.bundled && (status.state === 'not-installed' || status.state === 'disabled'
     || status.state === 'error')
@@ -49,10 +49,10 @@ export default function GnomeExtensionNotice() {
     <div className="flex items-center gap-3 text-sm text-gray-300">
       <Puzzle size={16} className="shrink-0 text-accent-400" />
       <span className="flex-1">
-        {MESSAGES[status.state]}
+        {t(MESSAGES[status.state])}
         {status.state === 'error' && status.detail && <span className="ml-1 text-gray-500">{status.detail}</span>}
         {!status.bundled && status.state === 'not-installed' && (
-          <span className="ml-1 text-gray-500">The installed engine does not ship it, update linux-wallpaperengine.</span>
+          <span className="ml-1 text-gray-500">{t('gnome.notBundled')}</span>
         )}
       </span>
       {canInstall && (
@@ -61,12 +61,12 @@ export default function GnomeExtensionNotice() {
           disabled={busy}
           className="rounded bg-accent-600 px-3 py-1 text-xs font-medium text-white hover:bg-accent-500 disabled:opacity-50"
         >
-          {busy ? 'Installing...' : status.state === 'not-installed' ? 'Install extension' : 'Reinstall and enable'}
+          {busy ? t('gnome.installing') : status.state === 'not-installed' ? t('gnome.install') : t('gnome.reinstall')}
         </button>
       )}
       {commands && (
         <button onClick={recheck} className="rounded bg-fg/10 px-3 py-1 text-xs hover:bg-fg/20">
-          Check again
+          {t('gnome.checkAgain')}
         </button>
       )}
     </div>
@@ -78,10 +78,10 @@ export default function GnomeExtensionNotice() {
       {commands && (
         <div className="flex flex-col gap-1 pl-7 text-xs text-gray-400">
           <span>
-            Or by hand in a terminal, then log out and back in once so GNOME Shell loads it:
+            {t('gnome.byHand')}
           </span>
           {commands.map((command) => <CopyField key={command} text={command} />)}
-          <CopyField text={commands.join(' && ')} label="All at once" />
+          <CopyField text={commands.join(' && ')} label={t('gnome.allAtOnce')} />
         </div>
       )}
     </div>

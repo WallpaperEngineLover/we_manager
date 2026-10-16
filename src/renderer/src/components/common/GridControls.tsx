@@ -2,10 +2,11 @@ import type { ReactNode } from 'react'
 import { Loader2, Search, SlidersHorizontal, X, type LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 import type { MarqueeRect } from '../../hooks/useSelectableGrid'
+import { t, inSentence } from '../../i18n'
 
-// Toolbar and grid pieces shared by the workshop and library views
 
-// shows/hides a side panel; stays highlighted while the panel's filters are active even when hidden
+// stays highlighted while the panel's filters are active
+
 export function PanelToggle({
   icon: Icon,
   label,
@@ -22,7 +23,7 @@ export function PanelToggle({
   return (
     <button
       onClick={onClick}
-      title={open ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+      title={open ? t('panel.hide', { panel: inSentence(label) }) : t('panel.show', { panel: inSentence(label) })}
       className={clsx(
         'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
         open || activeCount > 0 ? 'bg-accent-600 text-white' : 'bg-fg/5 text-gray-300 hover:bg-fg/10'
@@ -36,7 +37,7 @@ export function PanelToggle({
 }
 
 export function FiltersToggle({ open, activeCount, onClick }: { open: boolean; activeCount: number; onClick: () => void }) {
-  return <PanelToggle icon={SlidersHorizontal} label="Filters" open={open} activeCount={activeCount} onClick={onClick} />
+  return <PanelToggle icon={SlidersHorizontal} label={t('panel.filters')} open={open} activeCount={activeCount} onClick={onClick} />
 }
 
 export function ResetFiltersButton({ onClick }: { onClick: () => void }) {
@@ -45,7 +46,7 @@ export function ResetFiltersButton({ onClick }: { onClick: () => void }) {
       onClick={onClick}
       className="flex items-center gap-1 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
     >
-      <X size={14} /> Reset
+      <X size={14} /> {t('common.reset')}
     </button>
   )
 }
@@ -142,7 +143,7 @@ export function Pagination({
         onClick={() => onPage(Math.max(1, page - 1))}
         className="rounded bg-fg/5 px-2.5 py-1 text-gray-300 hover:bg-fg/10 disabled:opacity-40"
       >
-        Prev
+        {t('pagination.prev')}
       </button>
       <span>{children}</span>
       <button
@@ -150,7 +151,7 @@ export function Pagination({
         onClick={() => onPage(page + 1)}
         className="rounded bg-fg/5 px-2.5 py-1 text-gray-300 hover:bg-fg/10 disabled:opacity-40"
       >
-        Next
+        {t('common.next')}
       </button>
     </div>
   )

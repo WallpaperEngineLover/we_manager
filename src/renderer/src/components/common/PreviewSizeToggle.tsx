@@ -1,10 +1,12 @@
 import clsx from 'clsx'
 import type { PreviewSize } from '../../hooks/usePreviewSize'
+import { t } from '../../i18n'
+import type { MessageKey } from '@shared/i18n'
 
-const OPTIONS: { value: PreviewSize; label: string }[] = [
-  { value: 'small', label: 'S' },
-  { value: 'normal', label: 'M' },
-  { value: 'big', label: 'L' }
+const OPTIONS: { value: PreviewSize; label: string; title: MessageKey }[] = [
+  { value: 'small', label: 'S', title: 'previewSize.small' },
+  { value: 'normal', label: 'M', title: 'previewSize.normal' },
+  { value: 'big', label: 'L', title: 'previewSize.big' }
 ]
 
 export default function PreviewSizeToggle({
@@ -15,12 +17,12 @@ export default function PreviewSizeToggle({
   onChange: (size: PreviewSize) => void
 }) {
   return (
-    <div className="flex rounded-lg overflow-hidden text-xs" title="Preview size">
+    <div className="flex rounded-lg overflow-hidden text-xs" title={t('previewSize.title')}>
       {OPTIONS.map((opt) => (
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}
-          title={opt.value[0].toUpperCase() + opt.value.slice(1)}
+          title={t(opt.title)}
           className={clsx(
             'px-2.5 py-2 transition-colors',
             value === opt.value

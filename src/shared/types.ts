@@ -13,6 +13,7 @@ export type ScalingMode = 'default' | 'stretch' | 'fit' | 'fill' | 'center'
 
 export type WallpaperBackend =
   | 'swww'
+  | 'hyprpaper'
   | 'swaybg'
   | 'feh'
   | 'xwallpaper'
@@ -32,12 +33,38 @@ export type WorkshopQueryType =
 
 export type ContentRating = 'everyone' | 'questionable' | 'mature' | 'uncategorized'
 
-/** How this process identifies itself to Steam - see config.service.ts getSteamIdentity(). */
+/** See getSteamIdentity() */
 export type SteamIdentity = 'wallpaper-engine' | 'standalone'
 
 export interface ExtraLibrary {
   path: string
   name: string
+}
+
+export type VerifyProblem =
+  | 'notInstalled'
+  | 'needsUpdate'
+  | 'missingFolder'
+  | 'brokenProject'
+  | 'missingMainFile'
+  | 'missingData'
+  | 'missingDependency'
+
+export interface VerifyProgressEvent {
+  done: number
+  total: number
+}
+
+export interface VerifyResult {
+  checked: number
+  skipped: number
+  damaged: string[]
+}
+
+export interface RepairResult {
+  /** rechecked in the background once finished */
+  started: number
+  failed: number
 }
 
 export interface WallpaperMeta {
@@ -60,43 +87,34 @@ export interface WallpaperMeta {
   authorName?: string
   source: 'workshop' | 'local' | 'backup'
   tags: string[]
-  /** Steam Workshop resolution tags ("1920 x 1080", "Ultrawide 3440 x 1440", ...), from the live item */
+  /** Workshop resolution tags, e.g. "Ultrawide 3440 x 1440" */
   resolutions?: string[]
   categories: string[]
   downloading?: boolean
   downloadFailed?: boolean
   fpsOverride?: number
   volumeOverride?: number
-  /** Forces the "xray" scene effect's reveal spot to cover the whole masked area instead of following the mouse */
+  /** xray reveal covers the whole mask instead of following the mouse */
   xrayFullReveal?: boolean
   xrayDisabled?: boolean
-  /** How the wallpaper is scaled to fit the screen, applied via linux-wallpaperengine --scaling */
+  /** --scaling */
   scalingMode?: ScalingMode
-  /** Manual zoom layered on top of scalingMode via linux-wallpaperengine --zoom (1 = no extra zoom) */
+  /** --zoom on top of scalingMode, 1 = none */
   zoom?: number
-  /** Re-centers the crop window, each axis in [-1, 1] (0 = centered), via linux-wallpaperengine --offset */
+  /** --offset, each axis in [-1, 1] */
   offsetX?: number
   offsetY?: number
-  /** Force-disables the scene's mouse parallax effect via linux-wallpaperengine --disable-parallax */
+  /** --disable-parallax */
   disableParallax?: boolean
-  /**
-   * Grows the scene's render canvas so layers that stick out past the camera (a tall picture only
-   * meant to be revealed by parallax) show in full, via linux-wallpaperengine --expand-canvas
-   */
+  /** --expand-canvas: shows layers that stick out past the camera */
   expandCanvas?: boolean
-  /** --repair-assets: loads what broken wallpapers meant where WE shows nothing useful (e.g. a texture named "") */
+  /** --repair-assets: loads what broken wallpapers meant, e.g. a texture named "" */
   repairAssets?: boolean
-  /**
-   * Color shown outside the wallpaper's bounds (Center/Fit letterboxing, zoomed-out scaling) as a
-   * "RRGGBB"/"RRGGBBAA" hex string, applied via linux-wallpaperengine --corner-color. Default: black.
-   */
+  /** --corner-color, "RRGGBB"/"RRGGBBAA" outside the wallpaper's bounds */
   cornerColor?: string
-  /** Wallpaper Engine's image filter, color options and flip (scene and video only), applied live */
+  /** WE's image filter, color options and flip (scene and video) */
   imageAdjustments?: ImageAdjustments
-  /**
-   * Global playback speed multiplier for animations/particles/effects, applied via
-   * linux-wallpaperengine --speed (1 = normal speed, less than 1 = slower)
-   */
+  /** --speed, 1 = normal */
   playbackSpeed?: number
   /** --video-segments parts, empty plays the whole video */
   videoSegments?: VideoSegment[]
@@ -105,66 +123,63 @@ export interface WallpaperMeta {
   videoEnd?: number
   backedUp?: boolean
   backupDir?: string
-  /** The workshop copy no longer matches the backup (file list or sizes), e.g. the author published an update */
+  /** The workshop copy no longer matches the backup */
   backupOutdated?: boolean
-  /** Set by a "check unavailable" scan: true if the item has been removed from the Steam Workshop */
+  /** Removed from the Workshop, set by the unavailable check */
   unavailable?: boolean
-  /** Object/layer ids or names to force-hide via linux-wallpaperengine --disable-object */
+  /** Set by "Verify files", cleared once it checks out */
+  verifyProblem?: VerifyProblem
+  /** --disable-object ids or names */
   disabledObjects?: string[]
-  /** Object/layer ids or names to force-show via linux-wallpaperengine --enable-object */
+  /** --enable-object ids or names */
   enabledObjects?: string[]
-  /** Effect ids or editor names to force-hide via linux-wallpaperengine --disable-effect */
+  /** --disable-effect ids or names */
   disabledEffects?: string[]
-  /** Effect ids or editor names to force-show via linux-wallpaperengine --enable-effect */
+  /** --enable-effect ids or names */
   enabledEffects?: string[]
-  /** Property name -> override value, applied via linux-wallpaperengine --set-property name=value */
+  /** --set-property name=value */
   propertyOverrides?: Record<string, string>
-  /**
-   * Object id -> audio-reactive pulse sensitivity multiplier, applied via linux-wallpaperengine
-   * --audio-sensitivity id=multiplier. 0 locks the object (no pulse), 1 is the wallpaper's
-   * original authored behavior, >1 exaggerates it. Objects with no entry here use
-   * defaultAudioSensitivity from the global config instead.
-   */
+  /** --audio-sensitivity id=multiplier, 0 = no pulse, 1 = as authored */
   audioSensitivity?: Record<string, number>
-  /**
-   * Sound object id -> volume (0-1), applied live via linux-wallpaperengine's sound-volume
-   * hotswap. Independent of the global volume - lets a wallpaper with several alternate music
-   * tracks (each its own Sound object) play only one.
-   */
+  /** Sound object id -> volume (0-1), independent of the global volume */
   soundVolume?: Record<string, number>
-  /**
-   * Extra linux-wallpaperengine arguments appended verbatim to the launch, e.g. `--render-debug skip-effect=726`.
-   * Launch-time only, so changing this always restarts the process.
-   */
+  /** Extra launch arguments, changing them always restarts the engine */
   customArgs?: string
-  /** Launch-only engine flags, each one unset here falls back to the global setting */
+  /** Unset flags fall back to the global setting */
   engineFlags?: EngineFlags
   compat?: WallpaperCompat
-  /** Scene with general.hdr on, or a PQ/HLG video. Unset until the background HDR pass has looked at it */
+  /** Scene with general.hdr on, or a PQ/HLG video. Unset until detected */
   hdr?: boolean
-  /** Thumbnail made by the app (a screenshot of the running wallpaper, or an image the user picked) */
+  /** Scene with a spatialized sound object. Unset until detected */
+  hrtf?: boolean
   customPreview?: string
-  /** Show the Workshop/project preview even though a custom one exists */
   useOriginalPreview?: boolean
 }
 
 export type FullscreenPauseMode = 'default' | 'off' | 'active-only'
 
-/** Wallpaper Engine's post processing setting, "ultra" turns on HDR rendering for scenes that ask for it */
+/** "ultra" turns on HDR for scenes that ask for it */
 export type PostProcessingQuality = 'enabled' | 'ultra'
 
-/** Wallpaper Engine's volumetrics/shadow quality settings */
 export type LightingQuality = 'disabled' | 'low' | 'medium' | 'high' | 'ultra'
 
-/** Wallpaper Engine's anti-aliasing setting, only scenes with 3D models use it */
+/** Only scenes with 3D models use it */
 export type MsaaQuality = 'none' | 'x2' | 'x4' | 'x8'
 
-/** Scene supersampling factor per axis, linux-wallpaperengine only */
+/** Per axis */
 export type SsaaQuality = 'none' | 'x2' | 'x3' | 'x4'
 
 export type HwdecBackend = 'auto' | 'no' | 'vaapi' | 'vaapi-copy' | 'nvdec' | 'nvdec-copy' | 'vulkan'
 
-/** linux-wallpaperengine flags that only take effect on a fresh launch */
+/** auto = while the default output is headphones */
+export type HrtfMode = 'auto' | 'on' | 'off'
+
+/** FPS limit on battery, off = same as plugged in */
+export type BatteryFps = 'off' | 'pause' | '10' | '15' | '20' | '30'
+
+/** Minutes without input before wallpapers pause */
+export type IdlePause = 'off' | '1' | '5' | '10' | '15' | '30'
+
 export interface EngineFlags {
   disableParticles?: boolean
   disableMouse?: boolean
@@ -173,6 +188,8 @@ export interface EngineFlags {
   fullscreenPause?: FullscreenPauseMode
   /** --pause-on-focus, WE's "Other application focused: Pause" */
   pauseOnFocus?: boolean
+  /** --pause-on-maximized, wlroots only (KDE and GNOME always pause) */
+  pauseOnMaximized?: boolean
   automute?: boolean
   silent?: boolean
   hdr?: boolean
@@ -182,7 +199,12 @@ export interface EngineFlags {
   msaa?: MsaaQuality
   ssaa?: SsaaQuality
   hwdec?: HwdecBackend
-  /** --layer background (plasmashell's desktop can cover the wallpaper on KDE, niri needs it); key kept for stored configs */
+  hrtf?: HrtfMode
+  /** --fps-battery / --pause-on-battery */
+  batteryFps?: BatteryFps
+  /** --idle-pause */
+  idlePause?: IdlePause
+  /** --layer background; key kept for stored configs */
   kdeBackgroundLayer?: boolean
 }
 
@@ -190,7 +212,7 @@ export interface EngineFlagPreset {
   id: string
   name: string
   flags: EngineFlags
-  /** Applied as the default FPS (globally) or the FPS override (per wallpaper); undefined leaves it alone */
+  /** undefined leaves the FPS alone */
   fps?: number | null
   builtIn?: boolean
 }
@@ -205,9 +227,7 @@ export interface WallpaperCrash {
 }
 
 export interface WallpaperCompat {
-  /** The engine died right after this wallpaper was hot-swapped in */
   hotswapCrash?: boolean
-  /** Outcome of the last fresh launch that was watched for a crash */
   freshLaunch?: 'ok' | 'crash'
   runtimeCrashes?: number
   lastCrash?: WallpaperCrash
@@ -221,11 +241,10 @@ export interface CrashEvent {
   title: string
   screen: string
   phase: CrashPhase
-  /** What the app did about it, for the toast */
   outcome: string
 }
 
-/** '*' is the one engine process covering every screen */
+/** '*' = one engine for every screen */
 export type ScreenTarget = string
 
 export type DisplayMode = 'shared' | 'per-screen'
@@ -233,6 +252,21 @@ export type DisplayMode = 'shared' | 'per-screen'
 export interface ScreenAssignment {
   screen: ScreenTarget
   wallpaperId: string
+}
+
+/** How the slots of a split screen share it, see the engine's --split-layout */
+export type SplitLayout = 'aspect' | 'equal' | 'center'
+
+export interface SplitSlot {
+  wallpaperId: string
+  /** this slot's --scaling, the wallpaper's own when unset */
+  scalingMode?: ScalingMode
+}
+
+/** --screen-slot, per-screen display mode only */
+export interface SplitScreen {
+  layout: SplitLayout
+  slots: SplitSlot[]
 }
 
 export type ScheduleAction =
@@ -250,7 +284,6 @@ export interface ScheduleRule {
   enabled: boolean
   trigger: ScheduleTrigger
   action: ScheduleAction
-  /** Screen name in per-screen mode, '*' for every screen */
   screen: ScreenTarget
 }
 
@@ -260,22 +293,22 @@ export interface LweSceneObject {
   type: 'image' | 'particle' | 'text' | 'sound' | 'unknown'
 }
 
-/** One effect (bloom, blur, glow, etc) attached to an object, as reported by --list-effects */
+/** From --list-effects */
 export interface LweSceneEffect {
   id: string
-  /** Effect's name for the editor, e.g. "Bloom" - not necessarily unique across objects */
+  /** Not unique across objects */
   name: string
   objectId: string
   objectName: string
-  /** The effect asset's own category, e.g. "Blur/Sharpen" - empty if the wallpaper doesn't set one */
+  /** e.g. "Blur/Sharpen", may be empty */
   group: string
 }
 
-/** One audio-reactive script property on a scene object, as reported by --list-audio-objects */
+/** From --list-audio-objects */
 export interface LweAudioObject {
   objectId: string
   objectName: string
-  /** The scripted property driving the pulse, e.g. "scale" or "alpha" */
+  /** e.g. "scale" or "alpha" */
   property: string
   minvalue: number
   maxvalue: number
@@ -328,7 +361,7 @@ export interface WorkshopItem {
   upvotes: number
   downvotes: number
   isSubscribed: boolean
-  /** Size in bytes as reported by the Steam Workshop (same figure shown on the item's Steam page); undefined if unavailable. */
+  /** Bytes, as on the item's Steam page */
   fileSize?: number
 }
 
@@ -357,7 +390,6 @@ export interface CreatorWorkshopQueryParams {
 
 export interface ApplyWallpaperOptions {
   wallpaperId: string
-  /** Per-screen mode only: a screen name, or '*' for every screen */
   screen?: ScreenTarget
   backend?: WallpaperBackend
 }
@@ -396,7 +428,7 @@ export interface LibraryFilters {
 export interface WallpaperFolder {
   id: string
   title: string
-  items: string[] // workshop IDs
+  items: string[]
 }
 
 export interface WallpaperEnvironment {
@@ -432,7 +464,7 @@ export type LinuxDistro = 'fedora' | 'arch' | 'debian' | 'unknown'
 /** Which prebuilt release archive fits this machine, or why none does */
 export interface LwePrebuiltTarget {
   supported: boolean
-  /** Release asset name, e.g. linux-wallpaperengine-kde-fedora-44-x86_64.tar.gz */
+  /** Release asset name */
   asset?: string
   label?: string
   reason?: string
@@ -444,6 +476,48 @@ export interface LweInstallProgress {
   stage: 'installing-deps' | 'downloading' | 'cloning' | 'building' | 'installing' | 'done' | 'error'
   message: string
   percentage: number
+}
+
+export interface UpdateChecks {
+  app: boolean
+  engine: boolean
+}
+
+export type UpdateTarget = keyof UpdateChecks
+
+export type AppInstallKind = 'appimage' | 'deb' | 'flatpak' | 'pacman' | 'rpm' | 'source' | 'unknown'
+
+/** package: package manager or Nix, build: source or unknown, bundled: the Flatpak's */
+export type EngineInstallKind = 'prebuilt' | 'package' | 'build' | 'bundled'
+
+export interface AvailableUpdate {
+  version: string
+  /** null when unknown */
+  current: string | null
+  notes: string
+  url: string
+  publishedAt: string
+}
+
+export interface AppUpdateProgress {
+  stage: 'downloading' | 'installing' | 'ready' | 'error'
+  percentage: number
+  message?: string
+}
+
+export interface UpdateStatus {
+  checks: UpdateChecks | null
+  checking: boolean
+  checkedAt: number | null
+  error: string | null
+  appVersion: string
+  appInstall: AppInstallKind
+  app: AvailableUpdate | null
+  appProgress: AppUpdateProgress | null
+  engineInstall: EngineInstallKind | null
+  engineManagedBy?: string
+  engine: AvailableUpdate | null
+  dismissed: Partial<Record<UpdateTarget, string>>
 }
 
 export interface BackupProgressEvent {
@@ -466,15 +540,18 @@ export interface PlaylistItem {
 }
 
 export interface PlaylistSettings {
-  /** Shuffle playback order; reshuffled every time the playlist loops back to the start */
+  /** Reshuffled on every loop */
   randomize: boolean
-  /** Base ordering when randomize is off; 'manual' respects PlaylistItem[] order */
+  /** Used when randomize is off */
   sortBy: 'manual' | 'title' | 'createdAt'
-  /** How long each wallpaper plays before advancing, in seconds */
+  /** Seconds per wallpaper */
   defaultDurationSec: number
-  /** Video wallpapers longer than their duration play to the end once before advancing */
+  /** Longer videos play to the end before advancing */
   finishVideos?: boolean
-  /** 0-100, used for items without a per-item volume override */
+  /** Only Steam favorites, everything when none is */
+  favoritesOnly?: boolean
+  /** 0-100 */
+
   defaultVolume: number
 }
 

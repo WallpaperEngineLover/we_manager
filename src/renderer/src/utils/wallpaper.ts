@@ -1,6 +1,8 @@
-import type { WallpaperMeta } from '@shared/types'
+import type { VerifyProblem, WallpaperMeta } from '@shared/types'
+import type { MessageKey } from '@shared/i18n'
 import { getPreviewSrc } from './preview'
 import { isWorkshopId } from './steam'
+import { t } from '../i18n'
 
 export function isPlayable(w: Pick<WallpaperMeta, 'localPath' | 'downloading' | 'downloadFailed'>): boolean {
   return !!w.localPath && !w.downloading && !w.downloadFailed
@@ -13,6 +15,25 @@ export function hasBackup(w: WallpaperMeta): boolean {
 // removed items can't be updated anymore, those belong to the Unavailable filter
 export function isBackupOutdated(w: WallpaperMeta): boolean {
   return w.source === 'workshop' && !!w.backedUp && !!w.backupOutdated && !w.unavailable
+}
+
+const VERIFY_PROBLEM_LABELS: Record<VerifyProblem, MessageKey> = {
+  notInstalled: 'verify.problem.notInstalled',
+  needsUpdate: 'verify.problem.needsUpdate',
+  missingFolder: 'verify.problem.missingFolder',
+  brokenProject: 'verify.problem.brokenProject',
+  missingMainFile: 'verify.problem.missingMainFile',
+  missingData: 'verify.problem.missingData',
+  missingDependency: 'verify.problem.missingDependency'
+}
+
+export function verifyProblemLabel(problem: VerifyProblem): string {
+  return t(VERIFY_PROBLEM_LABELS[problem])
+}
+
+// a running or failed download shows its own state instead
+export function hasDamagedFiles(w: WallpaperMeta): boolean {
+  return w.source === 'workshop' && !!w.verifyProblem && !w.downloading && !w.downloadFailed
 }
 
 export function videoPath(w: WallpaperMeta): string | undefined {
@@ -35,13 +56,17 @@ export async function resolveCreatorSteamId(w: WallpaperMeta): Promise<string | 
 }
 
 export function backupSummary(result: { backedUp: number; alreadyBackedUp: number; failed: number; unsubscribed: number }): string {
-  return `Backed up ${result.backedUp}${result.alreadyBackedUp > 0 ? `, ${result.alreadyBackedUp} already up to date` : ''}${result.unsubscribed > 0 ? ` (${result.unsubscribed} unsubscribed)` : ''}${result.failed > 0 ? `, ${result.failed} failed` : ''}`
+  let summary = t('backup.backedUpCount', { count: result.backedUp })
+  if (result.alreadyBackedUp > 0) summary += ', ' + t('backup.alreadyUpToDate', { count: result.alreadyBackedUp })
+  if (result.unsubscribed > 0) summary += ' ' + t('backup.unsubscribedCount', { count: result.unsubscribed })
+  if (result.failed > 0) summary += ', ' + t('common.failedCount', { count: result.failed })
+  return summary
 }
 
 export function progressVerb(items: { action?: 'backup' | 'copy' | 'move' }[]): string {
   const actions = new Set(items.map((p) => p.action ?? 'backup'))
-  if (actions.size > 1) return 'Copying'
-  return actions.has('move') ? 'Moving' : actions.has('copy') ? 'Copying' : 'Backing up'
+  if (actions.size > 1) return t('transfer.copying')
+  return actions.has('move') ? t('transfer.moving') : actions.has('copy') ? t('transfer.copying') : t('backup.backingUp')
 }
 
 export function transferSummary(
@@ -49,15 +74,18 @@ export function transferSummary(
   mode: 'copy' | 'move',
   libraryName: string
 ): string {
-  const verb = mode === 'copy' ? 'Copied' : 'Moved'
-  const parts = [`${verb} ${result.done} to ${libraryName}`]
-  if (result.alreadyThere > 0) parts.push(`${result.alreadyThere} already there`)
-  if (result.failed.length === 1) parts.push(`"${result.failed[0].title}" failed: ${result.failed[0].reason}`)
-  else if (result.failed.length > 1) parts.push(`${result.failed.length} failed (first: ${result.failed[0].reason})`)
+  const parts = [t(mode === 'copy' ? 'transfer.copied' : 'transfer.moved', { count: result.done, library: libraryName })]
+  if (result.alreadyThere > 0) parts.push(t('transfer.alreadyThere', { count: result.alreadyThere }))
+  if (result.failed.length === 1) {
+    parts.push(t('transfer.oneFailed', { title: result.failed[0].title, reason: result.failed[0].reason }))
+  } else if (result.failed.length > 1) {
+    parts.push(t('transfer.manyFailed', { count: result.failed.length, reason: result.failed[0].reason }))
+  }
   return parts.join(', ')
 }
 
-// what DetailSidebar shows for a library item until its own queries have loaded
+// until DetailSidebar's own queries have loaded
+
 export function detailSidebarProps(w: WallpaperMeta) {
   return {
     fallbackTitle: w.title,

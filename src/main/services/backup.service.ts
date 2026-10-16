@@ -33,7 +33,7 @@ async function isDir(p: string): Promise<boolean> {
   }
 }
 
-async function exists(p: string): Promise<boolean> {
+export async function exists(p: string): Promise<boolean> {
   try {
     await fs.promises.access(p)
     return true
@@ -64,7 +64,6 @@ async function findFileIgnoringCase(dir: string, rel: string): Promise<string | 
   }
 }
 
-// Current relative preview path if present, else project.json's, else any preview.* image.
 export async function previewInBackup(wallpaper: WallpaperMeta, dir: string): Promise<string | undefined> {
   if (wallpaper.previewLocal && wallpaper.localPath) {
     const rel = path.relative(wallpaper.localPath, wallpaper.previewLocal)
@@ -87,16 +86,22 @@ export async function hasBackupFiles(dir: string | null): Promise<boolean> {
   return !!dir && (await isDir(dir)) && (await exists(path.join(dir, 'project.json')))
 }
 
-export async function findBackupProblem(dir: string): Promise<string | null> {
-  if (!(await isDir(dir))) return 'folder is missing'
+export type FolderProblem = 'missingFolder' | 'brokenProject' | 'missingMainFile'
+
+export async function findFolderProblem(dir: string): Promise<{ code: FolderProblem; detail: string } | null> {
+  if (!(await isDir(dir))) return { code: 'missingFolder', detail: 'folder is missing' }
   const pj = await readProjectJson(dir)
-  if (!pj) return 'project.json is missing or unreadable'
+  if (!pj) return { code: 'brokenProject', detail: 'project.json is missing or unreadable' }
   if (!pj.file) return null
   if (await exists(path.join(dir, pj.file))) return null
   if (normalizeType(pj.type) === 'scene' && (await fs.promises.readdir(dir)).some((f) => f.endsWith('.pkg'))) {
     return null
   }
-  return `${pj.file} is missing`
+  return { code: 'missingMainFile', detail: `${pj.file} is missing` }
+}
+
+export async function findBackupProblem(dir: string): Promise<string | null> {
+  return (await findFolderProblem(dir))?.detail ?? null
 }
 
 export async function sameFileList(sourcePath: string, backupDir: string): Promise<boolean> {
@@ -115,7 +120,7 @@ function hashFile(filePath: string): Promise<string> {
   })
 }
 
-// Wallpaper Engine writes its compiled shaders (shaders/blobsSM40/*.dxs) into the wallpaper folder
+// WE writes compiled shaders into the folder
 function isShaderCache(relPath: string): boolean {
   return /^shaders[\\/]blobs/i.test(relPath)
 }
@@ -141,7 +146,7 @@ async function walkDirs(dirPath: string): Promise<string[]> {
   return [dirPath, ...nested.flat()]
 }
 
-async function forEachLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+export async function forEachLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
   let next = 0
   const worker = async (): Promise<void> => {
     while (next < items.length) await fn(items[next++])
@@ -397,7 +402,6 @@ async function buildBackupMeta(id: string, localPath: string, existing?: Wallpap
 
 const SCAN_CONCURRENCY = 4
 
-// Repoints a missing preview at the file on disk now; folders on unmounted drives are skipped.
 async function previewRepair(w: WallpaperMeta): Promise<Partial<WallpaperMeta> | null> {
   const patch: Partial<WallpaperMeta> = {}
   if (w.customPreview && !(await exists(w.customPreview))) {
@@ -407,7 +411,7 @@ async function previewRepair(w: WallpaperMeta): Promise<Partial<WallpaperMeta> |
   if (!w.previewLocal || !(await exists(w.previewLocal))) {
     const dirs = [w.localPath, resolveBackupDir(w)].filter((d): d is string => !!d)
     let mounted = false
-    for (const dir of [...new Set(dirs.map((d) => path.resolve(d)))]) {
+    for (const dir of new Set(dirs.map((d) => path.resolve(d)))) {
       if (!(await isDir(dir))) continue
       mounted = true
       const found = await previewInBackup(w, dir)
@@ -509,7 +513,7 @@ export async function scanBackupFolder(): Promise<{
       if ((existing.backedUp && !dropped.has(id)) || existing.downloading) {
         result.skipped++
       } else {
-        // an older version than the workshop copy is still a backup, backing up again refreshes it
+        // outdated is still a backup
         patches.push({ id, patch: { backedUp: true, backupDir: dir } })
         result.linked++
       }
@@ -545,7 +549,8 @@ export async function scanBackupFolder(): Promise<{
   return result
 }
 
-// what each entry was last compared at, so only items whose workshop folder changed get re-walked
+// only changed workshop folders get re-walked
+
 const outdatedCheckedAt = new Map<string, string>()
 
 export async function checkOutdatedBackups(): Promise<boolean> {

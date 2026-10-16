@@ -17,6 +17,10 @@ import type {
   EngineFlags,
   ScreenTarget,
   HwdecBackend,
+  HrtfMode,
+  BatteryFps,
+  IdlePause,
+  SplitLayout,
   XrayMode
 } from '@shared/types'
 import {
@@ -29,7 +33,16 @@ import {
   isWaylandSession
 } from '../utils/platform'
 import { getWorkshopPath, getLweManifestPath, getLwePrebuiltDir, getSteamRoots } from '../utils/paths'
-import { isFlatpak } from '../utils/flatpak'
+import {
+  flatpakInstanceId,
+  hostCommand,
+  hostPidOf,
+  hostProcessCommandLine,
+  hostProcessCommandLineAsync,
+  isFlatpak,
+  killHostProcess
+} from '../utils/flatpak'
+import { owningPackage } from '../utils/packages'
 import {
   getLweRepoUrl,
   getLweRepoBranch,
@@ -43,18 +56,13 @@ import { DEFAULT_LWE_FPS, DEFAULT_LWE_REPO } from '@shared/constants'
 import { engineFlagArgs, filterSupportedArgs } from '@shared/engineFlags'
 import { imageAdjustmentArgs, imageAdjustmentLines, type ImageAdjustments } from '@shared/imageAdjustments'
 import { formatVideoSegments, type VideoSegment } from '@shared/videoTrim'
+import { t } from '../i18n'
 
 export const ALL_SCREENS: ScreenTarget = '*'
 
 const execFileAsync = promisify(execFile)
 
-/**
- * Env for spawning the engine's own cmake/make, stripped of AppImage runtime vars. When
- * we_manager itself runs as an AppImage, AppRun sets LD_LIBRARY_PATH (and friends) to point into
- * its own ephemeral /tmp/.mount_XXXXXXX mount so its bundled Electron libs resolve - inheriting
- * that into the engine's build lets CMake's library search pick up we_manager's own bundled
- * libEGL.so etc. and cache that dead path in CMakeCache.txt once the mount is gone.
- */
+// AppRun points LD_LIBRARY_PATH etc. into /tmp/.mount_*, which CMake would cache
 const APPIMAGE_MOUNT = /^\/tmp\/\.mount_[^/]+(\/|$)/
 
 function isAppImagePath(entry: string, appDir: string | undefined): boolean {
@@ -68,8 +76,7 @@ export function buildCleanBuildEnv(): NodeJS.ProcessEnv {
   for (const key of ['LD_LIBRARY_PATH', 'LD_PRELOAD', 'APPDIR', 'APPIMAGE', 'OWD', 'ARGV0']) {
     delete env[key]
   }
-  // AppRun also puts the mount on PATH (and XDG_DATA_DIRS etc.). CMake's find_library searches PATH
-  // entries, so it picked Electron's bundled libEGL.so from /tmp/.mount_*, a path gone after a relaunch
+  // find_library also searches PATH, which picked up Electron's bundled libEGL.so
   for (const [key, value] of Object.entries(env)) {
     if (!value || !value.includes('/')) continue
     const entries = value.split(':')
@@ -81,7 +88,7 @@ export function buildCleanBuildEnv(): NodeJS.ProcessEnv {
   return env
 }
 
-/** A reused build dir whose CMakeCache.txt points into an AppImage mount has to be configured from scratch. */
+/** A cache pointing into an AppImage mount needs a fresh configure */
 function dropPoisonedCmakeCache(cmakeBuild: string): boolean {
   const cachePath = path.join(cmakeBuild, 'CMakeCache.txt')
   let cache: string
@@ -94,12 +101,10 @@ function dropPoisonedCmakeCache(cmakeBuild: string): boolean {
 const LWE_BINARY = 'linux-wallpaperengine'
 const BUILD_DIR = path.join(os.tmpdir(), 'lwe-build')
 
-/** Common install locations checked before falling back to $PATH. */
 const LWE_SEARCH_PATHS = [
-  // local fork builds take precedence over system installs
   path.join(os.homedir(), 'projects', 'private', 'linux-wallpaperengine', 'build', 'output', 'linux-wallpaperengine'),
   path.join(os.homedir(), 'projects', 'linux-wallpaperengine', 'build', 'output', 'linux-wallpaperengine'),
-  // a downloaded release wins over a source install, installing from source removes it again
+  // a downloaded release wins over a source install
   path.join(getLwePrebuiltDir(), 'linux-wallpaperengine'),
   '/usr/local/bin/linux-wallpaperengine',
   '/usr/local/linux-wallpaperengine',
@@ -169,7 +174,6 @@ function parseExtraCmakeArgs(raw: string | null): string[] {
   return args
 }
 
-/** The engine the Flatpak ships */
 const FLATPAK_LWE_BINARY = '/app/bin/linux-wallpaperengine'
 
 function findLweBinary(): string | undefined {
@@ -183,7 +187,6 @@ function findLweBinary(): string | undefined {
   return whichCommand(LWE_BINARY)
 }
 
-/** Tag of the downloaded release, written next to it by the prebuilt install */
 export function readPrebuiltRelease(): { tag: string; asset: string } | undefined {
   try {
     return JSON.parse(fs.readFileSync(path.join(getLwePrebuiltDir(), '.release'), 'utf8'))
@@ -198,7 +201,7 @@ function isPrebuiltPath(p: string): boolean {
 
 let ownerCache: { path: string; owner: string | undefined } | undefined
 
-/** What installed the binary when it isn't ours to remove: the Flatpak, a Nix profile or a distribution package */
+/** Flatpak, Nix profile or distribution package that owns the binary */
 export function lwePackageOwner(binary: string): string | undefined {
   let real = binary
   try { real = fs.realpathSync(binary) } catch { /* keep the path */ }
@@ -209,21 +212,8 @@ export function lwePackageOwner(binary: string): string | undefined {
   } else if (real.startsWith('/nix/store/')) {
     owner = 'Nix'
   } else {
-    const queries: [string, string[], (out: string) => string][] = [
-      ['pacman', ['-Qoq', real], out => `pacman (${out})`],
-      ['rpm', ['-qf', '--qf', '%{NAME}', real], out => `rpm (${out})`],
-      ['dpkg-query', ['-S', real], out => `dpkg (${out.split(':')[0]})`]
-    ]
-    for (const [command, args, label] of queries) {
-      if (!isCommandAvailable(command)) continue
-      try {
-        const out = execFileSync(command, args, { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim()
-        if (out) {
-          owner = label(out.split('\n')[0])
-          break
-        }
-      } catch { /* not owned by a package */ }
-    }
+    const pkg = owningPackage(real)
+    if (pkg) owner = `${pkg.manager} (${pkg.name})`
   }
   ownerCache = { path: real, owner }
   return owner
@@ -242,14 +232,11 @@ export function getLweStatus(): LweStatus {
   }
 }
 
-/** Forget everything detected about the previous binary after it was installed, replaced or removed */
 export function resetLweDetection(): void {
   ownerCache = undefined
   invalidateCommandCache(LWE_BINARY)
   invalidateHelpText()
 }
-
-const FLATPAK_MANAGED = 'linux-wallpaperengine comes with the Flatpak and is updated with it.'
 
 export function parseOsReleaseIds(release: string): string[] {
   const ids: string[] = []
@@ -279,7 +266,6 @@ export function isOstreeSystem(): boolean {
   return fs.existsSync('/run/ostree-booted')
 }
 
-// Aligned with https://github.com/Almamu/linux-wallpaperengine (README + Wayland + FBOProvider gmpxx)
 const DEPS_DEBIAN = [
   'git', 'build-essential', 'cmake', 'pkg-config',
   'libxrandr-dev', 'libxinerama-dev', 'libxcursor-dev', 'libxi-dev',
@@ -289,11 +275,11 @@ const DEPS_DEBIAN = [
   'libmpv-dev', 'mpv', 'libpulse-dev', 'libpulse0', 'libfftw3-dev', 'libfreetype-dev', 'libharfbuzz-dev', 'libdbus-1-dev',
   'libwayland-dev', 'wayland-protocols', 'libegl1-mesa-dev',
   'libgmp-dev', 'patchelf',
-  // V8 for scene scripts, from Node.js's shared library
+  // V8 for scene scripts
   'libnode-dev'
 ]
 
-// Fedora/Nobara: 'ffmpeg' conflicts with ffmpeg-free, so only ffmpeg-free-devel is listed
+// 'ffmpeg' conflicts with ffmpeg-free on Fedora
 const DEPS_FEDORA = [
   'git', 'gcc', 'g++', 'cmake', 'pkg-config',
   'libXrandr-devel', 'libXinerama-devel', 'libXcursor-devel', 'libXi-devel',
@@ -305,10 +291,7 @@ const DEPS_FEDORA = [
   'gmp-devel', 'patchelf'
 ]
 
-/**
- * Fedora's versioned nodejsNN-devel packages conflict, so an installed one is kept. Otherwise the headers must match
- * the newest installed libnode; with none installed dnf picks the default for nodejs-devel
- */
+/** Versioned nodejsNN-devel packages conflict: keep an installed one, else match the newest libnode */
 export function nodeDevelPackage(installedNodePackages: string[]): string | null {
   const names = installedNodePackages.map((name) => name.trim())
   if (names.some((name) => /^nodejs\d*-devel$/.test(name))) return null
@@ -350,7 +333,7 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
   }
 
   if (isFlatpak()) {
-    send({ stage: 'error', message: FLATPAK_MANAGED, percentage: 0 })
+    send({ stage: 'error', message: t('lwe.flatpakManaged'), percentage: 0 })
     return
   }
 
@@ -358,7 +341,7 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
   if (distro === 'unknown') {
     send({
       stage: 'error',
-      message: 'Could not detect your Linux distribution. Please install build dependencies manually.',
+      message: t('lwe.noDistroDeps'),
       percentage: 0
     })
     return
@@ -367,7 +350,7 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
   if (isOstreeSystem()) {
     send({
       stage: 'error',
-      message: 'This is an image-based system (rpm-ostree, e.g. Bazzite or Silverblue), the build dependencies can\'t be installed with dnf here. Use the prebuilt download above instead, or build inside a toolbox/distrobox container.',
+      message: t('lwe.imageBasedSystem'),
       percentage: 0
     })
     return
@@ -385,7 +368,7 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
       break
     case 'fedora':
       pkgManager = 'dnf'
-      // --skip-unavailable: avoid failing on missing/broken repos (e.g. Cursor 403) or package renames
+      // don't fail on broken repos or renamed packages
       installArgs = ['install', '-y', '--skip-unavailable']
       const nodeDevel = nodeDevelPackage(installedNodePackages())
       packages = nodeDevel ? [...DEPS_FEDORA, nodeDevel] : DEPS_FEDORA
@@ -401,7 +384,7 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
 
   send({
     stage: 'installing-deps',
-    message: `Installing ${packages.length} packages via ${pkgManager} (sudo required)...`,
+    message: t('lwe.installingPackages', { count: packages.length, manager: pkgManager }),
     percentage: 10
   })
 
@@ -409,19 +392,19 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
     await execFileAsync(elevate, [pkgManager, ...installArgs, ...packages], {
       timeout: 600_000
     })
-    // the AUR needs a helper running as the user and builds Node.js from source, that is left to the user
+    // libnode is AUR only, left to the user
     const libnodeMissing = distro === 'arch' && !fs.existsSync('/usr/lib/libnode.so')
     send({
       stage: 'done',
       message: libnodeMissing
-        ? 'Build dependencies installed, except V8: Arch only has it in the AUR, install the "libnode" package (e.g. paru -S libnode) before building.'
-        : 'Build dependencies installed.',
+        ? t('lwe.depsInstalledNoV8')
+        : t('lwe.depsInstalled'),
       percentage: 100
     })
   } catch (err) {
     send({
       stage: 'error',
-      message: `Failed to install dependencies: ${(err as Error).message}`,
+      message: t('lwe.depsFailed', { error: (err as Error).message }),
       percentage: 0
     })
   }
@@ -433,15 +416,14 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
   }
 
   if (isFlatpak()) {
-    send({ stage: 'error', message: FLATPAK_MANAGED, percentage: 0 })
+    send({ stage: 'error', message: t('lwe.flatpakManaged'), percentage: 0 })
     return
   }
 
-  // read by the catch handler to decide whether to preserve or wipe the build cache
   let isLocalDir = false
 
   try {
-    send({ stage: 'cloning', message: 'Checking build dependencies...', percentage: 0 })
+    send({ stage: 'cloning', message: t('lwe.checkingDeps'), percentage: 0 })
 
     const missingDeps: string[] = []
     for (const dep of ['git', 'cmake', 'make', 'pkg-config']) {
@@ -451,7 +433,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     if (missingDeps.length > 0) {
       send({
         stage: 'error',
-        message: `Missing build dependencies: ${missingDeps.join(', ')}. Please install them first.`,
+        message: t('lwe.missingDeps', { deps: missingDeps.join(', ') }),
         percentage: 0
       })
       return
@@ -465,8 +447,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       try { return fs.statSync(repo).isDirectory() } catch { return false }
     })()
 
-    // Reuse the previous build dir when it's the same local source, so CEF's ~2GB download
-    // and compiled objects survive between iterations instead of a full rebuild every time.
+    // keep CEF's ~2GB download and objects for the same local source
     const sourceMarker = path.join(BUILD_DIR, '.lwe-source-path')
     const canReuseBuildCache = isLocalDir && (() => {
       try { return fs.readFileSync(sourceMarker, 'utf8').trim() === repo } catch { return false }
@@ -476,20 +457,17 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     }
 
     if (isLocalDir) {
-      // Copy the working tree instead of `git clone`, so uncommitted edits don't need a commit first.
-      send({ stage: 'cloning', message: `Copying local source from ${repo}...`, percentage: 5 })
+      // copy the working tree so uncommitted edits are built
+      send({ stage: 'cloning', message: t('lwe.copyingSource', { repo }), percentage: 5 })
       fs.mkdirSync(BUILD_DIR, { recursive: true })
       if (isCommandAvailable('rsync')) {
-        // --delete so files removed from the source don't linger in a reused build dir.
-        // --no-times overrides -a's mtime preservation - the build dir is reused incrementally
-        // (see canReuseBuildCache above), so a stale source mtime can make `make` skip
-        // recompiling a changed file.
+        // --no-times: old source mtimes could make make skip a changed file in a reused dir
         await execFileAsync('rsync', [
           '-a', '--no-times', '--delete', '--exclude=/.git', '--exclude=/build',
           `${repo}/`, `${BUILD_DIR}/`
         ], { timeout: 120_000, maxBuffer: 10 * 1024 * 1024 })
       } else {
-        // -m on extraction, same reason as --no-times above.
+        // -m, same reason as --no-times
         await execFileAsync('bash', [
           '-c',
           `tar -C ${JSON.stringify(repo)} --exclude=.git --exclude=build -cf - . | tar -C ${JSON.stringify(BUILD_DIR)} -xmf -`
@@ -503,7 +481,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
 
       send({
         stage: 'cloning',
-        message: `Cloning ${repo}${branch ? ` (${branch})` : ''}...`,
+        message: branch ? t('lwe.cloningBranch', { repo, branch }) : t('lwe.cloning', { repo }),
         percentage: 5
       })
       await execFileAsync('git', cloneArgs, {
@@ -515,12 +493,12 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     const cmakeBuild = path.join(BUILD_DIR, 'build')
     fs.mkdirSync(cmakeBuild, { recursive: true })
     if (dropPoisonedCmakeCache(cmakeBuild)) {
-      send({ stage: 'building', message: 'Discarding a CMake cache that referenced an AppImage mount...', percentage: 20 })
+      send({ stage: 'building', message: t('lwe.discardingCache'), percentage: 20 })
     }
 
     const buildEnv = buildCleanBuildEnv()
 
-    send({ stage: 'building', message: 'Running cmake (downloading CEF if needed, may take a few minutes)...', percentage: 25 })
+    send({ stage: 'building', message: t('lwe.runningCmake'), percentage: 25 })
     await execFileAsync('cmake', [
       '..',
       '-DCMAKE_BUILD_TYPE=Release',
@@ -536,10 +514,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       encoding: 'utf8'
     })
 
-    // Forces every source file to recompile regardless of mtimes, so a reused build dir (see
-    // canReuseBuildCache above) can never silently skip a changed file - `make`'s mtime-based
-    // staleness check is what caused us to ship a stale binary before. This only discards compiled
-    // objects, not the downloaded CEF SDK, so it's cheap.
+    // make's mtime check shipped a stale binary once; keeps the CEF SDK
     if (canReuseBuildCache) {
       await execFileAsync('make', ['clean'], {
         cwd: cmakeBuild,
@@ -547,10 +522,10 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
         timeout: 60_000,
         maxBuffer: 10 * 1024 * 1024,
         encoding: 'utf8'
-      }).catch(() => { /* nothing to clean on a fresh build dir - ignore */ })
+      }).catch(() => { /* nothing to clean */ })
     }
 
-    send({ stage: 'building', message: 'Compiling (this may take a few minutes)...', percentage: 40 })
+    send({ stage: 'building', message: t('lwe.compiling'), percentage: 40 })
     const cores = Math.max(1, os.cpus().length - 1)
     await execFileAsync('make', ['-j', String(cores)], {
       cwd: cmakeBuild,
@@ -560,27 +535,22 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       encoding: 'utf8'
     })
 
-    send({ stage: 'building', message: 'Build complete.', percentage: 80 })
+    send({ stage: 'building', message: t('lwe.buildComplete'), percentage: 80 })
 
-    // make install puts the binary at /usr/local/linux-wallpaperengine
-    send({ stage: 'installing', message: 'Installing (sudo required)...', percentage: 85 })
+    send({ stage: 'installing', message: t('lwe.installingSudo'), percentage: 85 })
 
     const installTool = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
-    // pkexec often runs the command in a different cwd (e.g. / or root's home), so run install
-    // inside a shell that cd's to the build dir first; PATH preserved for make
+    // pkexec changes cwd and PATH
     const pathEnv = process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'
-    // install_manifest.txt lists every file `make install` placed; capture it so uninstall
-    // can remove exactly those files instead of guessing.
+    // install_manifest.txt lets uninstall remove exactly what was installed
     const manifestMarker = '###LWE_INSTALL_MANIFEST###'
-    // Local repo: hand the build dir back to the invoking user instead of deleting it, so the
-    // next unprivileged cmake/make can still write into what `make install` (root) just touched.
+    // hand a local repo's build dir back to the user
     const reclaim = isLocalDir
       ? `chown -R ${process.getuid!()}:${process.getgid!()} ${JSON.stringify(BUILD_DIR)}`
       : `rm -rf ${JSON.stringify(BUILD_DIR)}`
     const binaryPath = '/usr/local/linux-wallpaperengine'
     const linkPath = '/usr/local/bin/linux-wallpaperengine'
-    // Symlinking is folded into this same elevated script (instead of a second pkexec/sudo call)
-    // so the whole install only prompts for a password once.
+    // one elevated script, one password prompt
     const installScript = `cd ${JSON.stringify(cmakeBuild)} && export PATH=${JSON.stringify(pathEnv)} && make install && patchelf --set-rpath /usr/local/lib64:/usr/local/lib /usr/local/linux-wallpaperengine 2>/dev/null; ldconfig; ln -sf ${JSON.stringify(binaryPath)} ${JSON.stringify(linkPath)} || true; echo ${manifestMarker}; cat install_manifest.txt 2>/dev/null; ${reclaim}`
     const { stdout: installOutput } = await execFileAsync(installTool, ['bash', '-c', installScript], {
       timeout: 120_000,
@@ -597,30 +567,29 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       }
     }
 
-    // a downloaded release would otherwise keep shadowing what was just built
+    // a downloaded release would shadow the new build
     fs.rmSync(getLwePrebuiltDir(), { recursive: true, force: true })
     resetLweDetection()
 
     const status = getLweStatus()
     if (status.installed) {
-      send({ stage: 'done', message: 'linux-wallpaperengine installed.', percentage: 100 })
+      send({ stage: 'done', message: t('lwe.installed'), percentage: 100 })
     } else {
       send({
         stage: 'error',
-        message: 'Build completed but binary not found in PATH. You may need to add /usr/local/bin to your PATH.',
+        message: t('lwe.notInPath'),
         percentage: 100
       })
     }
   } catch (err) {
-    // Failures here happen before the elevated install step, so the build dir isn't root-tainted -
-    // leave it for a local repo so a fix-and-retry stays incremental.
+    // a local repo keeps its build dir so a retry stays incremental
     if (!isLocalDir) {
       try {
         await removeBuildDir(BUILD_DIR)
       } catch { /* ignore cleanup errors */ }
+
     }
 
-    // execFile puts stdout/stderr on the error object when encoding/maxBuffer are set
     const e = err as Error & { stdout?: string; stderr?: string }
     const fullMsg = e.message ?? String(err)
     const combined = [e.stdout, e.stderr].filter(Boolean).join('\n')
@@ -637,7 +606,6 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
         /fatal:/i.test(l) || /failed to/i.test(l)
     )
 
-    // Prefer compiler/linker errors, then cmake/install errors, then the tail of the log
     let excerpt: string
     if (compilerErrors.length > 0) {
       excerpt = compilerErrors.slice(0, 10).join('\n')
@@ -650,20 +618,20 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
 
     send({
       stage: 'error',
-      message: `Build failed:\n${excerpt.trim() || fullMsg}`,
+      message: `${t('lwe.buildFailed')}\n${excerpt.trim() || fullMsg}`,
       percentage: 0
     })
   }
 }
 
 export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> {
-  if (isFlatpak()) return { ok: false, message: FLATPAK_MANAGED }
+  if (isFlatpak()) return { ok: false, message: t('lwe.flatpakManaged') }
   const status = getLweStatus()
   if (!status.installed || !status.path) {
-    return { ok: false, message: 'linux-wallpaperengine is not installed.' }
+    return { ok: false, message: t('lwe.notInstalled') }
   }
   if (status.managedBy) {
-    return { ok: false, message: `linux-wallpaperengine was installed by ${status.managedBy}, remove it there.` }
+    return { ok: false, message: t('lwe.managedBy', { owner: status.managedBy }) }
   }
 
   await stopLwe()
@@ -672,10 +640,10 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
     try {
       fs.rmSync(getLwePrebuiltDir(), { recursive: true, force: true })
     } catch (err) {
-      return { ok: false, message: `Uninstall failed: ${(err as Error).message}` }
+      return { ok: false, message: t('lwe.uninstallFailed', { error: (err as Error).message }) }
     }
     resetLweDetection()
-    return { ok: true, message: 'linux-wallpaperengine has been uninstalled.' }
+    return { ok: true, message: t('lwe.uninstalled') }
   }
 
   const elevate = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
@@ -689,7 +657,7 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
     // deepest first, so a dir only prunes once its own contents are gone
     dirsToPrune = [...new Set(manifest.files.map(f => path.dirname(f)))].sort((a, b) => b.length - a.length)
   } else {
-    // no manifest (pre-dates this, or lost): binary + lib dir only, won't clean up CEF resources
+    // no manifest: binary + lib dir only
     const binaryPath = status.path
     let realPath: string
     try {
@@ -727,16 +695,15 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
 
     resetLweDetection()
 
-    return { ok: true, message: 'linux-wallpaperengine has been uninstalled.' }
+    return { ok: true, message: t('lwe.uninstalled') }
   } catch (err) {
-    return { ok: false, message: `Uninstall failed: ${(err as Error).message}` }
+    return { ok: false, message: t('lwe.uninstallFailed', { error: (err as Error).message }) }
   }
 }
 
 function findWeAssetsDir(): string | undefined {
   const workshopPath = getWorkshopPath()
-  // Workshop path looks like: .../steamapps/workshop/content/431960
-  // Assets are at:            .../steamapps/common/wallpaper_engine/assets
+  // .../steamapps/workshop/content/431960 -> .../steamapps/common/wallpaper_engine/assets
   const steamappsIdx = workshopPath.lastIndexOf(path.join('steamapps', 'workshop'))
   if (steamappsIdx !== -1) {
     const steamappsRoot = workshopPath.substring(0, steamappsIdx + 'steamapps'.length)
@@ -744,7 +711,6 @@ function findWeAssetsDir(): string | undefined {
     if (fs.existsSync(assetsDir)) return assetsDir
   }
 
-  // Fallback: scan common Steam locations
   return getSteamRoots()
     .map(root => path.join(root, 'steamapps', 'common', 'wallpaper_engine', 'assets'))
     .find(p => fs.existsSync(p))
@@ -764,7 +730,7 @@ function getLweLibDir(): string {
 function getLweLdLibraryPath(): string {
   const binDir = getLweLibDir()
   const candidates = [
-    // For local/fork builds, the .so files live next to the binary
+    // local builds keep their .so files next to the binary
     binDir,
     path.join(binDir, 'lib64'),
     path.join(binDir, 'lib'),
@@ -779,7 +745,6 @@ function getLweLdLibraryPath(): string {
   return paths.join(':')
 }
 
-/** Full path to LWE binary (resolved symlink). */
 function getLweBinaryPath(): string {
   const p = findLweBinary()
   if (!p) return LWE_BINARY
@@ -792,15 +757,13 @@ function getLweBinaryPath(): string {
 
 function buildLweEnvVars(): string[] {
   const vars: string[] = []
-  // a Nix build carries its own closure, host libraries would clash
+  // a Nix build brings its own libraries
   const fromNix = getLweBinaryPath().startsWith('/nix/store/')
 
   if (fromNix) vars.push('-u', 'LD_LIBRARY_PATH', '-u', 'LD_PRELOAD')
   else vars.push(`LD_LIBRARY_PATH=${getLweLdLibraryPath()}`)
 
-  // CEF bundles its own libEGL.so alongside the LWE binary. LD_LIBRARY_PATH includes the
-  // binary's directory so CEF's EGL shadows Mesa's system EGL, breaking Wayland rendering.
-  // Force the system EGL via LD_PRELOAD so Mesa's implementation is always used.
+  // CEF's bundled libEGL.so next to the binary would shadow Mesa's and break Wayland
   const systemEgl = ['/lib64/libEGL.so.1', '/usr/lib64/libEGL.so.1', '/usr/lib/x86_64-linux-gnu/libEGL.so.1',
     '/usr/lib/libEGL.so.1']
     .find(p => fs.existsSync(p))
@@ -809,7 +772,7 @@ function buildLweEnvVars(): string[] {
   const waylandDisplay = getWaylandDisplay()
   if (waylandDisplay) vars.push(`WAYLAND_DISPLAY=${waylandDisplay}`)
 
-  // LWE picks its X11/Wayland driver by XDG_SESSION_TYPE, often unset without a login manager
+  // picks X11/Wayland by this, often unset without a login manager
   const sessionType = process.env.XDG_SESSION_TYPE || (waylandDisplay ? 'wayland' : undefined)
   if (sessionType) vars.push(`XDG_SESSION_TYPE=${sessionType}`)
 
@@ -820,7 +783,6 @@ function buildLweEnvVars(): string[] {
 
   if (process.env.DISPLAY) vars.push(`DISPLAY=${process.env.DISPLAY}`)
 
-  // XDG_RUNTIME_DIR is needed for the Wayland socket
   vars.push(`XDG_RUNTIME_DIR=${getXdgRuntimeDir()}`)
 
   return vars
@@ -850,7 +812,7 @@ function supportsExpandCanvas(): boolean {
   return supportsFlag('--expand-canvas')
 }
 
-// shell-like: quotes group whitespace anywhere in a token (foo="bar baz") and are dropped
+// shell-like: quotes anywhere in a token group whitespace and are dropped
 export function parseCustomArgs(raw: string): string[] {
   const tokens: string[] = []
   let current = ''
@@ -884,7 +846,7 @@ function invalidateHelpText(): void {
   helpText = null
 }
 
-// the binary can be replaced while we run, the cached --help is tied to the file
+// cached --help is tied to the file, the binary can be replaced
 function binaryStamp(binaryPath: string): string {
   try {
     const stat = fs.statSync(binaryPath)
@@ -894,7 +856,7 @@ function binaryStamp(binaryPath: string): string {
   }
 }
 
-// older builds ignore unknown flags, so a flag the binary doesn't list is left out instead of passed
+// older builds ignore unknown flags, so unlisted ones are left out
 function supportsFlag(flag: string): boolean {
   const binaryPath = getLweBinaryPath()
   const stamp = binaryStamp(binaryPath)
@@ -913,9 +875,27 @@ function supportsFlag(flag: string): boolean {
   return helpText.includes(flag)
 }
 
+/** --screen-slot, several wallpapers on one screen */
+export function supportsSplitScreens(): boolean {
+  return supportsFlag('--screen-slot')
+}
+
+/** One wallpaper of a split screen with its own display settings */
+export interface LweSplitSlot {
+  path: string
+  scalingMode?: string
+  zoom?: number
+  offsetX?: number
+  offsetY?: number
+  cornerColor?: string
+  imageAdjustments?: ImageAdjustments
+}
+
 export interface LweLaunchOptions {
-  /** '*' runs one engine for every connected screen */
+  /** '*' = one engine for every screen */
   screen?: ScreenTarget
+  /** --screen-slot on options.screen, display options become per slot */
+  split?: { layout: SplitLayout; slots: LweSplitSlot[] }
   fps?: number
   volume?: number
   disabledObjects?: string[]
@@ -938,13 +918,11 @@ export interface LweLaunchOptions {
   audioSensitivity?: Record<string, number>
   soundVolume?: Record<string, number>
   customArgs?: string
-  /** Already merged with the global flags */
   engineFlags?: EngineFlags
-  /** Restart the engine even when it could have taken a hotswap */
   forceFresh?: boolean
 }
 
-function buildLweArgs(
+export function buildLweArgs(
   wallpaperPath: string,
   options: LweLaunchOptions,
   capture?: { window: string; screenshotPath: string; delayFrames: number }
@@ -953,12 +931,24 @@ function buildLweArgs(
   const assetsDir = findWeAssetsDir()
   if (assetsDir) args.push('--assets-dir', assetsDir)
 
-  // given before any --screen-root they are the default of every screen this engine draws
+  // before any --screen-root, so they apply to every screen
   if (supportsFlag('--image-filter')) args.push(...imageAdjustmentArgs(options.imageAdjustments))
 
-  // --screen-root uses layer-shell (Wayland) or root-window overlay (X11)
   if (capture) {
     args.push('--window', capture.window)
+  } else if (options.split && options.screen && options.screen !== ALL_SCREENS) {
+    // every option after a --screen-slot belongs to that slot
+    for (const slot of options.split.slots) {
+      args.push('--screen-slot', options.screen, '--bg', slot.path)
+      if (slot.scalingMode) args.push('--scaling', slot.scalingMode)
+      if (slot.zoom !== undefined) args.push('--zoom', String(slot.zoom))
+      if (slot.offsetX !== undefined || slot.offsetY !== undefined) {
+        args.push('--offset', `${slot.offsetX ?? 0},${slot.offsetY ?? 0}`)
+      }
+      if (slot.cornerColor) args.push('--corner-color', slot.cornerColor)
+      if (supportsFlag('--image-filter')) args.push(...imageAdjustmentArgs(slot.imageAdjustments))
+    }
+    args.push('--split-layout', options.split.layout)
   } else if (options.screen && options.screen !== ALL_SCREENS) {
     args.push('--screen-root', options.screen)
   } else {
@@ -968,7 +958,6 @@ function buildLweArgs(
 
   if (options.fps) args.push('--fps', String(options.fps))
   if (options.volume !== undefined) args.push('--volume', String(options.volume))
-  // Global, not per-wallpaper - pulled from config.service instead of options.
   const audioScreen = getAudioScreen()
   if (audioScreen) args.push('--audio-screen', audioScreen)
   const ambientVolume = getAmbientVolume()
@@ -1007,9 +996,7 @@ function buildLweArgs(
     args.push('--set-property', `${name}=${value}`)
   }
   if (supportsAudioSensitivity()) {
-    // Global default (config.service) applies to every audio-reactive object via the "*"
-    // wildcard; per-wallpaper overrides in options.audioSensitivity are matched first by the
-    // engine (specific id/name always wins over "*"), so both can be sent unconditionally.
+    // the engine prefers a specific id over "*", so both are always sent
     const defaultSensitivity = getDefaultAudioSensitivity()
     if (defaultSensitivity !== 1) args.push('--audio-sensitivity', `*=${defaultSensitivity}`)
     for (const [id, multiplier] of Object.entries(options.audioSensitivity ?? {})) {
@@ -1031,7 +1018,6 @@ function buildLweArgs(
   return args
 }
 
-/** Control file used for hot-reload signalling. */
 function getControlFilePath(): string {
   return path.join(getXdgRuntimeDir(), 'lwe-control')
 }
@@ -1040,12 +1026,12 @@ function screenFileSuffix(screen: ScreenTarget): string {
   return screen === ALL_SCREENS ? 'all' : screen.replace(/[^A-Za-z0-9._-]/g, '_')
 }
 
-/** One hotswap file per engine (--control-file), so engines on different screens can't read each other's */
+/** One hotswap file per engine so engines can't read each other's */
 function controlFileFor(screen: ScreenTarget): string {
   return path.join(getXdgRuntimeDir(), `lwe-control-${screenFileSuffix(screen)}`)
 }
 
-/** Where a desktop shell writes the mouse button state for the engine on a screen (--input-file) */
+/** Mouse button state written by a desktop shell (--input-file) */
 function inputFileFor(screen: ScreenTarget): string {
   return path.join(getXdgRuntimeDir(), `lwe-input-${screenFileSuffix(screen)}`)
 }
@@ -1054,16 +1040,12 @@ function supportsInputFile(): boolean {
   return isWaylandSession() && supportsFlag('--input-file')
 }
 
-/** Input files for the all-screens engine and each given screen, none without --input-file support */
 export function listInputFiles(screens: string[]): { screen: ScreenTarget; path: string }[] {
   if (!supportsInputFile()) return []
   return [ALL_SCREENS, ...screens].map((screen) => ({ screen, path: inputFileFor(screen) }))
 }
 
-/**
- * The engine processes are spawned detached and outlive this app, so what's running is also written
- * to the runtime dir. After a restart the app adopts whatever is still alive from there.
- */
+/** Engines outlive the app, so they are recorded here and adopted after a restart */
 function getInstancesFilePath(): string {
   return path.join(getXdgRuntimeDir(), 'lwe-instances.json')
 }
@@ -1075,21 +1057,27 @@ function getLegacyPidFilePath(): string {
 interface LweInstance {
   screen: ScreenTarget
   pid: number
-  /** null for a process adopted from a previous run of the app, only its pid is known then */
+  /** null for a process adopted from a previous run */
   child: ChildProcess | null
   wallpaperPath: string
   launchKey: string
+  /** wallpaperPath is only the first slot's */
+  split: boolean
   startedAt: number
   swappedAt: number | null
   stopping: boolean
   log: string[]
-  /** null for engines without --control-file, they all read the shared getControlFilePath() */
+  /** null: the engine reads the shared control file */
   controlFile: string | null
+  /** Flatpak: the run whose sandbox the engine lives in, and its host pid */
+  sandbox: string | null
+  hostPid: number | null
 }
 
 export interface LweExitInfo {
   screen: ScreenTarget
   wallpaperPath: string
+  split: boolean
   crashed: boolean
   phase: CrashPhase
   description: string
@@ -1117,8 +1105,11 @@ function persistInstances(): void {
     pid: i.pid,
     wallpaperPath: i.wallpaperPath,
     launchKey: i.launchKey,
+    split: i.split,
     startedAt: i.startedAt,
-    controlFile: i.controlFile
+    controlFile: i.controlFile,
+    sandbox: i.sandbox,
+    hostPid: i.hostPid
   }))
   try {
     if (entries.length === 0) fs.rmSync(getInstancesFilePath(), { force: true })
@@ -1129,7 +1120,7 @@ function persistInstances(): void {
   }
 }
 
-/** True if `pid` is alive and actually looks like a linux-wallpaperengine process (not a recycled PID). */
+/** Alive and still a linux-wallpaperengine process, not a recycled pid */
 function isLweProcess(pid: number): boolean {
   try {
     process.kill(pid, 0)
@@ -1141,9 +1132,54 @@ function isLweProcess(pid: number): boolean {
     const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8')
     return cmdline.includes(LWE_BINARY)
   } catch {
-    // /proc unreadable (e.g. owned by another user) - we already know it's alive, best effort
+    // /proc unreadable, it is alive at least
     return true
   }
+}
+
+/** Engines of an earlier Flatpak run live in another pid namespace, only reachable through the host */
+function inOtherSandbox(inst: Pick<LweInstance, 'sandbox'>): boolean {
+  return isFlatpak() && inst.sandbox !== (flatpakInstanceId() ?? null)
+}
+
+const hostAliveCache = new Map<number, { alive: boolean; at: number }>()
+
+// kept fresh by the adopted-engine poll so status queries rarely wait on flatpak-spawn
+const HOST_ALIVE_TTL_MS = 5000
+
+function rememberHostAlive(hostPid: number, cmdline: string | null | undefined): boolean {
+  // undefined: the host couldn't be asked
+  const alive = cmdline === undefined ? (hostAliveCache.get(hostPid)?.alive ?? true) : !!cmdline?.includes(LWE_BINARY)
+  hostAliveCache.set(hostPid, { alive, at: Date.now() })
+  return alive
+}
+
+function isEngineAlive(inst: Pick<LweInstance, 'pid' | 'sandbox' | 'hostPid'>): boolean {
+  if (!inOtherSandbox(inst)) return isLweProcess(inst.pid)
+  if (inst.hostPid === null) return false
+  const cached = hostAliveCache.get(inst.hostPid)
+  if (cached) {
+    // a stale answer is refreshed in the background instead of blocking the main process
+    if (Date.now() - cached.at >= HOST_ALIVE_TTL_MS) void isEngineAliveAsync(inst)
+    return cached.alive
+  }
+  return rememberHostAlive(inst.hostPid, hostProcessCommandLine(inst.hostPid))
+}
+
+async function isEngineAliveAsync(inst: Pick<LweInstance, 'pid' | 'sandbox' | 'hostPid'>): Promise<boolean> {
+  if (!inOtherSandbox(inst)) return isLweProcess(inst.pid)
+  if (inst.hostPid === null) return false
+  return rememberHostAlive(inst.hostPid, await hostProcessCommandLineAsync(inst.hostPid))
+}
+
+function signalEngine(inst: Pick<LweInstance, 'pid' | 'sandbox' | 'hostPid'>, signal: NodeJS.Signals): void {
+  if (!inOtherSandbox(inst)) {
+    process.kill(inst.pid, signal)
+    return
+  }
+  if (inst.hostPid === null) throw new Error('engine of an earlier Flatpak run without a known host pid')
+  hostAliveCache.delete(inst.hostPid)
+  killHostProcess(inst.hostPid, signal)
 }
 
 function adopt(
@@ -1151,22 +1187,60 @@ function adopt(
   pid: number,
   wallpaperPath: string,
   key: string,
+  split: boolean,
   startedAt: number,
-  controlFile: string | null
+  controlFile: string | null,
+  sandbox: string | null,
+  hostPid: number | null
 ): void {
-  if (!Number.isInteger(pid) || !isLweProcess(pid)) return
+  if (!Number.isInteger(pid) || !isEngineAlive({ pid, sandbox, hostPid })) return
   instances.set(screen, {
     screen,
     pid,
     child: null,
     wallpaperPath,
     launchKey: key,
+    split,
     startedAt,
     swappedAt: null,
     stopping: false,
     log: [],
-    controlFile
+    controlFile,
+    sandbox,
+    hostPid
   })
+}
+
+interface InstanceEntry {
+  screen: string
+  pid: number
+  wallpaperPath: string
+  launchKey: string
+  split?: boolean
+  startedAt: number
+  controlFile?: string | null
+  sandbox?: string | null
+  hostPid?: number | null
+}
+
+function readInstanceEntries(): InstanceEntry[] {
+  try {
+    return JSON.parse(fs.readFileSync(getInstancesFilePath(), 'utf8')) as InstanceEntry[]
+  } catch {
+    // nothing running
+    return []
+  }
+}
+
+/** Asks the host about engines of an earlier Flatpak run before they are loaded, so loading doesn't block */
+export async function checkEarlierRunEngines(): Promise<void> {
+  if (instancesLoaded || !isFlatpak()) return
+  await Promise.all(
+    readInstanceEntries()
+      .map((e) => ({ pid: e.pid, sandbox: e.sandbox ?? null, hostPid: e.hostPid ?? null }))
+      .filter((e) => inOtherSandbox(e) && e.hostPid !== null)
+      .map((e) => isEngineAliveAsync(e))
+  )
 }
 
 function loadInstances(): void {
@@ -1174,43 +1248,45 @@ function loadInstances(): void {
   instancesLoaded = true
 
   try {
-    const entries = JSON.parse(fs.readFileSync(getInstancesFilePath(), 'utf8')) as Array<{
-      screen: string
-      pid: number
-      wallpaperPath: string
-      launchKey: string
-      startedAt: number
-      controlFile?: string | null
-    }>
-    for (const e of entries) {
-      adopt(e.screen, e.pid, e.wallpaperPath, e.launchKey, e.startedAt, e.controlFile ?? null)
+    for (const e of readInstanceEntries()) {
+      adopt(e.screen, e.pid, e.wallpaperPath, e.launchKey, !!e.split, e.startedAt, e.controlFile ?? null, e.sandbox ?? null,
+        e.hostPid ?? null)
     }
-  } catch { /* nothing running, or written by an older version */ }
+  } catch { /* written by an older version */ }
 
   try {
     const legacyPid = parseInt(fs.readFileSync(getLegacyPidFilePath(), 'utf8').trim(), 10)
-    if (!instances.has(ALL_SCREENS)) adopt(ALL_SCREENS, legacyPid, '', '', Date.now(), null)
+    if (!instances.has(ALL_SCREENS)) adopt(ALL_SCREENS, legacyPid, '', '', false, Date.now(), null, null, null)
   } catch { /* no legacy pid file */ }
 
   persistInstances()
   watchAdoptedInstances()
 }
 
-// Node only reports exits of its own children, so a process adopted from an earlier run is polled
+// Node only reports exits of its own children, adopted ones are polled
 function watchAdoptedInstances(): void {
   if (adoptedPoll) return
-  adoptedPoll = setInterval(() => {
+  let polling = false
+  adoptedPoll = setInterval(async () => {
+    if (polling) return
+    polling = true
     let adopted = 0
-    for (const inst of instances.values()) {
-      if (inst.child) continue
-      adopted++
-      if (isLweProcess(inst.pid)) continue
-      instances.delete(inst.screen)
-      persistInstances()
-      if (!inst.stopping) {
-        // no exit status for a process we didn't spawn, so a crash can't be told from a kill
-        emitExit(inst, false, 'exited while the app was not watching it')
+    try {
+      for (const inst of instances.values()) {
+        if (inst.child) continue
+        adopted++
+        if (await isEngineAliveAsync(inst)) continue
+        // replaced or stopped while the host was asked
+        if (instances.get(inst.screen) !== inst) continue
+        instances.delete(inst.screen)
+        persistInstances()
+        if (!inst.stopping) {
+          // no exit status, a crash can't be told from a kill
+          emitExit(inst, false, 'exited while the app was not watching it')
+        }
       }
+    } finally {
+      polling = false
     }
     if (adopted === 0 && adoptedPoll) {
       clearInterval(adoptedPoll)
@@ -1230,6 +1306,7 @@ function emitExit(inst: LweInstance, crashed: boolean, description: string): voi
   const info: LweExitInfo = {
     screen: inst.screen,
     wallpaperPath: inst.wallpaperPath,
+    split: inst.split,
     crashed,
     phase: crashPhase(inst),
     description,
@@ -1242,7 +1319,7 @@ function liveInstance(screen: ScreenTarget): LweInstance | undefined {
   loadInstances()
   const inst = instances.get(screen)
   if (!inst) return undefined
-  if (inst.child ? inst.child.exitCode === null && inst.child.signalCode === null : isLweProcess(inst.pid)) return inst
+  if (inst.child ? inst.child.exitCode === null && inst.child.signalCode === null : isEngineAlive(inst)) return inst
   instances.delete(screen)
   persistInstances()
   return undefined
@@ -1256,15 +1333,17 @@ function liveInstances(): LweInstance[] {
 export interface RunningInstance {
   screen: ScreenTarget
   wallpaperPath: string
+  split: boolean
   pid: number
   startedAt: number
   swappedAt: number | null
 }
 
 export function getRunningInstances(): RunningInstance[] {
-  return liveInstances().map(({ screen, wallpaperPath, pid, startedAt, swappedAt }) => ({
+  return liveInstances().map(({ screen, wallpaperPath, split, pid, startedAt, swappedAt }) => ({
     screen,
     wallpaperPath,
+    split,
     pid,
     startedAt,
     swappedAt
@@ -1283,15 +1362,30 @@ function supportsHwdecHotswap(): boolean {
   return supportsFlag('hwdec=<backend>')
 }
 
-// flags a hotswap can't change, a running engine launched with different ones has to be restarted
+function supportsHrtfHotswap(): boolean {
+  return supportsFlag('hrtf=<mode>')
+}
+
+function supportsPowerHotswap(): boolean {
+  return supportsFlag('fps-battery=<fps|off>') && supportsFlag('idle-pause=<minutes>')
+}
+
+// what a hotswap can't change, a differing engine is restarted
 function launchKey(options: LweLaunchOptions): string {
   const flags = options.engineFlags ?? {}
   return JSON.stringify({
+    // a hotswap would put its wallpaper into every slot
+    split: options.split ?? null,
     customArgs: options.customArgs?.trim() ?? '',
     disabledEffects: supportsEffectHotswap() ? [] : (options.disabledEffects ?? []),
     enabledEffects: supportsEffectHotswap() ? [] : (options.enabledEffects ?? []),
     disableAnimations: supportsAnimationHotswap() ? false : !!flags.disableAnimations,
-    flags: engineFlagArgs(supportsHwdecHotswap() ? { ...flags, hwdec: undefined } : flags)
+    flags: engineFlagArgs({
+      ...flags,
+      ...(supportsHwdecHotswap() ? { hwdec: undefined } : {}),
+      ...(supportsHrtfHotswap() ? { hrtf: undefined } : {}),
+      ...(supportsPowerHotswap() ? { batteryFps: undefined, idlePause: undefined } : {})
+    })
   })
 }
 
@@ -1313,29 +1407,27 @@ export interface HotswapOptions {
   imageAdjustments?: ImageAdjustments
   speed?: number
   videoSegments?: VideoSegment[]
-  /** Jumps a video wallpaper to this many seconds, e.g. to watch the loop point */
+  /** Video seek in seconds */
   videoSeek?: number
   propertyOverrides?: Record<string, string>
-  /** Empty string clears the restriction back to "every screen can produce audio" */
+  /** Empty string = every screen can produce audio */
   audioScreen?: string
   ambientVolume?: number
-  /** Object id (or "*" for every audio-reactive object with no more specific entry) -> multiplier */
+  /** Object id or "*" -> multiplier */
   audioSensitivity?: Record<string, number>
-  /** Sound object id -> volume (0-1), applied live without a reload */
+  /** Sound object id -> volume (0-1) */
   soundVolume?: Record<string, number>
   /** Either being present replaces the engine's effect lists */
   disabledEffects?: string[]
   enabledEffects?: string[]
   disableAnimations?: boolean
   hwdec?: HwdecBackend
+  hrtf?: HrtfMode
+  batteryFps?: BatteryFps
+  idlePause?: IdlePause
 }
 
-/**
- * Control file lines for a hotswap. disabledObjects/enabledObjects being present (even as empty
- * arrays) is what tells the engine to replace its override lists - omit both to leave layers
- * untouched. propertyOverrides sends every key in the map, not just changed ones, since the engine
- * only reapplies whatever's currently in its settings map on reload.
- */
+/** Object lists replace the engine's when present (even empty). Every property key is sent */
 export function buildHotswapLines(options: HotswapOptions): string[] {
   const lines: string[] = []
   if (options.path !== undefined) lines.push(`path=${options.path}`)
@@ -1351,6 +1443,9 @@ export function buildHotswapLines(options: HotswapOptions): string[] {
   }
   if (options.disableAnimations !== undefined) lines.push(`disable-animations=${options.disableAnimations ? 'on' : 'off'}`)
   if (options.hwdec !== undefined) lines.push(`hwdec=${options.hwdec}`)
+  if (options.hrtf !== undefined) lines.push(`hrtf=${options.hrtf}`)
+  if (options.batteryFps !== undefined) lines.push(`fps-battery=${options.batteryFps}`)
+  if (options.idlePause !== undefined) lines.push(`idle-pause=${options.idlePause}`)
   if (options.volume !== undefined) lines.push(`volume=${options.volume}`)
   if (options.fps !== undefined) lines.push(`fps=${options.fps}`)
   // on/off keeps engines without the disabled mode working
@@ -1388,8 +1483,7 @@ export function buildHotswapLines(options: HotswapOptions): string[] {
   return lines
 }
 
-// Engines without their own --control-file read the same shared file once they get SIGUSR1, so a
-// request for another process must not overwrite it before the previous one had a chance to read it
+// engines sharing the control file must read a request before the next overwrites it
 const HOTSWAP_SETTLE_MS = 1000
 let lastSignal: { pid: number; at: number; file: string } | null = null
 let signalQueue: Promise<unknown> = Promise.resolve()
@@ -1403,7 +1497,7 @@ function signalInstance(inst: LweInstance, lines: string[]): Promise<boolean> {
     }
     try {
       fs.writeFileSync(file, lines.join('\n') + '\n')
-      process.kill(inst.pid, 'SIGUSR1')
+      signalEngine(inst, 'SIGUSR1')
       lastSignal = { pid: inst.pid, at: Date.now(), file }
       console.log(`[LWE] Hotswap sent to ${inst.screen}:`, lines.join(' '))
       return true
@@ -1418,13 +1512,8 @@ function signalInstance(inst: LweInstance, lines: string[]): Promise<boolean> {
 }
 
 /**
- * Pushes a background swap and/or live setting changes to running engines. All fields for one
- * logical change must go through a single call: an engine has only one pending-request slot, so two
- * calls in quick succession can race and drop whichever one wrote last. Goes to the given screens,
- * else to every engine showing `wallpaperPath`, else to all of them. xray is a live-only setting
- * with no launch-time equivalent, so it has to be pushed here even right after a fresh launch.
- * cornerColor is a hex "RRGGBB"/"RRGGBBAA" string, only visible where the engine's clamp mode is
- * border (the default).
+ * One change per call, engines hold a single pending request. Targets the screens, else engines showing
+ * `wallpaperPath`, else all. xray has no launch flag, so it always goes here.
  */
 export async function hotswapLweSettings(
   options: HotswapOptions,
@@ -1440,7 +1529,8 @@ export async function hotswapLweSettings(
 
   let sent = false
   for (const inst of targets) {
-    if (!(await signalInstance(inst, lines))) continue
+    // a split screen's engine runs its first slot's wallpaper, settings for it go only there
+    if (!(await signalInstance(inst, inst.split ? [`screen=${inst.screen}#1`, ...lines] : lines))) continue
     sent = true
     if (options.path !== undefined) {
       inst.wallpaperPath = options.path
@@ -1451,15 +1541,23 @@ export async function hotswapLweSettings(
   return sent
 }
 
+export function liveEngineFlagOptions(
+  flags: EngineFlags
+): Pick<HotswapOptions, 'hwdec' | 'hrtf' | 'batteryFps' | 'idlePause'> {
+  return {
+    ...(supportsHwdecHotswap() ? { hwdec: flags.hwdec ?? 'auto' } : {}),
+    ...(supportsHrtfHotswap() ? { hrtf: flags.hrtf ?? 'auto' } : {}),
+    ...(supportsPowerHotswap() ? { batteryFps: flags.batteryFps ?? 'off', idlePause: flags.idlePause ?? 'off' } : {})
+  }
+}
+
 function hotswapOptionsFor(wallpaperPath: string, options: LweLaunchOptions): HotswapOptions {
   const defaultSensitivity = getDefaultAudioSensitivity()
   return {
     path: wallpaperPath,
-    // the engine drops the previous wallpaper's overrides on a path swap, the new one's go with it
+    // a path swap drops the previous wallpaper's overrides
     disabledObjects: options.disabledObjects ?? [],
     enabledObjects: options.enabledObjects ?? [],
-    // the running engine keeps the previous wallpaper's limit, so a wallpaper without one has to
-    // put it back to what a fresh launch without --fps gets
     fps: options.fps ?? DEFAULT_LWE_FPS,
     xray: options.xrayMode,
     scaling: options.scalingMode ?? 'default',
@@ -1472,7 +1570,7 @@ function hotswapOptionsFor(wallpaperPath: string, options: LweLaunchOptions): Ho
     cornerColor: options.cornerColor ?? '000000',
     imageAdjustments: options.imageAdjustments,
     speed: options.speed ?? 1,
-    // the engine drops the trim on a path swap, so only a trimmed wallpaper has to send one
+    // a path swap drops the trim
     videoSegments: options.videoSegments?.length ? options.videoSegments : undefined,
     propertyOverrides: options.propertyOverrides ?? {},
     audioSensitivity: {
@@ -1484,26 +1582,21 @@ function hotswapOptionsFor(wallpaperPath: string, options: LweLaunchOptions): Ho
       ? { disabledEffects: options.disabledEffects ?? [], enabledEffects: options.enabledEffects ?? [] }
       : {}),
     ...(supportsAnimationHotswap() ? { disableAnimations: !!options.engineFlags?.disableAnimations } : {}),
-    ...(supportsHwdecHotswap() ? { hwdec: options.engineFlags?.hwdec ?? 'auto' } : {})
+    ...liveEngineFlagOptions(options.engineFlags ?? {})
   }
 }
 
-/**
- * Shows a wallpaper on `options.screen` ('*' = one engine for every screen). An engine already
- * running there gets a hotswap when nothing launch-only differs, otherwise it is restarted.
- * Resolves after 2s if the new engine is still running, rejects if it exits with an error first.
- */
+/** Hotswaps the engine on the screen when possible, else restarts it. Resolves once it survived 2s */
 export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOptions = {}): Promise<void> {
   const screen = options.screen ?? ALL_SCREENS
   const key = launchKey(options)
 
-  // one engine for every screen and engines for single screens would draw over each other
+  // an all-screens engine and per-screen ones would overlap
   for (const inst of liveInstances()) {
     if ((screen === ALL_SCREENS) !== (inst.screen === ALL_SCREENS)) await stopLwe(inst.screen)
   }
 
   const existing = liveInstance(screen)
-  // engines sharing the control file could read each other's hotswap, see signalInstance
   const canHotswap =
     existing &&
     !options.forceFresh &&
@@ -1527,8 +1620,7 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
   ]
   const envVars = buildLweEnvVars()
 
-  // Spawn via `env` to set env vars explicitly, matching how LWE works from the terminal.
-  // The env option on spawn can lose vars when combined with detached/setsid.
+  // spawn's env option can lose vars with detached
   const spawnArgs = [...envVars, binaryPath, ...lweArgs]
   console.log('[LWE] Binary:', binaryPath)
   console.log('[LWE] Args:', lweArgs.join(' '))
@@ -1545,15 +1637,25 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
       child,
       wallpaperPath,
       launchKey: key,
+      split: !!options.split,
       startedAt: Date.now(),
       swappedAt: null,
       stopping: false,
       log: [],
-      controlFile
+      controlFile,
+      sandbox: flatpakInstanceId() ?? null,
+      hostPid: null
     }
     if (child.pid !== undefined) {
       instances.set(screen, inst)
       persistInstances()
+      if (isFlatpak()) {
+        void hostPidOf(child.pid).then((hostPid) => {
+          if (hostPid === undefined || instances.get(screen) !== inst) return
+          inst.hostPid = hostPid
+          persistInstances()
+        })
+      }
     }
 
     const collect = (stream: 'stdout' | 'stderr') => (chunk: Buffer) => {
@@ -1569,7 +1671,7 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
     let settled = false
 
     child.on('exit', (code, signal) => {
-      // a rapid stop+relaunch can deliver the old process's exit after its replacement registered
+      // the old process's exit can arrive after its replacement registered
       const current = instances.get(screen) === inst
       if (current) {
         instances.delete(screen)
@@ -1617,7 +1719,7 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
   })
 }
 
-// Matches lines like "  123 - Layer Name (image)" printed by --list-objects
+// "  123 - Layer Name (image)"
 const OBJECT_LINE_RE = /^\s*(\S+)\s-\s(.*)\s\((image|particle|text|sound|unknown)\)\s*$/
 
 function parseLweObjectList(output: string): LweSceneObject[] {
@@ -1629,12 +1731,10 @@ function parseLweObjectList(output: string): LweSceneObject[] {
   return objects
 }
 
-// Returns [] for non-scene wallpapers (video/web print no objects)
 export async function listLweObjects(wallpaperPath: string): Promise<LweSceneObject[]> {
   const status = getLweStatus()
   if (!status.installed) throw new Error('linux-wallpaperengine is not installed.')
-  // Older builds silently ignore unknown flags and fall through to actually rendering the
-  // wallpaper instead of exiting, so this must never be sent to a binary that doesn't support it.
+  // older builds ignore unknown flags and render instead of exiting
   if (!supportsObjectFlags()) return []
 
   const binaryPath = getLweBinaryPath()
@@ -1658,7 +1758,7 @@ export async function listLweObjects(wallpaperPath: string): Promise<LweSceneObj
   }
 }
 
-// Matches lines like `  42 - Bloom (object=17 objectName="body" group="Lighting")` printed by --list-effects
+// `  42 - Bloom (object=17 objectName="body" group="Lighting")`
 const EFFECT_LINE_RE = /^\s*(\S+)\s-\s(.*)\s\(object=(\S+)\sobjectName="(.*)"\sgroup="(.*)"\)\s*$/
 
 function parseLweEffectList(output: string): LweSceneEffect[] {
@@ -1697,8 +1797,7 @@ export async function listLweEffects(wallpaperPath: string): Promise<LweSceneEff
   }
 }
 
-// Matches lines like "  24 - transbig (scale): minvalue=0.9 maxvalue=1.1 frequency=0 smoothing=10"
-// printed by --list-audio-objects
+// "  24 - transbig (scale): minvalue=0.9 maxvalue=1.1 frequency=0 smoothing=10"
 const AUDIO_OBJECT_LINE_RE =
   /^\s*(\S+)\s-\s(.*)\s\((.+)\):\sminvalue=(\S+)\smaxvalue=(\S+)\sfrequency=(\S+)\ssmoothing=(\S+)\s*$/
 
@@ -1721,12 +1820,10 @@ function parseLweAudioObjectList(output: string): LweAudioObject[] {
   return objects
 }
 
-// Returns [] for wallpapers with no audio-reactive scripted properties (most wallpapers)
 export async function listLweAudioObjects(wallpaperPath: string): Promise<LweAudioObject[]> {
   const status = getLweStatus()
   if (!status.installed) throw new Error('linux-wallpaperengine is not installed.')
-  // older builds silently ignore unknown flags and fall
-  // through to actually rendering the wallpaper instead of exiting.
+  // older builds ignore unknown flags and render instead of exiting
   if (!supportsAudioSensitivity()) return []
 
   const binaryPath = getLweBinaryPath()
@@ -1750,21 +1847,14 @@ export async function listLweAudioObjects(wallpaperPath: string): Promise<LweAud
   }
 }
 
-// Parses --list-properties output, e.g.:
-//   background_edit_brightness - slider
-//   	Text: Brightness
-//   	Min: 0
-//   	Max: 200
-//   	Step: 0
-//   	Value: 100.000000
-//
+// --list-properties output:
 //   clock_font - combo
 //   	Text: ui_clock_font
 //   	Value: impact
 //   Values:
 //   		segoe ui = ui_clock_font_4
-// Combo option values (before " = ") can contain spaces (e.g. font names), so that
-// line can't be split on whitespace - only on the literal " = " separator.
+// combo values can contain spaces, split only on " = "
+
 const PROPERTY_HEADER_RE =
   /^(\S+) - (slider|boolean|color|combo|text|scene texture|file|textinput|usershortcut)$/
 const PROPERTY_DETAIL_RE = /^\t(Text|Value|Min|Max|Step): (.*)$/
@@ -1830,37 +1920,39 @@ export async function listLweProperties(wallpaperPath: string): Promise<LwePrope
   }
 }
 
-/** Polls until `pid` is gone, since Node has no waitpid() for a process it didn't spawn itself. */
-async function pollUntilGone(pid: number, timeoutMs: number): Promise<boolean> {
+type EngineProcess = Pick<LweInstance, 'pid' | 'sandbox' | 'hostPid'>
+
+/** Node has no waitpid() for a process it didn't spawn */
+async function pollUntilGone(target: EngineProcess, timeoutMs: number): Promise<boolean> {
+  const other = inOtherSandbox(target)
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    try {
-      process.kill(pid, 0)
-    } catch {
-      return true
+    if (other) {
+      if (!(await isEngineAliveAsync(target))) return true
+    } else {
+      try {
+        process.kill(target.pid, 0)
+      } catch {
+        return true
+      }
     }
-    await new Promise((resolve) => setTimeout(resolve, 25))
+    // every check of another sandbox's engine is a flatpak-spawn round trip
+    await new Promise((resolve) => setTimeout(resolve, other ? 100 : 25))
   }
   return false
 }
 
-/**
- * Waits for `pid` to actually exit (escalating to SIGKILL if it ignores the grace period) instead
- * of just firing SIGTERM and returning. Matters because launchLweAsync spawns a replacement right
- * after calling stopLwe() - without waiting, the new process can race the old one's teardown for
- * the same resources (e.g. the audio device), which is silent and easy to miss since it only
- * shows up as "audio doesn't work on this particular launch."
- */
-async function waitForPidExit(pid: number, timeoutMs = 2000): Promise<void> {
-  if (await pollUntilGone(pid, timeoutMs)) return
+/** SIGKILL after the grace period; a replacement would race it for the audio device */
+async function waitForExit(target: EngineProcess, timeoutMs = 2000): Promise<void> {
+  if (await pollUntilGone(target, timeoutMs)) return
 
   try {
-    process.kill(pid, 'SIGKILL')
+    signalEngine(target, 'SIGKILL')
   } catch { /* already dead */ }
-  await pollUntilGone(pid, 500)
+  await pollUntilGone(target, 500)
 }
 
-/** Stops the engine on one screen, or every engine this app started when no screen is given. */
+/** One screen's engine, or every engine this app started */
 export async function stopLwe(screen?: ScreenTarget): Promise<void> {
   loadInstances()
   const targets = screen === undefined ? [...instances.values()] : [instances.get(screen)].filter((i) => !!i)
@@ -1869,9 +1961,9 @@ export async function stopLwe(screen?: ScreenTarget): Promise<void> {
     targets.map(async (inst) => {
       inst.stopping = true
       try {
-        process.kill(inst.pid, 'SIGTERM')
+        signalEngine(inst, 'SIGTERM')
       } catch { /* already dead */ }
-      await waitForPidExit(inst.pid)
+      await waitForExit(inst)
       if (inst.controlFile) fs.rmSync(inst.controlFile, { force: true })
       fs.rmSync(inputFileFor(inst.screen), { force: true })
       if (instances.get(inst.screen) === inst) instances.delete(inst.screen)
@@ -1884,33 +1976,32 @@ export function isLweRunning(screen?: ScreenTarget): boolean {
   return screen === undefined ? liveInstances().length > 0 : !!liveInstance(screen)
 }
 
-/** Force-kill every linux-wallpaperengine process on the system, including ones this app isn't tracking. */
+/** Including engines this app isn't tracking */
 export async function killAllLweProcesses(): Promise<{ ok: boolean; message: string }> {
   loadInstances()
   for (const inst of instances.values()) inst.stopping = true
   instances.clear()
   persistInstances()
 
+  // the bracket keeps pkill from matching flatpak-spawn's own command line
+  const [file, args] = hostCommand('pkill', ['-9', '-f', '-c', `${LWE_BINARY.slice(0, -1)}[${LWE_BINARY.slice(-1)}]`])
   try {
-    const { stdout } = await execFileAsync('pkill', ['-9', '-f', '-c', LWE_BINARY])
+    const { stdout } = await execFileAsync(file, args)
     const count = parseInt(stdout.trim(), 10) || 0
-    return { ok: true, message: `Killed ${count} process${count === 1 ? '' : 'es'}.` }
+    return { ok: true, message: t('lwe.killed', { count }) }
   } catch (err) {
     const code = (err as { code?: number }).code
-    // pkill exits 1 when nothing matched, that's not a failure here
+    // exit 1 = nothing matched
     if (code === 1) {
-      return { ok: true, message: 'No running processes found.' }
+      return { ok: true, message: t('lwe.noProcesses') }
     }
-    return { ok: false, message: `Failed to kill processes: ${(err as Error).message}` }
+    return { ok: false, message: t('lwe.killFailed', { error: (err as Error).message }) }
   }
 }
 
 const SCREENSHOT_TIMEOUT_MS = 45_000
 
-/**
- * Renders the wallpaper into a small window of its own (screen engines can't be asked for a frame)
- * and saves one frame to `outPath` (.png/.jpg/.bmp) once it had time to settle.
- */
+/** Saves one settled frame to `outPath` */
 export async function captureLweScreenshot(
   wallpaperPath: string,
   options: LweLaunchOptions,
@@ -1926,11 +2017,15 @@ export async function captureLweScreenshot(
       ...options,
       fps: 60,
       volume: 0,
-      engineFlags: { ...options.engineFlags, silent: true, fullscreenPause: 'off', pauseOnFocus: false, disableMouse: true }
+      engineFlags: { ...options.engineFlags, silent: true, fullscreenPause: 'off', pauseOnFocus: false, pauseOnMaximized: false, disableMouse: true }
     },
     { window: `0x0x${size.width}x${size.height}`, screenshotPath: outPath, delayFrames: 120 }
   )
-  const child = spawn('env', [...buildLweEnvVars(), getLweBinaryPath(), ...args], { stdio: ['ignore', 'ignore', 'pipe'] })
+  // the window is X11, without an X server render offscreen
+  const headless = process.env.DISPLAY ? [] : ['XDG_SESSION_TYPE=headless']
+  const child = spawn('env', [...buildLweEnvVars(), ...headless, getLweBinaryPath(), ...args], {
+    stdio: ['ignore', 'ignore', 'pipe']
+  })
   const stderr: string[] = []
   child.stderr?.on('data', (chunk: Buffer) => {
     stderr.push(chunk.toString('utf8'))
@@ -1945,7 +2040,8 @@ export async function captureLweScreenshot(
         const msg = stderr.join('').trim().split('\n').slice(-3).join('\n')
         throw new Error(`linux-wallpaperengine exited before taking the screenshot${msg ? `: ${msg}` : ''}`)
       }
-      // the file is written in one go, but a size that held still for a poll is certainly done
+      // done once the size held still for a poll
+
       const current = fs.existsSync(outPath) ? fs.statSync(outPath).size : -1
       if (current > 0 && current === lastSize) return
       lastSize = current
@@ -1953,6 +2049,6 @@ export async function captureLweScreenshot(
     throw new Error('Timed out waiting for the screenshot')
   } finally {
     child.kill('SIGTERM')
-    if (child.pid !== undefined) await waitForPidExit(child.pid, 3000)
+    if (child.pid !== undefined) await waitForExit({ pid: child.pid, sandbox: flatpakInstanceId() ?? null, hostPid: null }, 3000)
   }
 }

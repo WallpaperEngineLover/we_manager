@@ -5,6 +5,8 @@ import { COMPAT_LABELS, compatStatus } from '@shared/compat'
 import { CompatStatusIcon } from '../CompatBadge'
 import { useToast } from '../Toast'
 import { screenLabel } from '../../../utils/screens'
+import { t, currentLanguage } from '../../../i18n'
+import type { MessageKey } from '@shared/i18n'
 
 interface Props {
   wallpaper: WallpaperMeta
@@ -13,10 +15,10 @@ interface Props {
   onTest: () => Promise<unknown>
 }
 
-const PHASE_LABELS = {
-  launch: 'on launch',
-  hotswap: 'when switched to',
-  runtime: 'while running'
+const LAST_CRASH: Record<'launch' | 'hotswap' | 'runtime', MessageKey> = {
+  launch: 'compat.lastCrashLaunch',
+  hotswap: 'compat.lastCrashHotswap',
+  runtime: 'compat.lastCrashRuntime'
 }
 
 export default function CompatSection({ wallpaper, canTest, onChange, onTest }: Props) {
@@ -44,7 +46,7 @@ export default function CompatSection({ wallpaper, canTest, onChange, onTest }: 
     setTesting(true)
     try {
       await onTest()
-      showToast('Launched fresh, watching it for 20 seconds')
+      showToast(t('compat.testStarted'))
     } catch (err) {
       showToast((err as Error).message, { warning: true, durationMs: 6000 })
     } finally {
@@ -60,7 +62,7 @@ export default function CompatSection({ wallpaper, canTest, onChange, onTest }: 
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         <Bug size={12} />
-        <span className="flex-1 text-left">Compatibility</span>
+        <span className="flex-1 text-left">{t('compat.title')}</span>
         <CompatStatusIcon status={status} />
       </button>
 
@@ -68,18 +70,18 @@ export default function CompatSection({ wallpaper, canTest, onChange, onTest }: 
         <div className="mt-2 flex flex-col gap-2 text-xs">
           <p className="flex items-center gap-1.5 text-gray-300">
             <CompatStatusIcon status={status} />
-            {COMPAT_LABELS[status]}
+            {t(COMPAT_LABELS[status])}
           </p>
 
           {compat?.lastCrash && (
             <div className="text-gray-500">
-              Last crash {PHASE_LABELS[compat.lastCrash.phase]}
-              {compat.lastCrash.screen !== '*' && ` on ${screenLabel(compat.lastCrash.screen)}`},{' '}
-              {new Date(compat.lastCrash.at).toLocaleString()}
-              {compat.runtimeCrashes ? ` (${compat.runtimeCrashes} while running so far)` : ''}
+              {t(LAST_CRASH[compat.lastCrash.phase])}
+              {compat.lastCrash.screen !== '*' && ` ${t('status.onScreen', { screen: screenLabel(compat.lastCrash.screen) })}`},{' '}
+              {new Date(compat.lastCrash.at).toLocaleString(currentLanguage())}
+              {compat.runtimeCrashes ? ` ${t('compat.runtimeCount', { count: compat.runtimeCrashes })}` : ''}
               {compat.lastCrash.log.length > 0 && (
                 <button onClick={() => setShowLog((v) => !v)} className="ml-1 text-accent-300 hover:text-accent-200">
-                  {showLog ? 'hide log' : 'show log'}
+                  {showLog ? t('compat.hideLog') : t('compat.showLog')}
                 </button>
               )}
               {showLog && (
@@ -95,7 +97,7 @@ export default function CompatSection({ wallpaper, canTest, onChange, onTest }: 
             onChange={(e) => setNoteDraft(e.target.value)}
             onBlur={(e) => commitNote(e.target.value)}
             rows={2}
-            placeholder="Notes, e.g. needs Show full image, glitches with effects on"
+            placeholder={t('compat.notePlaceholder')}
             className="w-full resize-y rounded border border-fg/10 bg-black/30 px-2 py-1 text-xs text-gray-200 placeholder:text-gray-600 focus:border-accent-500/50 focus:outline-none"
           />
 
@@ -104,11 +106,11 @@ export default function CompatSection({ wallpaper, canTest, onChange, onTest }: 
               <button
                 onClick={test}
                 disabled={testing}
-                title="Launch it fresh and record whether it survives"
+                title={t('compat.testHint')}
                 className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10 disabled:opacity-50"
               >
                 {testing ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
-                Test fresh launch
+                {t('compat.test')}
               </button>
             )}
             {status !== 'ok' && (
@@ -117,7 +119,7 @@ export default function CompatSection({ wallpaper, canTest, onChange, onTest }: 
                 className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10"
               >
                 <Undo2 size={11} />
-                Forget crashes
+                {t('compat.forget')}
               </button>
             )}
           </div>

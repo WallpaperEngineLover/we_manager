@@ -2,6 +2,7 @@ import { app, nativeTheme, type BrowserWindow, type BrowserWindowConstructorOpti
 import { isTranslucent, launchAppearanceKey, wantsBlur, type Appearance } from '@shared/appearance'
 import { getAppearance } from './config.service'
 import { detectDesktopEnv } from '../utils/platform'
+import { relaunchApp } from '../utils/relaunch'
 
 type Koffi = typeof import('koffi')
 
@@ -15,11 +16,20 @@ function onX11(): boolean {
   return !process.env.WAYLAND_DISPLAY || process.env.ELECTRON_OZONE_PLATFORM_HINT === 'x11'
 }
 
-/** Before app ready: KWin only blurs X11 windows, so Wayland goes through XWayland */
+/** Not in a Flatpak on Wayland, fallback-x11 hides the X socket */
+
+function xwaylandReachable(): boolean {
+  return !!process.env.DISPLAY
+}
+
+/**
+ * Before app ready: KWin only blurs X11 windows, so Wayland goes through XWayland. The platform is picked before any
+ * JS runs and an appended switch only reaches child processes, so the app relaunches with it.
+ */
 export function prepareAppearance(): void {
   launchAppearance = getAppearance()
-  if (wantsBlur(launchAppearance) && detectDesktopEnv() === 'kde' && !onX11()) {
-    app.commandLine.appendSwitch('ozone-platform', 'x11')
+  if (wantsBlur(launchAppearance) && detectDesktopEnv() === 'kde' && !onX11() && xwaylandReachable()) {
+    relaunchApp([...process.argv.slice(1), '--ozone-platform=x11'], 'exit')
   }
 }
 
@@ -31,7 +41,7 @@ export function isAppearanceRestartNeeded(): boolean {
   const current = getAppearance()
   const launch = getLaunchAppearance()
   if (isTranslucent(current) !== isTranslucent(launch)) return true
-  if (onX11()) return false
+  if (onX11() || !xwaylandReachable()) return false
   return launchAppearanceKey(current) !== launchAppearanceKey(launch)
 }
 

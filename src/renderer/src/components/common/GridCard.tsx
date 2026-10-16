@@ -6,8 +6,8 @@ import { cardFrames, type CardSteamState } from '../../hooks/useCardBorders'
 import { useVoteAction } from '../../hooks/useVotes'
 import { openWorkshopPage } from '../../utils/steam'
 import PreviewImage from './PreviewImage'
+import { t } from '../../i18n'
 
-// Building blocks shared by the workshop and library wallpaper cards
 
 interface GridCardProps extends HTMLAttributes<HTMLDivElement> {
   selected: boolean
@@ -83,14 +83,13 @@ export function CardPreview({
           className={clsx('transition-transform duration-300 group-hover:scale-105', dimmed && 'brightness-50')}
         />
       ) : (
-        <div className="flex h-full items-center justify-center text-gray-600">No preview</div>
+        <div className="flex h-full items-center justify-center text-gray-600">{t('card.noPreview')}</div>
       )}
       {children}
     </div>
   )
 }
 
-// full-preview status layer (downloading, failed, backing up)
 export function CardOverlay({ children }: { children: ReactNode }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/70 px-4 text-center">
@@ -107,7 +106,6 @@ export function ProgressBar({ percentage, className }: { percentage: number; cla
   )
 }
 
-// small square status icon in a preview corner
 export function CornerBadge({ className, title, children }: { className: string; title: string; children: ReactNode }) {
   return (
     <div className={clsx('absolute flex h-5 w-5 items-center justify-center rounded', className)} title={title}>
@@ -133,7 +131,6 @@ interface CardActionProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   tone?: ActionTone
 }
 
-// row button under a card's title, icon-only when compact
 export function CardAction({ icon: Icon, label, busy, compact = false, tone = 'default', onClick, ...rest }: CardActionProps) {
   return (
     <button
@@ -171,17 +168,17 @@ export function LikeAction({
   return (
     <CardAction
       icon={ThumbsUp}
-      label={isLiked ? 'Liked' : 'Like'}
+      label={isLiked ? t('vote.liked') : t('vote.like')}
       busy={isLiking}
       compact={compact}
       tone={unavailable ? 'muted' : isLiked ? 'active' : 'default'}
       disabled={isLiked || isLiking || unavailable}
       title={
         unavailable
-          ? 'Removed from the Steam Workshop - voting is no longer possible'
+          ? t('vote.unavailable')
           : isLiked
-            ? 'Already liked on Steam'
-            : 'Like on Steam'
+            ? t('vote.alreadyLiked')
+            : t('vote.likeOnSteam')
       }
       onClick={() => vote(id, true)}
     />
@@ -194,13 +191,12 @@ export function SteamAction({ id, compact }: { id: string; compact?: boolean }) 
       icon={ExternalLink}
       label="Steam"
       compact={compact}
-      title="Open in Steam Workshop"
+      title={t('menu.openWorkshop')}
       onClick={() => openWorkshopPage(id)}
     />
   )
 }
 
-// round button in the preview's top right corner, shown on hover
 export function PlayButton({
   busy,
   ready,

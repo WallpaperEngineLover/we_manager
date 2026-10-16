@@ -5,11 +5,23 @@ import { app } from 'electron'
 import { WE_APP_ID } from '@shared/constants'
 import { normalizeAppearance, type Appearance } from '@shared/appearance'
 import { normalizeCardBorders, type CardBorders } from '@shared/cardBorders'
-import type { DisplayMode, EngineFlagPreset, EngineFlags, ExtraLibrary, SteamIdentity } from '@shared/types'
+import { normalizeCardBadges, type CardBadges } from '@shared/cardBadges'
+import { normalizeLanguagePreference, type LanguagePreference } from '@shared/i18n'
+import { normalizeUpdateChecks } from '@shared/updates'
+import type {
+  DisplayMode,
+  EngineFlagPreset,
+  EngineFlags,
+  ExtraLibrary,
+  SplitScreen,
+  SteamIdentity,
+  UpdateChecks,
+  UpdateTarget
+} from '@shared/types'
 
 interface AppConfig {
   workshopPath: string | null
-  /** Extra wallpaper folders (source 'local'), plain strings are the old unnamed format */
+  /** Plain strings are the old unnamed format */
   extraLibraryPaths: (string | ExtraLibrary)[]
   defaultFps: number | null
   lweRepoUrl: string | null
@@ -25,24 +37,31 @@ interface AppConfig {
   /** Legacy, only read to migrate into cardBorders */
   voteBorders: boolean
   cardBorders: CardBorders | null
+  cardBadges: CardBadges | null
   recommendedFpsEnabled: boolean
   recommendedWebFpsEnabled: boolean
   audioScreen: string | null
   ambientVolume: number | null
-  /** Default --audio-sensitivity multiplier for audio-reactive objects with no per-wallpaper override */
+  /** --audio-sensitivity default */
   defaultAudioSensitivity: number
-  /** Passes --render-debug no-puppet-animation to LWE - freezes puppet (.mdl) meshes at their bind pose, for troubleshooting */
+  /** --render-debug no-puppet-animation */
   disablePuppetAnimation: boolean
-  /** Passes --disable-animations to LWE - freezes all scene time (scripts, particles, effects and puppet meshes) */
+  /** --disable-animations */
   disableAnimations: boolean
   steamIdentity: SteamIdentity
-  /** steamId64 of creators whose workshop items are hidden from browsing by default */
+  /** steamId64s hidden from browsing */
   ignoredCreators: string[]
-  /** Launch-only engine flags for every wallpaper; disableAnimations lives in its own key above */
+  /** disableAnimations has its own key */
   engineFlags: EngineFlags
   engineFlagPresets: EngineFlagPreset[]
   displayMode: DisplayMode
+  /** screen -> its slots, see SplitScreen */
+  splitScreens: Record<string, SplitScreen>
   appearance: Appearance
+  language: LanguagePreference
+  /** null until answered */
+  updateChecks: UpdateChecks | null
+  dismissedUpdates: Partial<Record<UpdateTarget, string>>
 }
 
 const store = new Store<AppConfig>({
@@ -65,6 +84,7 @@ const store = new Store<AppConfig>({
     killLweOnQuit: false,
     voteBorders: true,
     cardBorders: null,
+    cardBadges: null,
     audioScreen: null,
     ambientVolume: null,
     defaultAudioSensitivity: 1,
@@ -75,7 +95,11 @@ const store = new Store<AppConfig>({
     engineFlags: {},
     engineFlagPresets: [],
     displayMode: 'shared',
-    appearance: normalizeAppearance(undefined)
+    splitScreens: {},
+    appearance: normalizeAppearance(undefined),
+    language: 'system',
+    updateChecks: null,
+    dismissedUpdates: {}
   }
 })
 
@@ -168,6 +192,30 @@ export function setAppearance(appearance: Partial<Appearance>): Appearance {
   return next
 }
 
+export function getLanguagePreference(): LanguagePreference {
+  return normalizeLanguagePreference(store.get('language'))
+}
+
+export function setLanguagePreference(language: LanguagePreference): void {
+  store.set('language', normalizeLanguagePreference(language))
+}
+
+export function getUpdateChecks(): UpdateChecks | null {
+  return normalizeUpdateChecks(store.get('updateChecks'))
+}
+
+export function setUpdateChecks(checks: UpdateChecks): void {
+  store.set('updateChecks', normalizeUpdateChecks(checks))
+}
+
+export function getDismissedUpdates(): Partial<Record<UpdateTarget, string>> {
+  return store.get('dismissedUpdates')
+}
+
+export function setDismissedUpdates(dismissed: Partial<Record<UpdateTarget, string>>): void {
+  store.set('dismissedUpdates', dismissed)
+}
+
 export function getCardBorders(): CardBorders {
   return normalizeCardBorders(store.get('cardBorders'), store.get('voteBorders'))
 }
@@ -178,7 +226,17 @@ export function setCardBorders(borders: CardBorders): CardBorders {
   return next
 }
 
-/** 'wallpaper-engine' connects under WE's app id, 'standalone' under a neutral test app id. Read on every connect. */
+export function getCardBadges(): CardBadges {
+  return normalizeCardBadges(store.get('cardBadges'))
+}
+
+export function setCardBadges(badges: CardBadges): CardBadges {
+  const next = normalizeCardBadges(badges)
+  store.set('cardBadges', next)
+  return next
+}
+
+/** 'standalone' connects under a neutral test app id. Read on every connect */
 export function getSteamIdentity(): SteamIdentity {
   return store.get('steamIdentity')
 }
@@ -208,7 +266,6 @@ export function setDefaultFps(fps: number | null): void {
   store.set('defaultFps', fps)
 }
 
-/** When enabled, video wallpapers without a manual FPS override are launched at their own native frame rate. */
 export function getRecommendedFpsEnabled(): boolean {
   return store.get('recommendedFpsEnabled')
 }
@@ -217,9 +274,7 @@ export function setRecommendedFpsEnabled(enabled: boolean): void {
   store.set('recommendedFpsEnabled', enabled)
 }
 
-/** When enabled, web wallpapers without a manual FPS override launch at RECOMMENDED_WEB_FPS
- *  instead of the default limit - the page only produces a frame when the engine presents one,
- *  so a lower default makes the animation itself choppy. */
+/** pages only animate per presented frame */
 export function getRecommendedWebFpsEnabled(): boolean {
   return store.get('recommendedWebFpsEnabled')
 }
@@ -228,7 +283,7 @@ export function setRecommendedWebFpsEnabled(enabled: boolean): void {
   store.set('recommendedWebFpsEnabled', enabled)
 }
 
-/** Screen name (matches --screen-root/--audio-screen) that alone produces audio; null = every screen can. */
+/** The only screen with audio, null = every screen */
 export function getAudioScreen(): string | null {
   return store.get('audioScreen')
 }
@@ -237,7 +292,7 @@ export function setAudioScreen(screen: string | null): void {
   store.set('audioScreen', screen)
 }
 
-/** 0-128, applied to non-video (scene sound + web) backgrounds instead of the per-wallpaper volume; null = same volume. */
+/** 0-128 for scene and web sound, null = the wallpaper's volume */
 export function getAmbientVolume(): number | null {
   return store.get('ambientVolume')
 }
@@ -246,7 +301,6 @@ export function setAmbientVolume(volume: number | null): void {
   store.set('ambientVolume', volume)
 }
 
-/** Freezes puppet (.mdl) meshes at their bind pose (--render-debug no-puppet-animation) - troubleshooting only. */
 export function getDisablePuppetAnimation(): boolean {
   return store.get('disablePuppetAnimation')
 }
@@ -277,7 +331,6 @@ export function setEngineFlagPresets(presets: EngineFlagPreset[]): void {
   store.set('engineFlagPresets', presets.filter((p) => !p.builtIn))
 }
 
-/** 'shared' runs one engine across every screen, 'per-screen' one engine (and playlist) per screen */
 export function getDisplayMode(): DisplayMode {
   return store.get('displayMode')
 }
@@ -286,7 +339,19 @@ export function setDisplayMode(mode: DisplayMode): void {
   store.set('displayMode', mode)
 }
 
-/** Default --audio-sensitivity multiplier for audio-reactive objects with no per-wallpaper override. */
+export function getSplitScreens(): Record<string, SplitScreen> {
+  return store.get('splitScreens')
+}
+
+/** null forgets the screen's split */
+export function setSplitScreen(screen: string, split: SplitScreen | null): void {
+  const splits = { ...store.get('splitScreens') }
+  // a layout picked before any wallpaper is kept
+  if (split === null || (split.slots.length === 0 && split.layout === 'aspect')) delete splits[screen]
+  else splits[screen] = split
+  store.set('splitScreens', splits)
+}
+
 export function getDefaultAudioSensitivity(): number {
   return store.get('defaultAudioSensitivity')
 }
@@ -295,12 +360,11 @@ export function setDefaultAudioSensitivity(multiplier: number): void {
   store.set('defaultAudioSensitivity', multiplier)
 }
 
-/** Custom linux-wallpaperengine repo (git URL or local path); null = official repo. */
+/** Git URL or local path, null = official repo */
 export function getLweRepoUrl(): string | null {
   return store.get('lweRepoUrl')
 }
 
-/** Branch/tag to build from the custom repo; null = default branch. */
 export function getLweRepoBranch(): string | null {
   return store.get('lweRepoBranch')
 }
@@ -310,7 +374,6 @@ export function setLweRepo(url: string | null, branch: string | null): void {
   store.set('lweRepoBranch', branch?.trim() || null)
 }
 
-/** Extra cmake arguments (e.g. "-DDISABLE_KDE_FEATURES=ON"), appended to the build. */
 export function getLweCmakeArgs(): string | null {
   return store.get('lweCmakeArgs')
 }
@@ -323,22 +386,15 @@ export function getWeConfigPath(): string {
   return path.join(app.getPath('userData'), 'we-config.json')
 }
 
-/**
- * Import a Wallpaper Engine config.json:
- * 1. Copies the file to our data dir
- * 2. Replaces all old workshop content paths with the configured workshop path
- * 3. Returns the path to the fixed copy
- */
+/** Copies a WE config.json with workshop paths pointed at ours */
 export function importWEConfigFile(sourcePath: string): string {
   const workshopPath = getConfiguredWorkshopPath()
   if (!workshopPath) throw new Error('Workshop path must be configured before importing')
 
   let content = fs.readFileSync(sourcePath, 'utf8')
 
-  // The WE config uses paths like:
-  //   D:/Games/SteamLibrary/steamapps/workshop/content/431960/...
-  //   C:/Program Files (x86)/Steam/steamapps/workshop/content/431960/...
-  // We need to replace everything up to and including "431960/" with the configured workshop path + "/"
+  // e.g. D:/Games/SteamLibrary/steamapps/workshop/content/431960/... up to "431960/"
+
   const appId = String(WE_APP_ID)
   const pattern = new RegExp(
     `[A-Za-z]:[^"]*?/steamapps/workshop/content/${appId}/|` +

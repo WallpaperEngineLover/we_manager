@@ -8,12 +8,15 @@ import {
   expandScreen,
   getDisplayTargets,
   getScreenAssignments,
+  showSplitScreen,
   showWallpaper,
   stopDisplay,
   testFreshLaunch
 } from '../services/display.service'
-import type { ApplyWallpaperOptions, ScreenTarget } from '@shared/types'
+import type { ApplyWallpaperOptions, ScreenTarget, SplitScreen } from '@shared/types'
+import { setSplitScreen } from '../services/config.service'
 import { deleteThumbnail, generateThumbnail, IMAGE_EXTENSIONS, useThumbnailFile } from '../services/thumbnail.service'
+import { t } from '../i18n'
 
 export function registerWallpaperHandlers(): void {
   ipcMain.handle(IpcChannels.WALLPAPER_DETECT_ENV, () => {
@@ -52,6 +55,16 @@ export function registerWallpaperHandlers(): void {
     return { ok: true }
   })
 
+  ipcMain.handle(IpcChannels.WALLPAPER_SET_SPLIT, (_e, screen: ScreenTarget, split: SplitScreen | null) => {
+    setSplitScreen(screen, split)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.WALLPAPER_SHOW_SPLIT, async (_e, screen: ScreenTarget) => {
+    await showSplitScreen(screen, () => pausePlaylist(screen))
+    return { ok: true }
+  })
+
   ipcMain.handle(IpcChannels.WALLPAPER_TEST_LAUNCH, async (_e, wallpaperId: string, screen?: ScreenTarget) => {
     for (const s of expandScreen(screen).slice(0, 1)) pausePlaylist(s)
     await testFreshLaunch(wallpaperId, screen)
@@ -64,8 +77,8 @@ export function registerWallpaperHandlers(): void {
     const win = BrowserWindow.getFocusedWindow()
     const options = {
       properties: ['openFile' as const],
-      title: 'Choose a thumbnail',
-      filters: [{ name: 'Images', extensions: IMAGE_EXTENSIONS.map((e) => e.slice(1)) }]
+      title: t('dialog.pickThumbnail'),
+      filters: [{ name: t('dialog.images'), extensions: IMAGE_EXTENSIONS.map((e) => e.slice(1)) }]
     }
     const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
     if (result.canceled || result.filePaths.length === 0) return null

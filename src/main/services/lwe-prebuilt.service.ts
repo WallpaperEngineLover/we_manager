@@ -2,8 +2,6 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import * as fs from 'fs'
 import * as path from 'path'
-import { Readable } from 'stream'
-import { pipeline } from 'stream/promises'
 import type { BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import { LWE_RELEASE_REPO } from '@shared/constants'
@@ -11,14 +9,13 @@ import type { LweInstallProgress, LwePrebuiltTarget } from '@shared/types'
 import { isCommandAvailable } from '../utils/platform'
 import { getLwePrebuiltDir } from '../utils/paths'
 import { isFlatpak } from '../utils/flatpak'
+import { download, fetchLatestRelease } from '../utils/github'
 import { buildCleanBuildEnv, isOstreeSystem, parseOsReleaseIds, readPrebuiltRelease, resetLweDetection } from './lwe.service'
+import { t } from '../i18n'
 
 const execFileAsync = promisify(execFile)
 
-/**
- * Distribution builds link the system's own libraries. The portable build bundles all but the desktop's libraries
- * and runs on any distribution with glibc 2.35 or newer (Arch, SteamOS, image-based systems, ...).
- */
+/** bundles all but desktop libraries, needs glibc 2.35+ */
 type PrebuiltDistro = 'ubuntu-24.04' | 'fedora-44' | 'portable'
 
 const DISTRO_LABELS: Record<PrebuiltDistro, string> = {
@@ -27,10 +24,13 @@ const DISTRO_LABELS: Record<PrebuiltDistro, string> = {
   portable: 'Portable build'
 }
 
+function distroLabel(distro: PrebuiltDistro): string {
+  return distro === 'portable' ? t('lwe.portableBuild') : DISTRO_LABELS[distro]
+}
+
 const PORTABLE_GLIBC = '2.35'
 
-// Libraries the engine and CEF load from the system. Fedora installs missing ones by soname instead
-// (see installMissingLibraries), so Nobara's full ffmpeg is never swapped for ffmpeg-free.
+// Fedora installs missing ones by soname instead, so Nobara's ffmpeg isn't swapped for ffmpeg-free
 const RUNTIME_DEPS_UBUNTU = [
   'libglew2.2', 'libsdl2-2.0-0', 'libx11-6', 'libxrandr2',
   'libavcodec60', 'libavformat60', 'libavutil58', 'libswresample4', 'libswscale7',
@@ -53,7 +53,7 @@ function readOsRelease(): Record<string, string> {
   return fields
 }
 
-/** glibc of the running system, e.g. "2.39" */
+/** e.g. "2.39" */
 function glibcVersion(): string | undefined {
   const header = (process.report?.getReport() as { header?: { glibcVersionRuntime?: string } } | undefined)?.header
   return header?.glibcVersionRuntime
@@ -93,61 +93,30 @@ function isKdeSession(): boolean {
 
 export function getPrebuiltTarget(): LwePrebuiltTarget {
   if (isFlatpak()) {
-    return { supported: false, managed: true, reason: 'linux-wallpaperengine comes with the Flatpak and is updated with it.' }
+    return { supported: false, managed: true, reason: t('lwe.flatpakManaged') }
   }
   if (process.arch !== 'x64') {
-    return { supported: false, reason: 'Prebuilt builds are x86_64 only, build from source instead.' }
+    return { supported: false, reason: t('lwe.prebuiltX64Only') }
   }
   const distro = detectPrebuiltDistro()
   if (!distro) {
     const glibc = glibcVersion()
     return {
       supported: false,
-      reason: `The prebuilt build needs glibc ${PORTABLE_GLIBC} or newer${glibc ? ` (this system has ${glibc})` : ''}, build from source instead.`
+      reason: glibc
+        ? t('lwe.prebuiltGlibcHave', { required: PORTABLE_GLIBC, have: glibc })
+        : t('lwe.prebuiltGlibc', { required: PORTABLE_GLIBC })
     }
   }
   const variant = isKdeSession() ? 'kde' : 'generic'
   return {
     supported: true,
     asset: assetName(variant, distro),
-    label: `${DISTRO_LABELS[distro]}, ${variant === 'kde' ? 'with' : 'without'} KDE integration`
+    label: t(variant === 'kde' ? 'lwe.prebuiltWithKde' : 'lwe.prebuiltWithoutKde', { build: distroLabel(distro) })
   }
 }
 
-interface GithubRelease {
-  tag_name: string
-  assets: { name: string; browser_download_url: string; size: number }[]
-}
-
-async function fetchLatestRelease(): Promise<GithubRelease> {
-  const res = await fetch(`https://api.github.com/repos/${LWE_RELEASE_REPO}/releases/latest`, {
-    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'we-manager' }
-  })
-  if (res.status === 404) throw new Error(`${LWE_RELEASE_REPO} has no releases yet.`)
-  if (!res.ok) throw new Error(`GitHub answered ${res.status} ${res.statusText} for the latest release.`)
-  return (await res.json()) as GithubRelease
-}
-
-async function download(url: string, dest: string, total: number, onProgress: (fraction: number) => void): Promise<void> {
-  const res = await fetch(url, { headers: { 'User-Agent': 'we-manager' } })
-  if (!res.ok || !res.body) throw new Error(`Download failed: ${res.status} ${res.statusText}`)
-
-  const size = Number(res.headers.get('content-length')) || total
-  let received = 0
-  let lastReport = 0
-  const body = Readable.fromWeb(res.body as import('stream/web').ReadableStream)
-  body.on('data', (chunk: Buffer) => {
-    received += chunk.length
-    const now = Date.now()
-    if (size > 0 && now - lastReport > 250) {
-      lastReport = now
-      onProgress(received / size)
-    }
-  })
-  await pipeline(body, fs.createWriteStream(dest))
-}
-
-/** Sonames the binary (with its bundled libs) can't resolve on this system */
+/** Unresolved sonames */
 async function findMissingLibraries(binary: string): Promise<string[]> {
   // the portable launcher adds its bundled fallback libraries before running ldd
   const portable = fs.existsSync(`${binary}.bin`)
@@ -205,8 +174,9 @@ export async function installLwePrebuilt(win: BrowserWindow): Promise<void> {
     const distro = detectPrebuiltDistro()
     if (!target.supported || !target.asset || !distro) throw new Error(target.reason ?? 'No prebuilt build fits this system.')
 
-    send({ stage: 'downloading', message: 'Looking up the latest release...', percentage: 2 })
-    const release = await fetchLatestRelease()
+    send({ stage: 'downloading', message: t('lwe.lookingUpRelease'), percentage: 2 })
+    const release = await fetchLatestRelease(LWE_RELEASE_REPO)
+    if (!release) throw new Error(`${LWE_RELEASE_REPO} has no releases yet.`)
     // fall back to the portable build
     const portableAsset = assetName(isKdeSession() ? 'kde' : 'generic', 'portable')
     const asset = release.assets.find(a => a.name === target.asset) ?? release.assets.find(a => a.name === portableAsset)
@@ -219,23 +189,24 @@ export async function installLwePrebuilt(win: BrowserWindow): Promise<void> {
 
     if (!upToDate) {
       const sizeMb = Math.round(asset.size / 1024 / 1024)
-      send({ stage: 'downloading', message: `Downloading ${release.tag_name} (${sizeMb} MB)...`, percentage: 5 })
+      send({ stage: 'downloading', message: t('lwe.downloadingRelease', { tag: release.tag_name, size: sizeMb }), percentage: 5 })
       fs.mkdirSync(path.dirname(installDir), { recursive: true })
       await download(asset.browser_download_url, archive, asset.size, fraction => {
         send({
           stage: 'downloading',
-          message: `Downloading ${release.tag_name} (${sizeMb} MB)...`,
+          message: t('lwe.downloadingRelease', { tag: release.tag_name, size: sizeMb }),
           percentage: 5 + Math.round(fraction * 70)
         })
       })
 
-      send({ stage: 'installing', message: 'Unpacking...', percentage: 78 })
+      send({ stage: 'installing', message: t('lwe.unpacking'), percentage: 78 })
       fs.rmSync(staging, { recursive: true, force: true })
       fs.mkdirSync(staging)
       await execFileAsync('tar', ['-xzf', archive, '-C', staging, '--strip-components=1'], { timeout: 300_000 })
       fs.writeFileSync(path.join(staging, '.release'), JSON.stringify({ tag: release.tag_name, asset: asset.name }))
 
-      // running engines keep their already mapped files, the new ones are used from the next launch
+      // running engines keep their mapped files
+
       fs.rmSync(previous, { recursive: true, force: true })
       if (fs.existsSync(installDir)) fs.renameSync(installDir, previous)
       fs.renameSync(staging, installDir)
@@ -243,19 +214,19 @@ export async function installLwePrebuilt(win: BrowserWindow): Promise<void> {
       fs.rmSync(archive, { force: true })
     }
 
-    send({ stage: 'installing', message: 'Checking system libraries...', percentage: 85 })
+    send({ stage: 'installing', message: t('lwe.checkingLibraries'), percentage: 85 })
     let missing = await findMissingLibraries(binary)
     if (missing.length > 0) {
       send({
         stage: 'installing',
-        message: `Installing missing system libraries (sudo required): ${missing.join(', ')}`,
+        message: t('lwe.installingLibraries', { libraries: missing.join(', ') }),
         percentage: 88
       })
       if (await installMissingLibraries(assetDistro, missing)) {
         resetLweDetection()
         send({
           stage: 'done',
-          message: `linux-wallpaperengine ${release.tag_name} installed. The missing system libraries (${missing.join(', ')}) were added with rpm-ostree, reboot once before using it.`,
+          message: t('lwe.installedRebootNeeded', { tag: release.tag_name, libraries: missing.join(', ') }),
           percentage: 100
         })
         return
@@ -270,13 +241,13 @@ export async function installLwePrebuilt(win: BrowserWindow): Promise<void> {
     send({
       stage: 'done',
       message: upToDate
-        ? `linux-wallpaperengine ${release.tag_name} is already up to date.`
-        : `linux-wallpaperengine ${release.tag_name} installed (${assetDistro === distro ? target.label : DISTRO_LABELS.portable}).`,
+        ? t('lwe.upToDate', { tag: release.tag_name })
+        : t('lwe.installedPrebuilt', { tag: release.tag_name, build: assetDistro === distro && target.label ? target.label : distroLabel('portable') }),
       percentage: 100
     })
   } catch (err) {
     fs.rmSync(archive, { force: true })
     fs.rmSync(staging, { recursive: true, force: true })
-    send({ stage: 'error', message: `Installation failed: ${(err as Error).message}`, percentage: 0 })
+    send({ stage: 'error', message: t('lwe.installFailed', { error: (err as Error).message }), percentage: 0 })
   }
 }

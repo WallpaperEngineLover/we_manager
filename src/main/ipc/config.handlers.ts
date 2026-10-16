@@ -5,6 +5,7 @@ import type { DisplayMode, EngineFlagPreset, EngineFlags, ExtraLibrary, SteamIde
 import { BUILT_IN_PRESETS } from '@shared/engineFlags'
 import { isTranslucent, type Appearance } from '@shared/appearance'
 import type { CardBorders } from '@shared/cardBorders'
+import type { CardBadges } from '@shared/cardBadges'
 import { applyLiveAppearance, getLaunchAppearance, isAppearanceRestartNeeded } from '../services/appearance.service'
 import {
   getConfiguredWorkshopPath,
@@ -40,9 +41,13 @@ import {
   getKillLweOnQuit,
   setKillLweOnQuit,
   getCardBorders,
+  getCardBadges,
   getAppearance,
   setAppearance,
+  getLanguagePreference,
+  setLanguagePreference,
   setCardBorders,
+  setCardBadges,
   getAudioScreen,
   setAudioScreen,
   getAmbientVolume,
@@ -62,16 +67,19 @@ import {
   getEngineFlagPresets,
   setEngineFlagPresets,
   getDisplayMode,
+  getSplitScreens,
   setDisplayMode
 } from '../services/config.service'
-import { resetDisplays } from '../services/display.service'
+import { pushGlobalEngineFlags, resetDisplays } from '../services/display.service'
 import { stopPlaylist } from '../services/playlist-player.service'
 import { getDefaultWorkshopPath } from '../utils/paths'
 import { detectDesktopEnv } from '../utils/platform'
 import { DEFAULT_LWE_REPO } from '@shared/constants'
 import { restartWatcher } from '../services/watcher.service'
 import { importWEConfig } from '../services/library.service'
-import { createTray, destroyTray } from '../services/tray.service'
+import { createTray, destroyTray, refreshTray } from '../services/tray.service'
+import { t, uiLanguage } from '../i18n'
+import type { LanguagePreference } from '@shared/i18n'
 import { getCompositorAutostartLine, isAutostartSupported, setAutostartEnabled } from '../services/autostart.service'
 
 export function registerConfigHandlers(): void {
@@ -98,6 +106,7 @@ export function registerConfigHandlers(): void {
     autostartPlaylistId: getAutostartPlaylistId(),
     killLweOnQuit: getKillLweOnQuit(),
     cardBorders: getCardBorders(),
+    cardBadges: getCardBadges(),
     audioScreen: getAudioScreen(),
     ambientVolume: getAmbientVolume(),
     defaultAudioSensitivity: getDefaultAudioSensitivity(),
@@ -108,7 +117,10 @@ export function registerConfigHandlers(): void {
     engineFlags: getGlobalEngineFlags(),
     engineFlagPresets: [...BUILT_IN_PRESETS, ...getEngineFlagPresets()],
     displayMode: getDisplayMode(),
+    splitScreens: getSplitScreens(),
     appearance: getAppearance(),
+    language: getLanguagePreference(),
+    uiLanguage: uiLanguage(),
     appearanceRestartNeeded: isAppearanceRestartNeeded(),
     windowTranslucent: isTranslucent(getLaunchAppearance()),
     desktopEnv: detectDesktopEnv()
@@ -146,10 +158,20 @@ export function registerConfigHandlers(): void {
     return setCardBorders(borders)
   })
 
+  ipcMain.handle(IpcChannels.CONFIG_SET_CARD_BADGES, (_e, badges: CardBadges) => {
+    return setCardBadges(badges)
+  })
+
   ipcMain.handle(IpcChannels.CONFIG_SET_APPEARANCE, (_e, appearance: Partial<Appearance>) => {
     const next = setAppearance(appearance)
     applyLiveAppearance(next)
     return next
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_LANGUAGE, (_e, language: LanguagePreference) => {
+    setLanguagePreference(language)
+    refreshTray()
+    return uiLanguage()
   })
 
   ipcMain.handle(IpcChannels.CONFIG_SET_STEAM_IDENTITY, (_e, identity: SteamIdentity) => {
@@ -212,8 +234,10 @@ export function registerConfigHandlers(): void {
     return { ok: true }
   })
 
-  ipcMain.handle(IpcChannels.CONFIG_SET_ENGINE_FLAGS, (_e, flags: EngineFlags) => {
+  ipcMain.handle(IpcChannels.CONFIG_SET_ENGINE_FLAGS, async (_e, flags: EngineFlags) => {
+    const before = getGlobalEngineFlags()
     setGlobalEngineFlags(flags)
+    await pushGlobalEngineFlags(before, flags)
     return { ok: true }
   })
 
@@ -262,7 +286,7 @@ export function registerConfigHandlers(): void {
     const win = BrowserWindow.getFocusedWindow()
     const result = await dialog.showOpenDialog(win!, {
       properties: ['openDirectory'],
-      title: title ?? 'Select Wallpaper Engine Workshop folder'
+      title: title ?? t('dialog.pickWorkshopFolder')
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
@@ -272,7 +296,7 @@ export function registerConfigHandlers(): void {
     const win = BrowserWindow.getFocusedWindow()
     const result = await dialog.showOpenDialog(win!, {
       properties: ['openFile'],
-      title: 'Select Wallpaper Engine config.json',
+      title: t('dialog.pickConfig'),
       filters: [{ name: 'JSON', extensions: ['json'] }]
     })
     if (result.canceled || result.filePaths.length === 0) return null

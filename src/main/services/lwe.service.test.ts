@@ -12,7 +12,15 @@ vi.mock('./config.service', () => ({
   getDisablePuppetAnimation: () => false
 }))
 
-const { buildCleanBuildEnv, buildHotswapLines, lwePackageOwner, nodeDevelPackage, parseCustomArgs, parseOsReleaseIds } = await import('./lwe.service')
+const {
+  buildCleanBuildEnv,
+  buildHotswapLines,
+  buildLweArgs,
+  lwePackageOwner,
+  nodeDevelPackage,
+  parseCustomArgs,
+  parseOsReleaseIds
+} = await import('./lwe.service')
 
 describe('parseCustomArgs', () => {
   it('splits on whitespace and keeps quoted values together', () => {
@@ -26,6 +34,31 @@ describe('parseCustomArgs', () => {
     ])
     expect(parseCustomArgs('   ')).toEqual([])
     expect(parseCustomArgs(`--title ""`)).toEqual(['--title', ''])
+  })
+})
+
+describe('buildLweArgs', () => {
+  it('gives every slot of a split screen its own settings', () => {
+    const args = buildLweArgs('/w/a', {
+      screen: 'DP-1',
+      split: {
+        layout: 'center',
+        slots: [
+          { path: '/w/a', scalingMode: 'fit' },
+          { path: '/w/b', zoom: 1.5, offsetX: 0.5 }
+        ]
+      },
+      fps: 30
+    })
+    const start = args.indexOf('--screen-slot')
+    expect(args.slice(start, start + 15)).toEqual([
+      '--screen-slot', 'DP-1', '--bg', '/w/a', '--scaling', 'fit',
+      '--screen-slot', 'DP-1', '--bg', '/w/b', '--zoom', '1.5', '--offset', '0.5,0',
+      '--split-layout'
+    ])
+    expect(args[start + 15]).toBe('center')
+    expect(args).not.toContain('--screen-root')
+    expect(args.slice(-3)).toEqual(['--fps', '30', '/w/a'])
   })
 })
 
@@ -70,6 +103,8 @@ describe('buildHotswapLines', () => {
 
   it('switches the video decoder live', () => {
     expect(buildHotswapLines({ hwdec: 'vaapi-copy' })).toEqual(['hwdec=vaapi-copy'])
+    expect(buildHotswapLines({ hrtf: 'off' })).toEqual(['hrtf=off'])
+    expect(buildHotswapLines({ batteryFps: 'pause', idlePause: '5' })).toEqual(['fps-battery=pause', 'idle-pause=5'])
   })
 
   it('replaces the layer lists when either one is present, even empty', () => {

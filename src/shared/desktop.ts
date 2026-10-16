@@ -12,7 +12,7 @@ export type DesktopEnvironment =
 
 const WLROOTS_STYLE: DesktopEnvironment[] = ['hyprland', 'sway', 'niri', 'river', 'labwc', 'wayfire']
 
-/** Compositors that draw wallpapers through wlr-layer-shell and ship no desktop shell of their own */
+/** layer-shell compositors without a desktop shell */
 export function isWlrootsStyle(env: DesktopEnvironment): boolean {
   return WLROOTS_STYLE.includes(env)
 }
@@ -52,12 +52,14 @@ function kdlString(text: string): string {
   return `"${text.replace(/[\\"]/g, '\\$&')}"`
 }
 
-/** Line for the compositor config's startup section, null when the session runs ~/.config/autostart itself */
-export function compositorAutostartLine(env: DesktopEnvironment, exePath: string): string | null {
+/** Compositor startup line, null when the session runs ~/.config/autostart itself */
+
+export function compositorAutostartLine(env: DesktopEnvironment, launch: string | string[]): string | null {
   if (!isWlrootsStyle(env)) return null
-  const command = `${shellWord(exePath)} --minimized`
+  const words = [...(typeof launch === 'string' ? [launch] : launch), '--minimized']
+  const command = words.map(shellWord).join(' ')
   if (env === 'hyprland') return `exec-once = ${command}`
   if (env === 'sway') return `exec ${command}`
-  if (env === 'niri') return `spawn-at-startup ${kdlString(exePath)} ${kdlString('--minimized')}`
+  if (env === 'niri') return `spawn-at-startup ${words.map(kdlString).join(' ')}`
   return command
 }

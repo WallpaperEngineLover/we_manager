@@ -13,6 +13,7 @@ import {
   SkipBack,
   Shuffle,
   Film,
+  Heart,
   ArrowDownWideNarrow
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -22,16 +23,19 @@ import WallpaperPickerModal from './WallpaperPickerModal'
 import DetailSidebar from '../common/DetailSidebar'
 import WallpaperContextMenu from '../common/WallpaperContextMenu'
 import { useAllWallpapers, usePlaybackStates, usePlaylists } from '../../hooks/queries'
+import { useFavoriteIds } from '../../hooks/useFavorites'
 import { useApplyWallpaper, useSubscribe, useUnsubscribe } from '../../hooks/useWallpaperActions'
 import { detailSidebarProps } from '../../utils/wallpaper'
 import ScreenSelect from '../common/ScreenSelect'
 import { useDisplayTargets } from '../../hooks/useDisplayTargets'
 import { screenLabel } from '../../utils/screens'
+import { t } from '../../i18n'
+import type { MessageKey } from '@shared/i18n'
 
-const SORT_OPTIONS: { value: PlaylistSettings['sortBy']; label: string }[] = [
-  { value: 'manual', label: 'Manual order' },
-  { value: 'title', label: 'Title' },
-  { value: 'createdAt', label: 'Date added' }
+const SORT_OPTIONS: { value: PlaylistSettings['sortBy']; label: MessageKey }[] = [
+  { value: 'manual', label: 'playlist.sortManual' },
+  { value: 'title', label: 'playlist.sortTitle' },
+  { value: 'createdAt', label: 'playlist.sortAdded' }
 ]
 
 interface PlaylistsViewProps {
@@ -64,6 +68,8 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
   const unsubscribe = useUnsubscribe()
 
   const activePlaylist = playlists.find((p) => p.id === activePlaylistId) ?? null
+  const favoriteIds = useFavoriteIds()
+  const favoriteCount = activePlaylist?.items.filter((i) => favoriteIds.has(i.wallpaperId)).length ?? 0
 
   function invalidatePlaylists() {
     queryClient.invalidateQueries({ queryKey: ['playlists'] })
@@ -212,14 +218,14 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
       <div className="flex w-56 shrink-0 flex-col border-r border-fg/5 overflow-y-auto">
         <div className="flex items-center justify-between px-3 pt-3 pb-1">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
-            Playlists
+            {t('nav.playlists')}
           </span>
           <button
             onClick={() => {
               setCreating(true)
               setNewTitle('')
             }}
-            title="Create playlist"
+            title={t('playlist.create')}
             className="rounded p-0.5 text-gray-600 hover:text-gray-300"
           >
             <Plus size={14} />
@@ -238,7 +244,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                 if (e.key === 'Enter') handleCreate()
                 if (e.key === 'Escape') setCreating(false)
               }}
-              placeholder="Playlist name..."
+              placeholder={t('playlist.namePlaceholder')}
               className="flex-1 bg-transparent text-sm text-gray-200 outline-none placeholder-gray-600"
             />
           </div>
@@ -246,7 +252,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
 
         {playlists.length === 0 && !creating && (
           <p className="px-3 py-4 text-xs text-gray-600">
-            No playlists yet. Create one to play wallpapers in sequence.
+            {t('playlist.noneYet')}
           </p>
         )}
 
@@ -312,7 +318,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
       <div className="flex flex-1 flex-col overflow-hidden">
         {!activePlaylist ? (
           <div className="flex h-full items-center justify-center text-gray-600">
-            <p>Select or create a playlist to get started.</p>
+            <p>{t('playlist.selectOrCreate')}</p>
           </div>
         ) : (
           <>
@@ -321,34 +327,34 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                 <h2 className="text-lg font-semibold text-gray-100">{activePlaylist.title}</h2>
                 <div className="flex items-center gap-2">
                   {perScreen && (
-                    <ScreenSelect targets={targets} value={screen} onChange={setScreen} title="Which screen to play on" />
+                    <ScreenSelect targets={targets} value={screen} onChange={setScreen} title={t('playlist.whichScreen')} />
                   )}
                   {isThisPlaylistActive ? (
                     <>
                       <button
                         onClick={handlePrevious}
-                        title="Previous"
+                        title={t('playlist.previous')}
                         className="rounded-lg bg-fg/5 p-2 text-gray-300 hover:bg-fg/10"
                       >
                         <SkipBack size={14} />
                       </button>
                       <button
                         onClick={handlePauseResume}
-                        title={isPlaying ? 'Pause' : 'Resume'}
+                        title={isPlaying ? t('common.pause') : t('common.resume')}
                         className="rounded-lg bg-accent-600 p-2 text-white hover:bg-accent-500"
                       >
                         {isPlaying ? <Pause size={14} /> : <Play size={14} />}
                       </button>
                       <button
                         onClick={handleNext}
-                        title="Next"
+                        title={t('common.next')}
                         className="rounded-lg bg-fg/5 p-2 text-gray-300 hover:bg-fg/10"
                       >
                         <SkipForward size={14} />
                       </button>
                       <button
                         onClick={handleStop}
-                        title="Stop"
+                        title={t('playlist.stop')}
                         className="rounded-lg bg-fg/5 p-2 text-gray-300 hover:bg-red-500/20 hover:text-red-400"
                       >
                         <Square size={14} />
@@ -361,7 +367,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                       className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
                     >
                       <Play size={14} />
-                      Play playlist
+                      {t('playlist.play')}
                     </button>
                   )}
                 </div>
@@ -369,7 +375,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
               {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
               {perScreen && isThisPlaylistActive && (
                 <p className="mt-1 text-xs text-gray-500">
-                  Playing on {thisStates.map((s) => screenLabel(s.screen)).join(', ')}
+                  {t('playlist.playingOn', { screens: thisStates.map((s) => screenLabel(s.screen)).join(', ') })}
                 </p>
               )}
 
@@ -377,13 +383,13 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                 <label className="flex items-center gap-2 text-xs text-gray-400">
                   <Toggle on={activePlaylist.settings.randomize} onClick={() => updateSettings({ randomize: !activePlaylist.settings.randomize })} />
                   <Shuffle size={12} />
-                  Randomize
+                  {t('playlist.randomize')}
                 </label>
 
                 {!activePlaylist.settings.randomize && (
                   <label className="flex items-center gap-2 text-xs text-gray-400">
                     <ArrowDownWideNarrow size={12} />
-                    Sort by
+                    {t('playlist.sortBy')}
                     <select
                       value={activePlaylist.settings.sortBy}
                       onChange={(e) =>
@@ -393,7 +399,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                     >
                       {SORT_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>
-                          {o.label}
+                          {t(o.label)}
                         </option>
                       ))}
                     </select>
@@ -401,7 +407,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                 )}
 
                 <label className="flex items-center gap-2 text-xs text-gray-400">
-                  Duration
+                  {t('playlist.duration')}
                   <input
                     type="number"
                     min={1}
@@ -411,20 +417,36 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                     }
                     className="w-20 rounded bg-fg/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                   />
-                  sec
+                  {t('playlist.seconds')}
                 </label>
 
                 <label
                   className="flex items-center gap-2 text-xs text-gray-400"
-                  title="Videos longer than the duration play to the end once before switching. Shorter videos loop until the duration is up."
+                  title={t('playlist.finishVideosHint')}
                 >
                   <Toggle on={!!activePlaylist.settings.finishVideos} onClick={() => updateSettings({ finishVideos: !activePlaylist.settings.finishVideos })} />
                   <Film size={12} />
-                  Finish videos
+                  {t('playlist.finishVideos')}
+                </label>
+
+                <label
+                  className="flex items-center gap-2 text-xs text-gray-400"
+                  title={t('playlist.favoritesOnlyHint')}
+                >
+                  <Toggle on={!!activePlaylist.settings.favoritesOnly} onClick={() => updateSettings({ favoritesOnly: !activePlaylist.settings.favoritesOnly })} />
+                  <Heart size={12} />
+                  {t('playlist.favoritesOnly')}
+                  {activePlaylist.settings.favoritesOnly && (
+                    <span className={favoriteCount === 0 ? 'text-amber-400' : 'text-gray-600'}>
+                      {favoriteCount === 0
+                        ? t('playlist.favoritesOnlyNone')
+                        : t('playlist.favoritesOnlyCount', { favorites: favoriteCount, total: activePlaylist.items.length })}
+                    </span>
+                  )}
                 </label>
 
                 <label className="flex items-center gap-2 text-xs text-gray-400">
-                  Default volume
+                  {t('playlist.defaultVolume')}
                   <input
                     type="range"
                     min={0}
@@ -440,22 +462,21 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
 
             <div className="flex items-center justify-between px-4 pt-3">
               <span className="text-xs text-gray-600">
-                {activePlaylist.items.length} wallpaper
-                {activePlaylist.items.length !== 1 ? 's' : ''}
+                {t('playlist.count', { count: activePlaylist.items.length })}
               </span>
               <button
                 onClick={() => setPickerOpen(true)}
                 className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-fg/10"
               >
                 <Plus size={12} />
-                Add wallpapers
+                {t('playlist.addWallpapers')}
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
               {activePlaylist.items.length === 0 && (
                 <div className="flex h-32 items-center justify-center text-sm text-gray-600">
-                  This playlist is empty. Add wallpapers to get started.
+                  {t('playlist.empty')}
                 </div>
               )}
               {activePlaylist.items.map((item, index) => (

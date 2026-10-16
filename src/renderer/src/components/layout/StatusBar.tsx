@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Wifi, WifiOff, ListVideo, Play, Pause, SkipForward } from 'lucide-react'
 import { screenLabel } from '../../utils/screens'
 import { usePlaybackStates, usePlaylists } from '../../hooks/queries'
+import { t } from '../../i18n'
 
 export default function StatusBar() {
   const [steamRunning, setSteamRunning] = useState(false)
@@ -24,12 +25,12 @@ export default function StatusBar() {
         {steamRunning ? (
           <>
             <Wifi size={12} className="text-green-500" />
-            Steam connected
+            {t('status.steamConnected')}
           </>
         ) : (
           <>
             <WifiOff size={12} className="text-red-500" />
-            Steam offline
+            {t('status.steamOffline')}
           </>
         )}
       </span>
@@ -38,22 +39,22 @@ export default function StatusBar() {
         <span key={playback.screen} className="flex items-center gap-1.5">
           <span className="h-3 w-px bg-fg/10" />
           <ListVideo size={12} className="text-accent-400" />
-          {playlists?.find((p) => p.id === playback.playlistId)?.title ?? 'Playlist'}
-          {playback.screen !== '*' && <span className="text-gray-600">on {screenLabel(playback.screen)}</span>}
+          {playlists?.find((p) => p.id === playback.playlistId)?.title ?? t('status.playlist')}
+          {playback.screen !== '*' && <span className="text-gray-600">{t('status.onScreen', { screen: screenLabel(playback.screen) })}</span>}
           <button
             onClick={() =>
               playback.isPlaying
                 ? window.electronAPI.playlist.pause(playback.screen)
                 : window.electronAPI.playlist.resume(playback.screen)
             }
-            title={playback.isPlaying ? 'Pause' : 'Resume'}
+            title={playback.isPlaying ? t('common.pause') : t('common.resume')}
             className="text-gray-400 hover:text-gray-200"
           >
             {playback.isPlaying ? <Pause size={11} /> : <Play size={11} />}
           </button>
           <button
             onClick={() => window.electronAPI.playlist.next(playback.screen)}
-            title="Next"
+            title={t('common.next')}
             className="text-gray-400 hover:text-gray-200"
           >
             <SkipForward size={11} />

@@ -1,0 +1,267 @@
+# WE Manager + linux-wallpaperengine built from source for Flathub (CEF is the binary the engine's CMake pins).
+# build-local.sh builds from the working trees instead of the pinned commits.
+# Generated sources, refreshed when package-lock.json or steamworks.js change:
+#   flatpak-node-generator npm package-lock.json --electron-node-headers \
+#     --node-sdk-extension org.freedesktop.Sdk.Extension.node24//25.08      -> generated-sources.json
+#   flatpak-cargo-generator.py Cargo.lock                                    -> cargo-sources.json
+# the latter in a patched steamworks.js checkout, whose Cargo.lock is also steamworks-Cargo.lock
+id: io.github.WallpaperEngineLover.we_manager
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+base: org.electronjs.Electron2.BaseApp
+base-version: '25.08'
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node24
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: we-manager
+separate-locales: false
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  # wallpaper sounds, and the sink monitor the visualizers react to
+  - --socket=pulseaudio
+  - --device=dri
+  # the Steam client's IPC (steamworks.js) uses shared memory
+  - --device=shm
+  # Steam libraries, workshop folders, WE assets, user wallpaper folders
+  - --filesystem=home
+  - --filesystem=~/.var/app/com.valvesoftware.Steam
+  # library folders on other disks
+  - --filesystem=/mnt
+  - --filesystem=/media
+  - --filesystem=/run/media
+  # display tools, wallpaper setters, desktop icons overlay, user shortcuts, and the engine's Wayland connection
+  # where Flatpak's socket hides the layer shell (Hyprland)
+  - --talk-name=org.freedesktop.Flatpak
+  # KWin scripts for cursor and fullscreen detection call back into the engine
+  - --talk-name=org.kde.KWin
+  - --talk-name=org.kde.plasmashell
+  - --own-name=org.linuxwallpaperengine.*
+  # Hyprland IPC for the cursor position
+  - --filesystem=xdg-run/hypr:ro
+  # media info for wallpapers that show the playing song
+  - --talk-name=org.mpris.MediaPlayer2.*
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.Notifications
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /lib/cmake
+  - /share/man
+  - /share/doc
+  - '*.a'
+  - '*.la'
+
+modules:
+  - name: glu
+    buildsystem: meson
+    config-opts:
+      - -Dgl_provider=glvnd
+    sources:
+      - type: archive
+        url: https://archive.mesa3d.org/glu/glu-9.0.3.tar.xz
+        sha256: bd43fe12f374b1192eb15fe20e45ff456b9bc26ab57f0eee919f96ca0f8a330f
+
+  - name: glew
+    no-autogen: true
+    make-args:
+      - GLEW_PREFIX=${FLATPAK_DEST}
+      - GLEW_DEST=${FLATPAK_DEST}
+      - LIBDIR=${FLATPAK_DEST}/lib
+      - CFLAGS.EXTRA:=${CFLAGS} -fPIC
+      - LDFLAGS.EXTRA=${LDFLAGS}
+    make-install-args:
+      - GLEW_PREFIX=${FLATPAK_DEST}
+      - GLEW_DEST=${FLATPAK_DEST}
+      - LIBDIR=${FLATPAK_DEST}/lib
+    cleanup:
+      - /bin
+    sources:
+      - type: archive
+        url: https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0.tgz
+        sha256: d4fc82893cfb00109578d0a1a2337fb8ca335b3ceccf97b97e5cc7f08e4353e1
+
+  - name: freeglut
+    buildsystem: cmake-ninja
+    build-options:
+      # its old style empty parameter lists mean (void) in C23, GCC 15's default
+      cflags: -std=gnu17
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DFREEGLUT_BUILD_DEMOS=OFF
+      - -DFREEGLUT_BUILD_STATIC_LIBS=OFF
+      - -DFREEGLUT_WAYLAND=OFF
+      # 3.6.0 still asks for CMake 2.8
+      - -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    sources:
+      - type: archive
+        url: https://github.com/freeglut/freeglut/releases/download/v3.6.0/freeglut-3.6.0.tar.gz
+        sha256: 9c3d4d6516fbfa0280edc93c77698fb7303e443c1aaaf37d269e3288a6c3ea52
+
+  - name: glfw
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_SHARED_LIBS=ON
+      - -DGLFW_BUILD_EXAMPLES=OFF
+      - -DGLFW_BUILD_TESTS=OFF
+      - -DGLFW_BUILD_DOCS=OFF
+    sources:
+      - type: archive
+        url: https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip
+        sha256: b5ec004b2712fd08e8861dc271428f048775200a2df719ccf575143ba749a3e9
+
+  # headers only
+  - name: glm
+    buildsystem: simple
+    build-commands:
+      - cp -r glm ${FLATPAK_DEST}/include/
+    sources:
+      - type: archive
+        url: https://github.com/g-truc/glm/archive/refs/tags/1.0.1.tar.gz
+        sha256: 9f3174561fd26904b23f0db5e560971cbf9b3cbda0b280f04d5c379d03bf234c
+
+  - name: libass
+    config-opts:
+      - --disable-static
+    sources:
+      - type: archive
+        url: https://github.com/libass/libass/releases/download/0.17.4/libass-0.17.4.tar.xz
+        sha256: 78f1179b838d025e9c26e8fef33f8092f65611444ffa1bfc0cfac6a33511a05a
+
+  - name: libplacebo
+    buildsystem: meson
+    config-opts:
+      - -Ddemos=false
+      - -Dtests=false
+      # GL rendering only; this tag's utils_gen.py fails on Python 3.13
+      - -Dvulkan=disabled
+    sources:
+      - type: git
+        url: https://code.videolan.org/videolan/libplacebo.git
+        tag: v7.351.0
+        commit: 3188549fba13bbdf3a5a98de2a38c2e71f04e21e
+
+  # libmpv only
+  - name: mpv
+    buildsystem: meson
+    config-opts:
+      - -Dlibmpv=true
+      - -Dcplayer=false
+      - -Dlua=disabled
+      - -Djavascript=disabled
+      - -Dmanpage-build=disabled
+    sources:
+      - type: archive
+        url: https://github.com/mpv-player/mpv/archive/refs/tags/v0.40.0.tar.gz
+        sha256: 10a0f4654f62140a6dd4d380dcf0bbdbdcf6e697556863dc499c296182f081a3
+
+  # V8 for wallpaper scripts
+  - name: libnode
+    buildsystem: simple
+    build-commands:
+      - ./configure --prefix=${FLATPAK_DEST} --shared --shared-zlib --shared-openssl --without-npm --without-corepack
+      # some of V8's compiler units take over 3 GB each
+      - make -j$(( (FLATPAK_BUILDER_N_JOBS + 3) / 4 ))
+      - make install
+    cleanup:
+      - /bin/node
+      - /share
+    sources:
+      - type: archive
+        url: https://nodejs.org/dist/v24.18.0/node-v24.18.0.tar.xz
+        sha256: e94afde24db08e0c564ee7110a2d5aab51ee0059382c9fd8233c54eec47b28f9
+
+  - name: linux-wallpaperengine
+    buildsystem: simple
+    build-commands:
+      # where DownloadCEF looks for the pinned archive
+      - mkdir -p build/cef && mv cef-archive/*.tar.bz2 build/cef/
+      # the SDK's _FORTIFY_SOURCE=3 collides with CEF's under -Werror
+      - CFLAGS="${CFLAGS//-Wp,-D_FORTIFY_SOURCE=3/}" CXXFLAGS="${CXXFLAGS//-Wp,-D_FORTIFY_SOURCE=3/}"
+        cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/app/lib/linux-wallpaperengine-kde -DCMAKE_PREFIX_PATH=/app
+        -DV8_INCLUDE_DIR=/app/include/node -DV8_LIBRARY=/app/lib/libnode.so.137
+      - ninja -C build
+      - ninja -C build install
+      - ln -s ../lib/linux-wallpaperengine-kde/linux-wallpaperengine ${FLATPAK_DEST}/bin/linux-wallpaperengine
+    cleanup:
+      # drop kissfft and glslang tools
+      - /lib/linux-wallpaperengine-kde/*-float
+      - /lib/linux-wallpaperengine-kde/glslang*
+      - /lib/linux-wallpaperengine-kde/spirv-*
+      - /lib/linux-wallpaperengine-kde/chrome-sandbox
+      - /lib/linux-wallpaperengine-kde/bin
+      - /lib/linux-wallpaperengine-kde/include
+      - /lib/linux-wallpaperengine-kde/share
+      - /lib/linux-wallpaperengine-kde/lib64/cmake
+      - /lib/linux-wallpaperengine-kde/lib64/pkgconfig
+    sources:
+      - type: git
+        url: https://github.com/WallpaperEngineLover/linux-wallpaperengine-kde.git
+        commit: 85ebc97f0114a9a248b5c8ef8eec9d4aab5b31a5
+      - type: file
+        url: https://cef-builds.spotifycdn.com/cef_binary_135.0.17%2Bgcbc1c5b%2Bchromium-135.0.7049.52_linux64_minimal.tar.bz2
+        sha256: 24ac1980e62be7b1aea2c337d6bd4bc770dccd8b37e47c6db94b397f13ec4dc6
+        dest: cef-archive
+        dest-filename: cef_binary_135.0.17+gcbc1c5b+chromium-135.0.7049.52_linux64_minimal.tar.bz2
+
+  - name: we-manager
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/node24/bin:/usr/lib/sdk/rust-stable/bin
+      env:
+        XDG_CACHE_HOME: /run/build/we-manager/flatpak-node/cache
+        npm_config_cache: /run/build/we-manager/flatpak-node/npm-cache
+        npm_config_offline: 'true'
+        CARGO_HOME: /run/build/we-manager/cargo
+    build-commands:
+      - npm ci --offline
+      # steamworks.js with patches/steamworks-vote, like the release build
+      - printf '\n[patch."https://github.com/Noxime/steamworks-rs/"]\nsteamworks = { path = "../steamworks-rs" }\n' >> steamworksjs/Cargo.toml
+      - cp steamworks-Cargo.lock steamworksjs/Cargo.lock
+      - cargo --offline build --release --manifest-path steamworksjs/Cargo.toml
+      - install -m644 steamworksjs/target/release/libsteamworksjs.so node_modules/steamworks.js/dist/linux64/steamworksjs.linux-x64-gnu.node
+      - install -m644 steamworksjs/client.d.ts node_modules/steamworks.js/client.d.ts
+      - npm run build
+      # use the fetched Electron zip instead of a download
+
+      - mkdir electron-dist && unzip -q "$(find flatpak-node/cache/electron -name 'electron-v*-linux-x64.zip' | head -1)" -d electron-dist
+      - . flatpak-node/electron-builder-arch-args.sh; npx electron-builder $ELECTRON_BUILDER_ARCH_ARGS --linux --dir
+        -c.npmRebuild=false -c.electronDist=electron-dist
+      - cp -a dist/linux-unpacked ${FLATPAK_DEST}/we-manager
+      - install -Dm755 we-manager.sh ${FLATPAK_DEST}/bin/we-manager
+      - install -Dm644 packaging/flathub/${FLATPAK_ID}.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm644 packaging/flatpak/${FLATPAK_ID}.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
+      - for size in 16 22 24 32 48 64 128 256 512; do install -Dm644 resources/icons/linux/${size}x${size}.png
+        ${FLATPAK_DEST}/share/icons/hicolor/${size}x${size}/apps/${FLATPAK_ID}.png; done
+    sources:
+      - type: git
+        url: https://github.com/WallpaperEngineLover/we_manager.git
+        commit: 33dd52c33472d89f12636b3cef5ba9c22bfac407
+      - generated-sources.json
+      - type: git
+        url: https://github.com/Noxime/steamworks-rs.git
+        commit: fbb79635b06b4feea8261e5ca3e8ea3ef42facf9
+        dest: steamworks-rs
+      - type: patch
+        path: ../../patches/steamworks-vote/steamworks-rs-ugc.patch
+        use-git: true
+        dest: steamworks-rs
+      - type: git
+        url: https://github.com/ceifa/steamworks.js.git
+        commit: 80c5fd7c4958ba90cf87403c3f967b8a6d748473
+        dest: steamworksjs
+      - type: patch
+        paths:
+          - ../../patches/steamworks-vote/steamworks-js-workshop.patch
+          - ../../patches/steamworks-vote/steamworks-js-client-d-ts.patch
+        use-git: true
+        dest: steamworksjs
+      - type: file
+        path: steamworks-Cargo.lock
+      - cargo-sources.json
+      - type: file
+        path: ../flatpak/we-manager.sh

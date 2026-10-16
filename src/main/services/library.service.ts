@@ -9,7 +9,7 @@ import { cleanupPlaylists } from './playlist.service'
 import { getWorkshopDetails, getUnavailableWorkshopItems, type WorkshopDetails } from './workshop.service'
 import { findAndMutate } from '../utils/collections'
 import { resolutionsFromTags } from '@shared/resolutions'
-import { detectHdr } from '../utils/hdr'
+import { detectFeatures, type WallpaperFeatures } from '../utils/hdr'
 import {
   isSteamRunning,
   getItemDownloadStatus,
@@ -113,7 +113,7 @@ export function upsertWallpaper(meta: WallpaperMeta): void {
   store.set('wallpapers', wallpapers)
 }
 
-// updatedAt tracks the workshop item's own timestamp (set in buildMeta), not local edits.
+// updatedAt is the workshop item's timestamp, not local edits
 export function updateWallpaper(id: string, patch: Partial<WallpaperMeta>): void {
   const current = getWallpaper(id)
   if (!current) throw new Error(`Wallpaper ${id} not found`)
@@ -203,6 +203,7 @@ export interface ProjectJson {
   preview?: string
   contentrating?: string
   workshopid?: string
+  dependency?: string | number
 }
 
 export function readProjectJson(localPath: string): ProjectJson | null {
@@ -232,9 +233,7 @@ export function normalizeRating(raw?: string): ContentRating {
   }
 }
 
-// Derived from the item's Steam Workshop tags for wallpapers that never finished
-// downloading (no local project.json), so failed downloads still land in the
-// right type/rating filters instead of "uncategorized".
+// lets failed downloads without a project.json land in the right filters
 function deriveTypeFromTags(tags: string[]): WallpaperType | undefined {
   const match = tags.find((t) => ['Video', 'Web', 'Application', 'Scene'].includes(t))
   return match ? normalizeType(match) : undefined
@@ -257,8 +256,7 @@ const RATING_RESTRICTIVENESS: Record<ContentRating, number> = {
   mature: 3
 }
 
-// project.json's "contentrating" field and its "tags" array can disagree (an author can tag
-// something "Mature" without setting the formal rating) - always trust the stricter one.
+// contentrating and the tags can disagree, the stricter one wins
 function stricterRating(a: ContentRating, b?: ContentRating): ContentRating {
   if (!b) return a
   return RATING_RESTRICTIVENESS[b] > RATING_RESTRICTIVENESS[a] ? b : a
@@ -288,7 +286,7 @@ export function getDirSize(dirPath: string): number {
 }
 
 // extra folders are often on HDDs, don't block the main process
-async function getDirSizeAsync(dirPath: string): Promise<number> {
+export async function getDirSizeAsync(dirPath: string): Promise<number> {
   let total = 0
   let entries: fs.Dirent[]
   try {
@@ -319,16 +317,9 @@ function buildMeta(
 ): WallpaperMeta {
   const now = Date.now()
   const { downloading: _d, downloadFailed: _df, ...existingRest } = existing ?? { appliedCount: 0, categories: [] }
-  // project.json can land on disk before the preview image it references has
-  // finished downloading (the watcher imports shortly after the folder shows
-  // up) - pointing previewLocal at a file that doesn't exist yet makes the
-  // wallpaper:// protocol handler fail with net::ERR_FILE_NOT_FOUND. Leaving
-  // it unset here falls back to the "No preview" placeholder, and the next
-  // library scan picks up the real file once it exists.
+  // the preview can still be downloading, the next scan picks it up
   const previewPath = pj?.preview ? path.join(localPath, pj.preview) : undefined
-  // Steam can flag an item Mature after the fact (moderation, community reports) without the
-  // author ever republishing - project.json keeps saying whatever it said at publish time, so
-  // the live Workshop tags are the only place that catches it.
+  // Steam can flag an item Mature later, only the live tags show that
   const fromProject = stricterRating(normalizeRating(pj?.contentrating), deriveRatingFromTags(pj?.tags ?? []))
   const contentRating = stricterRating(fromProject, deriveRatingFromTags(liveWorkshopTags ?? []))
   return {
@@ -351,8 +342,10 @@ function buildMeta(
     tags: pj?.tags ?? existing?.tags ?? [],
     resolutions: liveWorkshopTags ? resolutionsFromTags(liveWorkshopTags) : existing?.resolutions,
     authorSteamId: authorSteamId ?? existing?.authorSteamId,
-    // content may have changed, let the HDR pass look again
-    hdr: undefined
+    // content may have changed, detect features and verify again
+    hdr: undefined,
+    hrtf: undefined,
+    verifyProblem: undefined
   }
 }
 
@@ -457,24 +450,22 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   const workshopPath = getWorkshopPath()
   // unmounted drive must not empty the library
   const workshopMounted = fs.existsSync(workshopPath)
-  const entries = workshopMounted ? fs.readdirSync(workshopPath, { withFileTypes: true }) : []
+  // dot folders are copies moved aside during a repair
+  const entries = workshopMounted
+    ? fs.readdirSync(workshopPath, { withFileTypes: true }).filter((e) => !e.name.startsWith('.'))
+    : []
   const onDisk = new Set(entries.filter(e => e.isDirectory()).map(e => e.name))
   const subscribedIds = isSteamRunning()
     ? new Set(await getSubscribedItems().catch(() => []))
     : new Set<string>()
 
-  // Load entire store once, mutate in memory, write once at the end
   const wallpapers = store.get('wallpapers')
   let imported = 0
   let skipped = 0
   let removed = 0
   let resynced = false
 
-  // Remove workshop wallpapers whose directories no longer exist on disk, unless Steam
-  // still has them subscribed (those get tracked below instead, so a failed
-  // or never-started download doesn't just vanish from the library). Only source:'workshop'
-  // entries live under workshopPath - local imports and backups (source:'local'/'backup') are
-  // never on disk here, so including them in this check would delete them on every scan.
+  // drop workshop items whose folder is gone, unless still subscribed (tracked below)
   for (const id of Object.keys(wallpapers)) {
     if (wallpapers[id].source !== 'workshop' || !workshopMounted) continue
     if (!onDisk.has(id) && !subscribedIds.has(id)) {
@@ -507,9 +498,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     toRebuild.push({ entry, localPath, pj })
   }
 
-  // Items Steam still lists as subscribed but that never got a local folder at all (the download
-  // failed before writing anything, or Steam never actually started it - see
-  // isItemStuckNeverDownloaded, this is more common than it sounds).
+  // subscribed items that never got a folder, see isItemStuckNeverDownloaded
   for (const id of subscribedIds) {
     if (onDisk.has(id)) continue
     if (isSteamRunning() && (await isItemStuckNeverDownloaded(BigInt(id)))) {
@@ -545,7 +534,6 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     ...cacheHits,
     ...localToBuild.map((f) => f.id).filter((id) => /^\d+$/.test(id))
   ])
-  // Author never changes once known, only take Steam's for items that don't have it yet
   const authors = new Map<string, string>()
   for (const [id, d] of details) {
     if (!wallpapers[id]?.authorSteamId) authors.set(id, d.authorSteamId)
@@ -607,10 +595,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     const authorId = authors.get(id)
     const live = details.get(id)?.tags
 
-    // A time_updated bump means the author changed something on the Workshop side
-    // (tags, content rating, a republish) - re-read project.json instead of just
-    // touching updatedAt, otherwise a corrected rating/genre never leaves the cache
-    // until the item is removed and reimported.
+    // the author changed something, re-read project.json so a corrected rating sticks
     const localPath = wallpapers[id].localPath
     if (seconds !== undefined && wallpapers[id].updatedAt !== seconds * 1000 && localPath) {
       const pj = readProjectJson(localPath)
@@ -636,7 +621,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     if (authorId && wallpapers[id].authorSteamId !== authorId) {
       patch.authorSteamId = authorId
     }
-    // Only tighten, never loosen - a failed/empty tag fetch must not walk a rating back down.
+    // only tighten, a failed tag fetch must not lower a rating
     const liveRating = live ? deriveRatingFromTags(live) : undefined
     if (liveRating) {
       const stricter = stricterRating(wallpapers[id].contentRating ?? 'uncategorized', liveRating)
@@ -669,10 +654,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   return { imported, skipped, removed }
 }
 
-// Flags library items whose Steam Workshop listing has been taken down (the
-// author deleted it, Valve removed it, etc). Those items can never be
-// re-downloaded once lost locally, which is what "backup all unavailable"
-// is for - only workshop-sourced items with local content are worth checking.
+// flags workshop items whose listing was taken down, they can't be downloaded again
 export async function checkUnavailableWallpapers(): Promise<{
   checked: number
   unavailable: number
@@ -690,8 +672,6 @@ export async function checkUnavailableWallpapers(): Promise<{
   try {
     unavailableIds = await getUnavailableWorkshopItems(candidates.map((w) => w.id))
   } catch {
-    // Steam request failed outright - leave existing unavailable flags alone
-    // rather than reporting everything as available again.
     return { checked: 0, unavailable: 0, changed: false }
   }
 
@@ -712,11 +692,10 @@ function isFromWorkshop(w: WallpaperMeta): boolean {
   return w.source === 'workshop' || (w.source === 'local' && /^\d+$/.test(w.id))
 }
 
-// Bump whenever resolutionsFromTags() changes, stored resolutions then get re-derived once
+// bump when resolutionsFromTags() changes
 const RESOLUTIONS_VERSION = 2
 
-// Resolution only comes from the live Workshop tags (project.json never has it), so items
-// imported before that was stored, or while Steam was offline, need a separate pass.
+// resolution comes only from live tags, older or offline imports need this pass
 export async function backfillResolutions(): Promise<boolean> {
   if (!isSteamRunning()) return false
 
@@ -734,14 +713,14 @@ export async function backfillResolutions(): Promise<boolean> {
     }
   }
 
-  // re-read, the fetch takes a while and other writes may have landed meanwhile
+  // other writes may have landed during the fetch
   const wallpapers = store.get('wallpapers')
   let changed = false
   for (const id of ids) {
     const w = wallpapers[id]
     if (!w) continue
     const live = details.get(id)?.tags
-    // Steam no longer returns removed or private items, record "none" instead of asking every tick
+    // removed or private items get "none" instead of being asked every tick
     const resolutions = live ? resolutionsFromTags(live) : (w.resolutions ?? [])
     if (sameTags(w.resolutions, resolutions)) continue
     wallpapers[id] = { ...w, resolutions }
@@ -755,8 +734,7 @@ export async function backfillResolutions(): Promise<boolean> {
   return changed
 }
 
-// Ids the HDR pass could not decide this session (no ffprobe, unreadable files), so a big
-// library on a slow disk is not re-read every background tick
+// undecided this session (no ffprobe, unreadable files), not re-read every tick
 const hdrUndecided = new Set<string>()
 let hdrPassRunning = false
 let hdrPassQueued = false
@@ -772,8 +750,7 @@ export function queueHdrCheck(): void {
   })
 }
 
-// Detects HDR for items that have no answer stored yet. After the first run only new or
-// updated items get read, so this is cheap to call often.
+// HDR and HRTF share one scene read
 export async function backfillHdr(): Promise<boolean> {
   if (hdrPassRunning) {
     hdrPassQueued = true
@@ -782,33 +759,35 @@ export async function backfillHdr(): Promise<boolean> {
   hdrPassRunning = true
   try {
     const pending = Object.values(store.get('wallpapers')).filter(
-      (w) => w.hdr === undefined && !!w.localPath && !w.downloading && !hdrUndecided.has(w.id)
+      (w) => (w.hdr === undefined || w.hrtf === undefined) && !!w.localPath && !w.downloading && !hdrUndecided.has(w.id)
     )
     if (pending.length === 0) return false
 
     let changed = false
-    let results = new Map<string, boolean>()
+    let results = new Map<string, WallpaperFeatures>()
     const flush = (): void => {
       if (results.size === 0) return
       const wallpapers = store.get('wallpapers')
-      for (const [id, hdr] of results) {
-        if (wallpapers[id]) wallpapers[id] = { ...wallpapers[id], hdr }
+      for (const [id, features] of results) {
+        if (wallpapers[id]) wallpapers[id] = { ...wallpapers[id], ...features }
       }
       store.set('wallpapers', wallpapers)
       results = new Map()
       changed = true
     }
 
-    // a few reads in flight keeps SSDs busy without making an HDD seek back and forth
+    // enough for SSDs without making HDDs seek back and forth
     let next = 0
     const worker = async (): Promise<void> => {
       while (next < pending.length) {
         const w = pending[next++]
-        const hdr = await detectHdr(w).catch(() => undefined)
-        if (hdr === undefined) {
-          hdrUndecided.add(w.id)
-        } else {
-          results.set(w.id, hdr)
+        const features = await detectFeatures(w).catch((): WallpaperFeatures => ({}))
+        const known = Object.fromEntries(
+          Object.entries(features).filter(([, value]) => value !== undefined)
+        ) as WallpaperFeatures
+        if (features.hdr === undefined || features.hrtf === undefined) hdrUndecided.add(w.id)
+        if (Object.keys(known).length > 0) {
+          results.set(w.id, known)
           if (results.size >= 500) flush()
         }
       }
@@ -816,7 +795,7 @@ export async function backfillHdr(): Promise<boolean> {
     await Promise.all(Array.from({ length: 4 }, worker))
     flush()
 
-    console.log(`[Library] HDR check: ${pending.length} items read, ${hdrUndecided.size} undecided`)
+    console.log(`[Library] HDR/HRTF check: ${pending.length} items read, ${hdrUndecided.size} undecided`)
     return changed
   } finally {
     hdrPassRunning = false
@@ -857,7 +836,7 @@ export function deleteFolder(id: string): void {
   store.set('folders', folders)
 }
 
-/** A wallpaper can only live in one folder at a time, so adding it here pulls it out of any other. */
+/** Pulls the wallpaper out of any other folder */
 export function addItemsToFolder(folderId: string, itemIds: string[]): WallpaperFolder | null {
   const folders = store.get('folders')
   const moving = new Set(itemIds)
@@ -883,12 +862,7 @@ export function removeItemsFromFolder(folderId: string, itemIds: string[]): Wall
   })
 }
 
-/**
- * Remove folder item IDs that don't exist in the wallpapers store, and drop
- * items from any folder beyond the first that also claims them (a wallpaper
- * can only belong to one folder).
- * Returns the number of stale/duplicate IDs removed.
- */
+/** Drops unknown ids and ids already claimed by an earlier folder, returns how many */
 export function cleanupFolders(): number {
   const wallpapers = store.get('wallpapers')
   const validIds = new Set(Object.keys(wallpapers))
@@ -922,7 +896,7 @@ export function importWEConfig(configPath: string): { folders: number; playlists
   const imported: WallpaperFolder[] = []
   const existingTitles = new Set(store.get('folders').map((f) => f.title))
 
-  // Try each profile and pick the one with the most folders (usually '~')
+  // the profile with the most folders, usually '~'
   let bestProfile: { folders: any[]; playlists: any[] } = { folders: [], playlists: [] }
   for (const key of Object.keys(data)) {
     const val = data[key]
@@ -938,7 +912,6 @@ export function importWEConfig(configPath: string): { folders: number; playlists
     }
   }
 
-  // Import folders (items are workshop IDs)
   for (const f of bestProfile.folders) {
     const title = f.title ?? 'Untitled'
     if (existingTitles.has(title)) continue
@@ -947,13 +920,12 @@ export function importWEConfig(configPath: string): { folders: number; playlists
     existingTitles.add(title)
   }
 
-  // Import playlists (items are full file paths, so extract the workshop ID)
+  // playlist items are full file paths
   for (const p of bestProfile.playlists) {
     const title = p.name ?? 'Untitled Playlist'
     if (existingTitles.has(title)) continue
     const items: string[] = []
     for (const filePath of p.items ?? []) {
-      // Extract workshop ID from path like ".../431960/888689688/scene.pkg"
       const match = filePath.match(/\/431960\/(\d+)\//)
       if (match) items.push(match[1])
     }

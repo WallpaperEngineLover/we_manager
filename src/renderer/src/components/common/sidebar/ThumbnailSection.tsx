@@ -3,6 +3,7 @@ import { Camera, ChevronDown, ChevronRight, ImageOff, ImagePlus, Loader2 } from 
 import clsx from 'clsx'
 import type { WallpaperMeta } from '@shared/types'
 import { useToast } from '../Toast'
+import { t } from '../../../i18n'
 
 interface Props {
   wallpaper: WallpaperMeta
@@ -40,8 +41,8 @@ export default function ThumbnailSection({ wallpaper, canGenerate, onUpdated }: 
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         <Camera size={12} />
-        <span className="flex-1 text-left">Thumbnail</span>
-        {usingCustom && <span className="rounded-full bg-accent-600/30 px-1.5 normal-case text-accent-300">custom</span>}
+        <span className="flex-1 text-left">{t('thumb.title')}</span>
+        {usingCustom && <span className="rounded-full bg-accent-600/30 px-1.5 normal-case text-accent-300">{t('thumb.customBadge')}</span>}
         {busy && <Loader2 size={11} className="animate-spin" />}
       </button>
 
@@ -50,8 +51,8 @@ export default function ThumbnailSection({ wallpaper, canGenerate, onUpdated }: 
           {hasCustom && (
             <div className="flex overflow-hidden rounded bg-fg/5">
               {[
-                { label: 'Custom', original: false },
-                { label: 'Original', original: true }
+                { label: t('thumb.custom'), original: false },
+                { label: t('thumb.original'), original: true }
               ].map(({ label, original }) => (
                 <button
                   key={label}
@@ -73,11 +74,11 @@ export default function ThumbnailSection({ wallpaper, canGenerate, onUpdated }: 
               <button
                 onClick={() => run('generate', () => window.electronAPI.wallpaper.generateThumbnail(wallpaper.id))}
                 disabled={busy !== null}
-                title="Renders the wallpaper with your settings in a small window for a few seconds and saves a frame"
+                title={t('thumb.captureHint')}
                 className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10 disabled:opacity-50"
               >
                 <Camera size={11} />
-                {busy === 'generate' ? 'Capturing...' : 'Capture'}
+                {busy === 'generate' ? t('thumb.capturing') : t('thumb.capture')}
               </button>
             )}
             <button
@@ -86,7 +87,7 @@ export default function ThumbnailSection({ wallpaper, canGenerate, onUpdated }: 
               className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10 disabled:opacity-50"
             >
               <ImagePlus size={11} />
-              Choose image
+              {t('thumb.choose')}
             </button>
             {hasCustom && (
               <button
@@ -95,13 +96,13 @@ export default function ThumbnailSection({ wallpaper, canGenerate, onUpdated }: 
                 className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-red-500/20 hover:text-red-400 disabled:opacity-50"
               >
                 <ImageOff size={11} />
-                Remove custom
+                {t('thumb.removeCustom')}
               </button>
             )}
           </div>
           {canGenerate && (
             <p className="text-[11px] text-gray-600">
-              Capture opens a small window for a few seconds while the wallpaper renders.
+              {t('thumb.captureNote')}
             </p>
           )}
         </div>

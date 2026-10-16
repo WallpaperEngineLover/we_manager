@@ -1,5 +1,6 @@
 import { Globe, Library, ListVideo, Settings, type LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
+import { t } from '../../i18n'
 
 type View = 'workshop' | 'library' | 'playlists' | 'settings'
 
@@ -33,9 +34,9 @@ function NavButton({ active, label, icon: Icon, onClick }: { active: boolean; la
 
 export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
   const items = [
-    { id: 'workshop' as View, label: 'Workshop', icon: Globe },
-    { id: 'library' as View, label: 'Library', icon: Library },
-    { id: 'playlists' as View, label: 'Playlists', icon: ListVideo }
+    { id: 'workshop' as View, label: t('nav.workshop'), icon: Globe },
+    { id: 'library' as View, label: t('nav.library'), icon: Library },
+    { id: 'playlists' as View, label: t('nav.playlists'), icon: ListVideo }
   ]
 
   return (
@@ -46,7 +47,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
       <div className="flex-1" />
       <NavButton
         active={activeView === 'settings'}
-        label="Settings"
+        label={t('nav.settings')}
         icon={Settings}
         onClick={() => onNavigate('settings')}
       />

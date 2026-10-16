@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import * as library from '../services/library.service'
 import { checkOutdatedBackups } from '../services/backup.service'
+import { restoreRepairStashes } from '../services/workshop-verify.service'
 import { transferWallpapers, type TransferMode } from '../services/library-transfer.service'
 import type { LibraryFilters, WallpaperMeta } from '@shared/types'
 
@@ -47,6 +48,7 @@ export function registerLibraryHandlers(win: BrowserWindow): void {
   })
 
   ipcMain.handle(IpcChannels.LIBRARY_SCAN, async () => {
+    await restoreRepairStashes()
     const result = await library.scanLibrary()
     await checkOutdatedBackups()
     return result

@@ -19,6 +19,7 @@ import { RECOMMENDED_WEB_FPS } from '@shared/constants'
 import { resolveEngineFlags } from '@shared/engineFlags'
 import { needsFreshLaunch } from '@shared/compat'
 import { videoSegmentsOf } from '@shared/videoTrim'
+import { applyHyprpaper, applySwaybg, applySwww, hasHyprpaper, prefersHyprpaper, swwwCommand } from './static-wallpaper.service'
 
 const execFileAsync = promisify(execFile)
 
@@ -41,7 +42,8 @@ export function detectEnvironment(): WallpaperEnvironment {
   } else if (platform === 'darwin') {
     available.push('macos')
   } else {
-    if (isHostCommandAvailable('swww')) available.push('swww')
+    if (desktopEnv === 'hyprland' && hasHyprpaper()) available.push('hyprpaper')
+    if (swwwCommand()) available.push('swww')
     if (isHostCommandAvailable('swaybg')) available.push('swaybg')
     if (isHostCommandAvailable('feh')) available.push('feh')
     if (isHostCommandAvailable('xwallpaper')) available.push('xwallpaper')
@@ -54,6 +56,7 @@ export function detectEnvironment(): WallpaperEnvironment {
   else if (platform === 'darwin') recommended = 'macos'
   else if (desktopEnv === 'gnome') recommended = 'gsettings'
   else if (desktopEnv === 'kde') recommended = 'qdbus'
+  else if (available.includes('hyprpaper') && prefersHyprpaper()) recommended = 'hyprpaper'
   else if (displayServer === 'wayland' && available.includes('swww')) recommended = 'swww'
   else if (displayServer === 'wayland' && available.includes('swaybg')) recommended = 'swaybg'
   else if (available.includes('feh')) recommended = 'feh'
@@ -90,7 +93,7 @@ async function applyLinux(imagePath: string, preferredBackend?: WallpaperBackend
   const backend = pickLinuxBackend()
   if (!backend) {
     throw new Error(
-      'No supported wallpaper backend found. Please install swww (Wayland) or feh (X11).'
+      'No supported wallpaper backend found. Please install awww/swww or swaybg (Wayland), hyprpaper (Hyprland) or feh (X11).'
     )
   }
   await applyWithBackend(backend, imagePath)
@@ -101,8 +104,10 @@ function pickLinuxBackend(): WallpaperBackend | null {
   if (de === 'gnome') return 'gsettings'
   if (de === 'kde' && isHostCommandAvailable('qdbus')) return 'qdbus'
 
+  if (de === 'hyprland' && prefersHyprpaper()) return 'hyprpaper'
+
   if (detectDisplayServer() === 'wayland') {
-    if (isHostCommandAvailable('swww')) return 'swww'
+    if (swwwCommand()) return 'swww'
     if (isHostCommandAvailable('swaybg')) return 'swaybg'
   }
 
@@ -113,11 +118,14 @@ function pickLinuxBackend(): WallpaperBackend | null {
 
 async function applyWithBackend(backend: WallpaperBackend, imagePath: string): Promise<void> {
   switch (backend) {
+    case 'hyprpaper':
+      await applyHyprpaper(imagePath)
+      break
     case 'swww':
-      await execFileAsync(...hostCommand('swww', ['img', imagePath, '--transition-type', 'fade']))
+      await applySwww(imagePath)
       break
     case 'swaybg':
-      await execFileAsync(...hostCommand('swaybg', ['-i', imagePath, '-m', 'fill']))
+      await applySwaybg(imagePath)
       break
     case 'feh':
       await execFileAsync(...hostCommand('feh', ['--bg-fill', imagePath]))
@@ -168,7 +176,7 @@ async function applyMacOS(imagePath: string): Promise<void> {
 }
 
 async function applyWindows(imagePath: string): Promise<void> {
-  // Pass path via environment variable to avoid injection risk from special characters
+  // via the environment to avoid injection
   const script = `
     Add-Type -TypeDefinition @'
     using System.Runtime.InteropServices;
@@ -252,11 +260,7 @@ export function isAnimatedWallpaper(wallpaper: WallpaperMeta): boolean {
   return wallpaper.type === 'scene' || wallpaper.type === 'web' || wallpaper.type === 'video'
 }
 
-/**
- * Apply a library wallpaper: renders animated/scene/web/video wallpapers via
- * linux-wallpaperengine when available, otherwise falls back to a static image.
- * Shared by the manual "apply" IPC handler and the playlist playback engine.
- */
+/** linux-wallpaperengine when available, else a static image */
 export async function applyWallpaperMeta(
   wallpaper: WallpaperMeta,
   options: {
@@ -281,7 +285,6 @@ export async function applyWallpaperMeta(
     return wallpaper.localPath
   }
 
-  // Static fallback: set the preview image as a plain wallpaper
   const appliedPath = findWallpaperImage(wallpaper.localPath)
   await applyWallpaper(appliedPath, options.backend)
   return appliedPath

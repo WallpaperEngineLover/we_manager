@@ -6,9 +6,11 @@ import { stopDisplay } from '../services/display.service'
 import { stopPlaylist } from '../services/playlist-player.service'
 import type { ScreenTarget } from '@shared/types'
 import { invalidateEnvCache } from '../services/wallpaper.service'
+import { refreshEngineUpdate } from '../services/update.service'
 import { getConnectedScreens } from '../utils/platform'
 import { listDesktopApplications } from '../services/shortcuts.service'
 import { findWallpaperVideoFile, getVideoDurationSec } from '../utils/video'
+import { t } from '../i18n'
 
 export function registerLweHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.LWE_STATUS, () => {
@@ -27,6 +29,7 @@ export function registerLweHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.LWE_INSTALL, async () => {
     await installLwe(win)
     invalidateEnvCache()
+    refreshEngineUpdate()
     return getLweStatus()
   })
 
@@ -35,12 +38,14 @@ export function registerLweHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.LWE_INSTALL_PREBUILT, async () => {
     await installLwePrebuilt(win)
     invalidateEnvCache()
+    refreshEngineUpdate()
     return getLweStatus()
   })
 
   ipcMain.handle(IpcChannels.LWE_UNINSTALL, async () => {
     const result = await uninstallLwe()
     invalidateEnvCache()
+    refreshEngineUpdate()
     return result
   })
 
@@ -60,7 +65,7 @@ export function registerLweHandlers(win: BrowserWindow): void {
   })
 
   ipcMain.handle(IpcChannels.LWE_LIST_OBJECTS, async (_e, wallpaperPath: string) => {
-    // Some wallpapers have project data linux-wallpaperengine itself can't parse; treat that as "no objects" rather than a hard error
+    // a parse failure means "no objects"
     try {
       return await listLweObjects(wallpaperPath)
     } catch (err) {
@@ -91,14 +96,13 @@ export function registerLweHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.LWE_PICK_SHORTCUT_PATH, async (_e, kind: 'file' | 'directory') => {
     const result = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow() ?? win, {
       properties: [kind === 'directory' ? 'openDirectory' : 'openFile'],
-      title: kind === 'directory' ? 'Choose a folder to open' : 'Choose a file to open'
+      title: kind === 'directory' ? t('dialog.pickShortcutFolder') : t('dialog.pickShortcutFile')
     })
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
   })
 
   ipcMain.handle(IpcChannels.LWE_LIST_PROPERTIES, async (_e, wallpaperPath: string) => {
-    // Same reasoning as list-objects: some wallpapers have properties linux-wallpaperengine
-    // itself can't parse, treat that as "no properties" rather than a hard error.
+    // a parse failure means "no properties"
     try {
       return await listLweProperties(wallpaperPath)
     } catch (err) {
@@ -108,8 +112,8 @@ export function registerLweHandlers(win: BrowserWindow): void {
   })
 
   ipcMain.handle(IpcChannels.LWE_LIST_AUDIO_OBJECTS, async (_e, wallpaperPath: string) => {
-    // Same reasoning as list-objects/list-properties: treat a parse failure as "nothing detected"
-    // rather than a hard error.
+    // a parse failure means "nothing detected"
+
     try {
       return await listLweAudioObjects(wallpaperPath)
     } catch (err) {

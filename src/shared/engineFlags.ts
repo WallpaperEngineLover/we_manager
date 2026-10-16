@@ -59,6 +59,7 @@ export function engineFlagArgs(flags: EngineFlags): string[] {
   if (flags.fullscreenPause === 'off') args.push('--no-fullscreen-pause')
   if (flags.fullscreenPause === 'active-only') args.push('--fullscreen-pause-only-active')
   if (flags.pauseOnFocus) args.push('--pause-on-focus')
+  if (flags.pauseOnMaximized) args.push('--pause-on-maximized')
   if (flags.automute) args.push('--automute')
   if (flags.silent) args.push('--silent')
   if (flags.hdr) args.push('--hdr')
@@ -69,6 +70,10 @@ export function engineFlagArgs(flags: EngineFlags): string[] {
   if (flags.msaa && flags.msaa !== 'none') args.push('--msaa', flags.msaa)
   if (flags.ssaa && flags.ssaa !== 'none') args.push('--ssaa', flags.ssaa)
   if (flags.hwdec && flags.hwdec !== 'auto') args.push('--hwdec', flags.hwdec)
+  if (flags.hrtf && flags.hrtf !== 'auto') args.push('--hrtf', flags.hrtf)
+  if (flags.batteryFps === 'pause') args.push('--pause-on-battery')
+  else if (flags.batteryFps && flags.batteryFps !== 'off') args.push('--fps-battery', flags.batteryFps)
+  if (flags.idlePause && flags.idlePause !== 'off') args.push('--idle-pause', flags.idlePause)
   if (flags.kdeBackgroundLayer) args.push('--layer', 'background')
   return args
 }

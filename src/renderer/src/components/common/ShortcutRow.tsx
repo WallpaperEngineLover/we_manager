@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { AppWindow, File, Folder, Globe, Pencil, Terminal, X } from 'lucide-react'
 import clsx from 'clsx'
 import type { DesktopApplication, LweProperty } from '@shared/types'
+import { t } from '../../i18n'
+import type { MessageKey } from '@shared/i18n'
 
 type ShortcutType = 'application' | 'file' | 'directory' | 'web' | 'command'
 
@@ -12,12 +14,12 @@ interface Shortcut {
   arguments: string
 }
 
-const TYPES: { type: ShortcutType; label: string; icon: typeof File }[] = [
-  { type: 'application', label: 'App', icon: AppWindow },
-  { type: 'file', label: 'File', icon: File },
-  { type: 'directory', label: 'Folder', icon: Folder },
-  { type: 'web', label: 'Website', icon: Globe },
-  { type: 'command', label: 'Command', icon: Terminal }
+const TYPES: { type: ShortcutType; label: MessageKey; icon: typeof File }[] = [
+  { type: 'application', label: 'shortcut.app', icon: AppWindow },
+  { type: 'file', label: 'shortcut.file', icon: File },
+  { type: 'directory', label: 'shortcut.folder', icon: Folder },
+  { type: 'web', label: 'shortcut.web', icon: Globe },
+  { type: 'command', label: 'shortcut.command', icon: Terminal }
 ]
 
 // the engine's format (the real Wallpaper Engine's, plus "application" for a .desktop file)
@@ -25,7 +27,7 @@ function parseShortcut(value: string): Shortcut | null {
   if (!value.trim().startsWith('{')) return null
   try {
     const json = JSON.parse(value) as { commandtype?: string; file?: string; arguments?: string }
-    if (!json.file || !TYPES.some((t) => t.type === json.commandtype)) return null
+    if (!json.file || !TYPES.some((option) => option.type === json.commandtype)) return null
     return { type: json.commandtype as ShortcutType, file: json.file, arguments: json.arguments ?? '' }
   } catch {
     return null
@@ -76,7 +78,7 @@ export function ShortcutRow({
     return needle ? apps.filter((a) => a.name.toLowerCase().includes(needle)) : apps
   }, [apps, search])
 
-  const CurrentIcon = TYPES.find((t) => t.type === current?.type)?.icon
+  const CurrentIcon = TYPES.find((option) => option.type === current?.type)?.icon
 
   const pick = async (kind: 'file' | 'directory') => {
     const picked = await window.electronAPI.lwe.pickShortcutPath(kind)
@@ -97,12 +99,12 @@ export function ShortcutRow({
         </span>
         <span className="flex max-w-[45%] items-center gap-1 truncate text-gray-500">
           {current && CurrentIcon && <CurrentIcon size={12} className="shrink-0" />}
-          <span className="truncate">{current ? describe(current, apps) : 'Not assigned'}</span>
+          <span className="truncate">{current ? describe(current, apps) : t('shortcut.notAssigned')}</span>
         </span>
         <button
           onClick={() => setDraft(draft ? null : (current ?? { type: 'application', file: '', arguments: '' }))}
           disabled={busy}
-          title={current ? 'Change shortcut' : 'Assign shortcut'}
+          title={current ? t('shortcut.change') : t('shortcut.assign')}
           className="rounded p-0.5 text-gray-400 hover:bg-fg/10 hover:text-gray-200 disabled:opacity-40"
         >
           <Pencil size={12} />
@@ -111,7 +113,7 @@ export function ShortcutRow({
           <button
             onClick={() => onCommit('')}
             disabled={busy}
-            title="Remove shortcut"
+            title={t('shortcut.remove')}
             className="rounded p-0.5 text-gray-400 hover:bg-fg/10 hover:text-gray-200 disabled:opacity-40"
           >
             <X size={12} />
@@ -132,7 +134,7 @@ export function ShortcutRow({
                 )}
               >
                 <Icon size={11} />
-                {typeLabel}
+                {t(typeLabel)}
               </button>
             ))}
           </div>
@@ -142,7 +144,7 @@ export function ShortcutRow({
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search apps"
+                placeholder={t('shortcut.searchApps')}
                 className="w-full rounded bg-black/20 px-1.5 py-0.5 text-gray-200 outline-none"
               />
               <div className="max-h-40 overflow-y-auto">
@@ -168,14 +170,14 @@ export function ShortcutRow({
               <input
                 value={draft.file}
                 onChange={(e) => setDraft({ ...draft, file: e.target.value })}
-                placeholder={draft.type === 'directory' ? '/path/to/folder' : '/path/to/file'}
+                placeholder={draft.type === 'directory' ? t('shortcut.folderPlaceholder') : t('shortcut.filePlaceholder')}
                 className="min-w-0 flex-1 rounded bg-black/20 px-1.5 py-0.5 text-gray-200 outline-none"
               />
               <button
                 onClick={() => pick(draft.type === 'directory' ? 'directory' : 'file')}
                 className="rounded bg-fg/5 px-1.5 text-gray-300 hover:bg-fg/10"
               >
-                Browse
+                {t('common.browse')}
               </button>
             </div>
           )}
@@ -194,25 +196,25 @@ export function ShortcutRow({
               <input
                 value={draft.file}
                 onChange={(e) => setDraft({ ...draft, file: e.target.value })}
-                placeholder="Command"
+                placeholder={t('shortcut.command')}
                 className="w-full rounded bg-black/20 px-1.5 py-0.5 font-mono text-gray-200 outline-none"
               />
               <p className="text-[10px] leading-snug text-amber-300/80">
-                Runs through the shell when clicked. Only enter commands you understand.
+                {t('shortcut.commandWarning')}
               </p>
             </>
           )}
 
           <div className="flex justify-end gap-1">
             <button onClick={() => setDraft(null)} className="rounded px-2 py-0.5 text-gray-400 hover:bg-fg/5">
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               onClick={save}
               disabled={!draft.file.trim() || busy}
               className="rounded bg-accent-500/80 px-2 py-0.5 text-white hover:bg-accent-500 disabled:opacity-40"
             >
-              Save
+              {t('common.save')}
             </button>
           </div>
         </div>

@@ -3,8 +3,8 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import clsx from 'clsx'
 import { WE_RESOLUTION_GROUPS, setGroupSelected, type FilterItem } from '../../constants/weFilters'
 import { toggle } from '../../utils/array'
+import { t, tagLabel } from '../../i18n'
 
-// Collapsible filter sidebar shared by the workshop and library views
 
 export function FilterPanel({ children }: { children: ReactNode }) {
   return (
@@ -66,8 +66,8 @@ export function CheckGroup({ children }: { children: ReactNode }) {
 export function AllNoneButtons({ onAll, onNone }: { onAll: () => void; onNone: () => void }) {
   return (
     <div className="flex gap-2">
-      <button onClick={onAll} className="text-[10px] text-gray-600 hover:text-gray-400">all</button>
-      <button onClick={onNone} className="text-[10px] text-gray-600 hover:text-gray-400">none</button>
+      <button onClick={onAll} className="text-[10px] text-gray-600 hover:text-gray-400">{t('filters.all')}</button>
+      <button onClick={onNone} className="text-[10px] text-gray-600 hover:text-gray-400">{t('filters.none')}</button>
     </div>
   )
 }
@@ -138,7 +138,7 @@ export function TagFilterSection({
       {options.map((item) => (
         <CheckItem
           key={item.tag}
-          label={item.label}
+          label={tagLabel(item.label)}
           checked={selected.includes(item.tag)}
           onChange={() => onChange(toggle(selected, item.tag))}
         />
@@ -162,7 +162,7 @@ export function ResolutionFilterSection({
 }) {
   return (
     <FilterSection
-      title="Resolution"
+      title={t('filters.resolution')}
       defaultOpen={false}
       activeCount={activeCount}
       onAll={() => onChange(allTags)}
@@ -171,7 +171,7 @@ export function ResolutionFilterSection({
       {WE_RESOLUTION_GROUPS.map((group) => (
         <div key={group.label} className="mt-2">
           <div className="mb-0.5 flex items-center justify-between pl-0.5">
-            <p className="text-xs text-gray-600">{group.label}</p>
+            <p className="text-xs text-gray-600">{tagLabel(group.label)}</p>
             <AllNoneButtons
               onAll={() => onChange(setGroupSelected(selected, group, true))}
               onNone={() => onChange(setGroupSelected(selected, group, false))}
@@ -180,7 +180,7 @@ export function ResolutionFilterSection({
           {group.items.map((item) => (
             <CheckItem
               key={item.tag}
-              label={item.label}
+              label={tagLabel(item.label)}
               checked={selected.includes(item.tag)}
               count={counts ? (counts.get(item.tag) ?? 0) : undefined}
               onChange={() => onChange(toggle(selected, item.tag))}

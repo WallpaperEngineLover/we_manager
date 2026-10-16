@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import type { WallpaperMeta } from '@shared/types'
 import * as library from './library.service'
-import { copyWallpaperFolder, hasBackupFiles, sameFileList, syncDir, verifyOnDisk } from './backup.service'
+import { copyWallpaperFolder, exists, hasBackupFiles, sameFileList, syncDir, verifyOnDisk } from './backup.service'
 import { getScreenAssignments } from './display.service'
 import { unsubscribeFromItem } from './steam.service'
 import { getExtraLibraryRoots } from '../utils/paths'
@@ -22,15 +22,6 @@ function rebase(file: string | undefined, from: string, to: string): string | un
   if (!file) return file
   const rel = path.relative(from, file)
   return rel.startsWith('..') || path.isAbsolute(rel) ? file : path.join(to, rel)
-}
-
-async function exists(p: string): Promise<boolean> {
-  try {
-    await fs.promises.access(p)
-    return true
-  } catch {
-    return false
-  }
 }
 
 // returns false when it already was in that library

@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import type { WallpaperFolder } from '@shared/types'
 import { useClickOutside } from '../../hooks/useClickOutside'
 import { useClampedPosition, useFlipSide } from '../../hooks/useContextMenuPosition'
+import { t } from '../../i18n'
 
 const POPUP_CLASS = 'rounded-xl border border-fg/10 bg-popup/95 p-1 shadow-2xl shadow-black/30 backdrop-blur-md'
 
@@ -66,17 +67,17 @@ export function MenuSeparator() {
 
 export function MenuSelectionCount({ count }: { count: number }) {
   if (count < 2) return null
-  return <div className="mb-1 border-b border-fg/5 px-3 py-1 text-xs text-gray-600">{count} items selected</div>
+  return <div className="mb-1 border-b border-fg/5 px-3 py-1 text-xs text-gray-600">{t('menu.selected', { count })}</div>
 }
 
 export function VoteMenuItems({ onVote }: { onVote: (up: boolean) => void }) {
   return (
     <>
       <MenuItem icon={ThumbsUp} onClick={() => onVote(true)}>
-        Like
+        {t('vote.like')}
       </MenuItem>
       <MenuItem icon={ThumbsDown} onClick={() => onVote(false)}>
-        Dislike
+        {t('vote.dislike')}
       </MenuItem>
     </>
   )
@@ -98,12 +99,12 @@ export function FavoriteMenuItems({
     <>
       {toAdd.length > 0 && (
         <MenuItem icon={Heart} onClick={() => onFavorite(toAdd, true)}>
-          Add to favorites
+          {t('favorite.add')}
         </MenuItem>
       )}
       {toRemove.length > 0 && (
         <MenuItem icon={HeartOff} onClick={() => onFavorite(toRemove, false)}>
-          Remove from favorites
+          {t('favorite.remove')}
         </MenuItem>
       )}
     </>
@@ -166,7 +167,7 @@ export function FolderMenuItems({
 }) {
   return (
     <>
-      <SubMenu icon={FolderInput} label="Move to folder" empty="No other folders">
+      <SubMenu icon={FolderInput} label={t('folder.moveTo')} empty={t('folder.noOthers')}>
         {moveTargets.map((f) => (
           <MenuItem key={f.id} icon={Folder} onClick={() => onMove(f.id)}>
             {f.title}
@@ -175,7 +176,7 @@ export function FolderMenuItems({
       </SubMenu>
       {hasFolder && (
         <MenuItem icon={Trash2} danger onClick={onRemove}>
-          Remove from folder
+          {t('folder.removeFrom')}
         </MenuItem>
       )}
     </>

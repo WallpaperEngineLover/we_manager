@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IpcChannels } from '../shared/ipc-channels'
 import type { Appearance } from '../shared/appearance'
+import type { Language, LanguagePreference } from '../shared/i18n'
 import type { CardBorders } from '../shared/cardBorders'
+import type { CardBadges } from '../shared/cardBadges'
 import type { DesktopEnvironment } from '../shared/desktop'
 import type {
   WorkshopQueryParams,
@@ -27,6 +29,9 @@ import type {
   LweSceneEffect,
   DesktopApplication,
   BackupProgressEvent,
+  VerifyProgressEvent,
+  VerifyResult,
+  RepairResult,
   Playlist,
   PlaylistSettings,
   PlaylistPlaybackState,
@@ -38,9 +43,13 @@ import type {
   DisplayMode,
   ScreenTarget,
   ScreenAssignment,
+  SplitScreen,
   ScheduleRule,
   CrashEvent,
-  FavoriteStatus
+  FavoriteStatus,
+  UpdateChecks,
+  UpdateStatus,
+  UpdateTarget
 } from '../shared/types'
 import type { VideoSegment } from '../shared/videoTrim'
 
@@ -65,6 +74,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.STEAM_UNSUBSCRIBE, itemId),
     redownload: (itemId: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.STEAM_REDOWNLOAD, itemId),
+    verify: (itemIds?: string[]): Promise<VerifyResult> => ipcRenderer.invoke(IpcChannels.STEAM_VERIFY, itemIds),
+    repair: (itemIds: string[]): Promise<RepairResult> => ipcRenderer.invoke(IpcChannels.STEAM_REPAIR, itemIds),
     getSubscribedItems: (): Promise<string[]> =>
       ipcRenderer.invoke(IpcChannels.STEAM_GET_SUBSCRIBED),
     downloadInfo: (itemId: string): Promise<DownloadProgressEvent | null> =>
@@ -149,6 +160,7 @@ const api = {
       autostartPlaylistId: string | null
       killLweOnQuit: boolean
       cardBorders: CardBorders
+      cardBadges: CardBadges
       audioScreen: string | null
       ambientVolume: number | null
       defaultAudioSensitivity: number
@@ -159,7 +171,10 @@ const api = {
       engineFlags: EngineFlags
       engineFlagPresets: EngineFlagPreset[]
       displayMode: DisplayMode
+      splitScreens: Record<string, SplitScreen>
       appearance: Appearance
+      language: LanguagePreference
+      uiLanguage: Language
       appearanceRestartNeeded: boolean
       windowTranslucent: boolean
       desktopEnv: DesktopEnvironment
@@ -202,8 +217,12 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_KILL_LWE_ON_QUIT, enabled),
     setCardBorders: (borders: CardBorders): Promise<CardBorders> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_CARD_BORDERS, borders),
+    setCardBadges: (badges: CardBadges): Promise<CardBadges> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_CARD_BADGES, badges),
     setAppearance: (appearance: Partial<Appearance>): Promise<Appearance> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_APPEARANCE, appearance),
+    setLanguage: (language: LanguagePreference): Promise<Language> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_LANGUAGE, language),
     setAutostart: (
       enabled: boolean,
       minimized: boolean,
@@ -300,6 +319,11 @@ const api = {
       ipcRenderer.invoke(IpcChannels.WALLPAPER_GET_TARGETS),
     stop: (screen?: ScreenTarget): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.WALLPAPER_STOP, screen),
+    /** null forgets the screen's split */
+    setSplit: (screen: ScreenTarget, split: SplitScreen | null): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.WALLPAPER_SET_SPLIT, screen, split),
+    showSplit: (screen: ScreenTarget): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.WALLPAPER_SHOW_SPLIT, screen),
     testLaunch: (wallpaperId: string, screen?: ScreenTarget): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.WALLPAPER_TEST_LAUNCH, wallpaperId, screen),
     generateThumbnail: (wallpaperId: string): Promise<WallpaperMeta> =>
@@ -412,6 +436,17 @@ const api = {
       ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_GET_ENABLED)
   },
 
+  updates: {
+    status: (): Promise<UpdateStatus> => ipcRenderer.invoke(IpcChannels.UPDATES_STATUS),
+    setChecks: (checks: UpdateChecks): Promise<UpdateStatus> =>
+      ipcRenderer.invoke(IpcChannels.UPDATES_SET_CHECKS, checks),
+    check: (): Promise<UpdateStatus> => ipcRenderer.invoke(IpcChannels.UPDATES_CHECK),
+    dismiss: (target: UpdateTarget, version: string): Promise<UpdateStatus> =>
+      ipcRenderer.invoke(IpcChannels.UPDATES_DISMISS, target, version),
+    installApp: (): Promise<UpdateStatus> => ipcRenderer.invoke(IpcChannels.UPDATES_INSTALL_APP),
+    restart: (): Promise<void> => ipcRenderer.invoke(IpcChannels.UPDATES_RESTART)
+  },
+
   gnomeExtension: {
     status: (): Promise<GnomeExtensionStatus> => ipcRenderer.invoke(IpcChannels.GNOME_EXTENSION_STATUS),
     install: (): Promise<{ ok: boolean; message: string; status: GnomeExtensionStatus }> =>
@@ -451,6 +486,11 @@ const api = {
       const listener = (_: Electron.IpcRendererEvent, progress: LweInstallProgress) => cb(progress)
       ipcRenderer.on(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, listener)
+    },
+    verifyProgress: (cb: (progress: VerifyProgressEvent) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, progress: VerifyProgressEvent) => cb(progress)
+      ipcRenderer.on(IpcChannels.EVENT_VERIFY_PROGRESS, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_VERIFY_PROGRESS, listener)
     },
     backupProgress: (cb: (progress: BackupProgressEvent) => void): (() => void) => {
       const listener = (_: Electron.IpcRendererEvent, progress: BackupProgressEvent) => cb(progress)
@@ -506,6 +546,11 @@ const api = {
       const listener = (_: Electron.IpcRendererEvent, ruleName: string) => cb(ruleName)
       ipcRenderer.on(IpcChannels.EVENT_SCHEDULE_FIRED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_SCHEDULE_FIRED, listener)
+    },
+    updateStatus: (cb: (status: UpdateStatus) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, status: UpdateStatus) => cb(status)
+      ipcRenderer.on(IpcChannels.EVENT_UPDATE_STATUS, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_UPDATE_STATUS, listener)
     }
   }
 }

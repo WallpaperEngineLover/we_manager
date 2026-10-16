@@ -12,6 +12,7 @@ import { registerGnomeExtensionHandlers } from './gnome-extension.handlers'
 import { registerBackupHandlers } from './backup.handlers'
 import { registerPlaylistHandlers } from './playlist.handlers'
 import { registerScheduleHandlers } from './schedule.handlers'
+import { registerUpdateHandlers } from './update.handlers'
 
 export function registerAllHandlers(win: BrowserWindow): void {
   registerSteamHandlers(win)
@@ -27,4 +28,5 @@ export function registerAllHandlers(win: BrowserWindow): void {
   registerBackupHandlers(win)
   registerPlaylistHandlers()
   registerScheduleHandlers()
+  registerUpdateHandlers()
 }

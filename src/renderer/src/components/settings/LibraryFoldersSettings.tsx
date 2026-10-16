@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { FolderPlus, HardDrive, Loader2, X } from 'lucide-react'
 import type { ExtraLibrary } from '@shared/types'
 import { useConfig } from '../../hooks/queries'
+import { t } from '../../i18n'
 
 function folderName(p: string): string {
   return p.split('/').filter(Boolean).pop() ?? p
@@ -26,9 +27,9 @@ export default function LibraryFoldersSettings() {
     setStatus(null)
     try {
       const result = await window.electronAPI.library.scan()
-      setStatus(`Library rescanned: ${result.imported} imported, ${result.removed} removed.`)
+      setStatus(t('folders.rescanned', { imported: result.imported, removed: result.removed }))
     } catch (err) {
-      setStatus(`Scan failed: ${(err as Error).message}`)
+      setStatus(t('folders.scanFailed', { error: (err as Error).message }))
     } finally {
       setScanning(false)
       queryClient.invalidateQueries({ queryKey: ['library'] })
@@ -37,7 +38,7 @@ export default function LibraryFoldersSettings() {
   }
 
   async function handleAdd() {
-    const picked = await window.electronAPI.config.pickFolder('Select a folder of wallpapers')
+    const picked = await window.electronAPI.config.pickFolder(t('folders.pickTitle'))
     if (!picked || libraries.some((l) => l.path === picked)) return
     await saveAndScan([...libraries, { path: picked, name: folderName(picked) }])
   }
@@ -56,14 +57,10 @@ export default function LibraryFoldersSettings() {
   return (
     <div>
       <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-        Extra library folders
+        {t('folders.title')}
       </label>
       <p className="mt-1 text-xs text-gray-600">
-        Folders on other disks holding wallpaper folders (each with a project.json), like a copied
-        workshop folder. They show up in the library as "Local", and selected wallpapers can be copied
-        or moved into them from the right-click menu. When the same wallpaper is also in the workshop
-        or backup folder, that copy is used. Wallpapers on a drive that is not mounted stay in the
-        library until the folder is removed here.
+        {t('folders.description')}
       </p>
       {libraries.length > 0 && (
         <ul className="mt-2 space-y-1">
@@ -78,7 +75,7 @@ export default function LibraryFoldersSettings() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') e.currentTarget.blur()
                 }}
-                title="Library name"
+                title={t('folders.name')}
                 className="w-32 shrink-0 rounded bg-transparent px-1 text-gray-100 outline-none focus:bg-fg/5 focus:ring-1 focus:ring-accent-500"
               />
               <span className="flex-1 truncate text-xs text-gray-500" title={l.path}>
@@ -87,7 +84,7 @@ export default function LibraryFoldersSettings() {
               <button
                 onClick={() => saveAndScan(libraries.filter((x) => x.path !== l.path))}
                 disabled={scanning}
-                title="Remove from the library"
+                title={t('folders.remove')}
                 className="rounded p-0.5 text-gray-500 hover:bg-fg/10 hover:text-gray-200 disabled:opacity-50"
               >
                 <X size={14} />
@@ -102,7 +99,7 @@ export default function LibraryFoldersSettings() {
         className="mt-3 flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
       >
         {scanning ? <Loader2 size={16} className="animate-spin" /> : <FolderPlus size={16} />}
-        {scanning ? 'Scanning...' : 'Add folder'}
+        {scanning ? t('folders.scanning') : t('folders.add')}
       </button>
       {status && <p className="mt-2 text-xs text-gray-500">{status}</p>}
     </div>

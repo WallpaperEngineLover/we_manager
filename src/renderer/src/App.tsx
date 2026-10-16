@@ -9,12 +9,15 @@ import SettingsView from './components/settings/SettingsView'
 import SetupScreen from './components/setup/SetupScreen'
 import StatusBar from './components/layout/StatusBar'
 import GnomeExtensionNotice from './components/layout/GnomeExtensionNotice'
+import UpdateNotice from './components/updates/UpdateNotice'
+import UpdatePrompt from './components/updates/UpdatePrompt'
 import { useToast } from './components/common/Toast'
 import { screenLabel } from './utils/screens'
-import { useConfig } from './hooks/queries'
+import { UPDATE_STATUS_KEY, useConfig } from './hooks/queries'
 import { FAVORITE_STATUS_KEY } from './hooks/useFavorites'
 import { DISLIKED_IDS_KEY } from './hooks/useVotes'
 import { applyAppearance, onSystemThemeChange } from './utils/appearance'
+import { currentLanguage, setLanguage, t } from './i18n'
 
 type View = 'workshop' | 'library' | 'playlists' | 'settings'
 
@@ -28,7 +31,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
       return (
         <div className="flex h-full items-center justify-center p-8 text-center">
           <div>
-            <p className="text-red-400 font-medium">Something went wrong</p>
+            <p className="text-red-400 font-medium">{t('app.error')}</p>
             <p className="mt-2 text-xs text-gray-500">{(this.state.error as Error).message}</p>
           </div>
         </div>
@@ -52,6 +55,9 @@ export default function App() {
   }
 
   const config = useConfig()
+  const language = config?.uiLanguage ?? currentLanguage()
+  setLanguage(language)
+
   useEffect(() => {
     if (!config) return
     const apply = (): void => applyAppearance(config.appearance, config.windowTranslucent)
@@ -66,17 +72,14 @@ export default function App() {
     })
   }, [])
 
-  // Subscribed here (rather than in SettingsView) so an in-progress LWE build/install survives
-  // navigating to another tab and back - SettingsView unmounts on navigation, App never does.
+  // here so install progress survives leaving Settings
   useEffect(() => {
     return window.electronAPI.on.lweInstallProgress((progress) => {
       queryClient.setQueryData(['lwe-install-progress'], progress)
     })
   }, [queryClient])
 
-  // Background sync (main/index.ts) periodically re-checks votes and library availability
-  // against Steam and pushes updates here, so likes cast elsewhere and items pulled from the
-  // Workshop show up without a restart or a manual refresh.
+  // background sync results from main
   useEffect(() => {
     return window.electronAPI.on.votedIdsChanged((ids) => {
       queryClient.setQueryData(['steam-voted-ids'], ids)
@@ -104,9 +107,7 @@ export default function App() {
       queryClient.setQueryData(FAVORITE_STATUS_KEY, status)
       if (newReadBackFailures > 0) {
         showToast(
-          newReadBackFailures === 1
-            ? "A favorite change didn't show up in your Steam favorites - its card has a dashed border"
-            : `${newReadBackFailures} favorite changes didn't show up in your Steam favorites - their cards have a dashed border`,
+          t('favorite.readBackFailed', { count: newReadBackFailures }),
           { warning: true, durationMs: 8000 }
         )
       }
@@ -127,16 +128,23 @@ export default function App() {
 
   useEffect(() => {
     return window.electronAPI.on.wallpaperCrashed((event) => {
-      const where = event.screen === '*' ? '' : ` on ${screenLabel(event.screen)}`
+      const where = event.screen === '*' ? '' : ` ${t('status.onScreen', { screen: screenLabel(event.screen) })}`
       showToast(`${event.title}${where}: ${event.outcome}`, { warning: true, durationMs: 8000 })
     })
   }, [showToast])
 
   useEffect(() => {
-    return window.electronAPI.on.scheduleFired((name) => showToast(`Schedule: ${name}`))
+    return window.electronAPI.on.updateStatus((status) => {
+      queryClient.setQueryData(UPDATE_STATUS_KEY, status)
+    })
+  }, [queryClient])
+
+  useEffect(() => {
+    return window.electronAPI.on.scheduleFired((name) => showToast(t('schedule.fired', { name })))
   }, [showToast])
 
-  if (setupDone === null) return null // loading
+  if (setupDone === null) return null
+
 
   if (!setupDone) {
     return (
@@ -148,8 +156,9 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="flex h-full flex-col bg-app text-gray-100">
+      <div key={language} className="flex h-full flex-col bg-app text-gray-100">
         <GnomeExtensionNotice />
+        <UpdateNotice />
         <div className="flex flex-1 overflow-hidden">
           <Sidebar activeView={activeView} onNavigate={setActiveView} />
           <main className="flex-1 overflow-hidden">
@@ -166,6 +175,7 @@ export default function App() {
           </main>
         </div>
         <StatusBar />
+        <UpdatePrompt />
       </div>
     </ErrorBoundary>
   )

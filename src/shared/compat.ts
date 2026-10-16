@@ -1,4 +1,5 @@
 import type { CompatStatus, WallpaperCompat } from './types'
+import type { MessageKey } from './i18n'
 
 export function compatStatus(compat: WallpaperCompat | undefined): CompatStatus {
   if (!compat) return 'ok'
@@ -8,15 +9,16 @@ export function compatStatus(compat: WallpaperCompat | undefined): CompatStatus 
   return 'ok'
 }
 
-/** Hot-swapping into it crashed the engine but a fresh launch was fine, so always launch it fresh */
+/** Hotswap crashed but a fresh launch worked */
+
 export function needsFreshLaunch(compat: WallpaperCompat | undefined): boolean {
   return !!compat?.hotswapCrash
 }
 
-export const COMPAT_LABELS: Record<CompatStatus, string> = {
-  ok: 'No known problems',
-  crashes: 'Crashes on launch',
-  'hotswap-only': 'Crashes when switched to, works on a fresh launch',
-  'hotswap-untested': 'Crashed when switched to',
-  unstable: 'Crashed while running'
+export const COMPAT_LABELS: Record<CompatStatus, MessageKey> = {
+  ok: 'compat.ok',
+  crashes: 'compat.crashes',
+  'hotswap-only': 'compat.hotswapOnly',
+  'hotswap-untested': 'compat.hotswapUntested',
+  unstable: 'compat.unstable'
 }

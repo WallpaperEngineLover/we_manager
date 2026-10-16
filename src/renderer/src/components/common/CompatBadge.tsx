@@ -2,6 +2,7 @@ import { OctagonX, RefreshCwOff, StickyNote, TriangleAlert } from 'lucide-react'
 import clsx from 'clsx'
 import type { CompatStatus, WallpaperCompat } from '@shared/types'
 import { COMPAT_LABELS, compatStatus } from '@shared/compat'
+import { t } from '../../i18n'
 
 const STATUS_ICONS: Record<Exclude<CompatStatus, 'ok'>, { icon: typeof OctagonX; className: string }> = {
   crashes: { icon: OctagonX, className: 'text-red-400' },
@@ -16,7 +17,6 @@ export function CompatStatusIcon({ status, size = 12 }: { status: CompatStatus; 
   return <Icon size={size} className={className} />
 }
 
-/** Small icons for a card's corner: how the wallpaper behaved in the engine, and whether it has a note */
 export default function CompatBadge({ compat, className }: { compat?: WallpaperCompat; className?: string }) {
   const status = compatStatus(compat)
   const note = compat?.note?.trim()
@@ -25,7 +25,7 @@ export default function CompatBadge({ compat, className }: { compat?: WallpaperC
   return (
     <span className={clsx('flex items-center gap-1 rounded bg-black/70 px-1 py-0.5', className)}>
       {status !== 'ok' && (
-        <span title={COMPAT_LABELS[status]}>
+        <span title={t(COMPAT_LABELS[status])}>
           <CompatStatusIcon status={status} />
         </span>
       )}

@@ -6,6 +6,7 @@ import type { CardSteamState } from '../../hooks/useCardBorders'
 import { isSubscribedState, type SubscribeState } from '../../hooks/useSubscriptionQueue'
 import { formatFileSize } from '../../utils/format'
 import { CardPreview, CornerBadge, GridCard, LikeAction, PlayButton, ProgressBar, SteamAction } from '../common/GridCard'
+import { t, formatNumber } from '../../i18n'
 
 interface WorkshopCardProps {
   item: WorkshopItem
@@ -74,7 +75,7 @@ export default function WorkshopCard({
       <CardPreview src={item.previewUrl} alt={item.title} dimmed={ignored}>
         {ignored && (
           <div className="absolute bottom-2 left-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-gray-300">
-            Ignored
+            {t('workshop.ignored')}
           </div>
         )}
         {subscribeState === 'downloading' && downloadPercentage != null && (
@@ -83,7 +84,7 @@ export default function WorkshopCard({
         {subscribeState === 'download-error' && (
           <button
             onClick={handleSubscribe}
-            title="Subscribed, but the download failed (disk full?) - click to retry"
+            title={t('subscribe.downloadFailedRetry')}
             className="absolute bottom-2 right-2 flex h-5 w-5 items-center justify-center rounded bg-red-600/80 text-white hover:bg-red-600"
           >
             <AlertTriangle size={12} />
@@ -94,8 +95,8 @@ export default function WorkshopCard({
             className="bottom-2 right-2 bg-black/60 text-accent-300"
             title={
               subscribeState === 'downloading' && downloadPercentage != null
-                ? `Downloading... ${downloadPercentage}%`
-                : 'Queued to download'
+                ? t('subscribe.downloadingPercent', { percent: downloadPercentage })
+                : t('subscribe.queuedDownload')
             }
           >
             {subscribeState === 'downloading' ? <Loader2 size={12} className="animate-spin" /> : <Clock size={12} />}
@@ -108,7 +109,7 @@ export default function WorkshopCard({
           {item.title}
         </h3>
         <p className="mt-1 text-xs text-gray-500">
-          {item.subscriptions.toLocaleString()} subscribers
+          {t('workshop.subscribers', { count: item.subscriptions, formatted: formatNumber(item.subscriptions) })}
           {fileSizeLabel ? ` · ${fileSizeLabel}` : ''}
         </p>
         <div className="mt-2 flex items-center gap-1.5">
@@ -123,26 +124,26 @@ export default function WorkshopCard({
             busy={isApplying}
             ready={lweInstalled}
             disabled={isApplying || !lweInstalled}
-            title={lweInstalled ? 'Play wallpaper' : 'Install linux-wallpaperengine in Settings first'}
+            title={lweInstalled ? t('play.wallpaper') : t('play.installFirst')}
             onClick={handlePlay}
           />
         )}
         {subscribed ? (
-          <div className={`${STATUS_CLASS} bg-green-600/80 text-white`} title="Subscribed">
+          <div className={`${STATUS_CLASS} bg-green-600/80 text-white`} title={t('subscribe.subscribed')}>
             <Check size={14} />
           </div>
         ) : subscribeState === 'queued' ? (
-          <div className={`${STATUS_CLASS} bg-black/60 text-gray-300`} title="Queued to subscribe">
+          <div className={`${STATUS_CLASS} bg-black/60 text-gray-300`} title={t('subscribe.queued')}>
             <Clock size={14} />
           </div>
         ) : subscribeState === 'subscribing' ? (
-          <div className={`${STATUS_CLASS} bg-black/60 text-accent-300`} title="Subscribing...">
+          <div className={`${STATUS_CLASS} bg-black/60 text-accent-300`} title={t('subscribe.subscribing')}>
             <Loader2 size={14} className="animate-spin" />
           </div>
         ) : subscribeState === 'subscribe-error' ? (
           <button
             onClick={handleSubscribe}
-            title="Subscribe failed, click to retry"
+            title={t('subscribe.failedRetry')}
             className={`${STATUS_CLASS} bg-red-600/80 text-white hover:bg-red-600`}
           >
             <AlertTriangle size={14} />

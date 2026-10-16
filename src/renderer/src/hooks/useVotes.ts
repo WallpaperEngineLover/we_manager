@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useToast } from '../components/common/Toast'
+import { t } from '../i18n'
 
 const VOTED_IDS_KEY = ['steam-voted-ids']
 export const DISLIKED_IDS_KEY = ['steam-disliked-ids']
@@ -40,7 +41,7 @@ export function useRecordVotes(): (ids: string[], up: boolean) => void {
   )
 }
 
-// One item's like/dislike buttons. Failures go to onError, or a toast when there is none.
+// failures go to onError, else a toast
 export function useVoteAction(onError?: (message: string) => void) {
   const { showToast } = useToast()
   const recordVotes = useRecordVotes()
@@ -53,7 +54,7 @@ export function useVoteAction(onError?: (message: string) => void) {
     try {
       const { confirmed } = await window.electronAPI.steam.vote(id, up)
       if (confirmed) recordVotes([id], up)
-      else report(`Could not confirm the ${up ? 'like' : 'dislike'} on Steam - try again`)
+      else report(up ? t('vote.unconfirmedLike') : t('vote.unconfirmedDislike'))
       return confirmed
     } catch (err) {
       report((err as Error).message)
@@ -66,13 +67,14 @@ export function useVoteAction(onError?: (message: string) => void) {
   return { vote, isLiking: pending === 'like', isDisliking: pending === 'dislike' }
 }
 
-// Like/dislike for a whole selection from a context menu, reported as one toast
+// whole selection, one toast
+
 export function useBatchVote(): (ids: string[], up: boolean) => Promise<void> {
   const { showToast } = useToast()
   const recordVotes = useRecordVotes()
 
   return async (ids: string[], up: boolean) => {
-    if (ids.length > 1) showToast(`${up ? 'Liking' : 'Disliking'} ${ids.length} wallpapers on Steam...`)
+    if (ids.length > 1) showToast(t(up ? 'vote.liking' : 'vote.disliking', { count: ids.length }))
 
     const results = await Promise.allSettled(ids.map((id) => window.electronAPI.steam.vote(id, up)))
     const confirmedIds = ids.filter((_, i) => {
@@ -82,11 +84,11 @@ export function useBatchVote(): (ids: string[], up: boolean) => Promise<void> {
     recordVotes(confirmedIds, up)
 
     const failed = ids.length - confirmedIds.length
-    const done = up ? 'Liked' : 'Disliked'
+    const count = confirmedIds.length
     showToast(
       failed === 0
-        ? `${done} ${confirmedIds.length} on Steam`
-        : `${done} ${confirmedIds.length}, ${failed} failed - their cards have a dashed border, right-click to try again`,
+        ? t(up ? 'vote.likedCount' : 'vote.dislikedCount', { count })
+        : t(up ? 'vote.likedSomeFailed' : 'vote.dislikedSomeFailed', { count, failed }),
       failed === 0 ? undefined : { warning: true, durationMs: 5000 }
     )
   }

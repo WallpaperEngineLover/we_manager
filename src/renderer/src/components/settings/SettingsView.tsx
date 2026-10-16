@@ -5,11 +5,15 @@ import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Pack
 import type { LweStatus, LwePrebuiltTarget, LweInstallProgress, LinuxDistro, SteamIdentity } from '../../../../shared/types'
 import PerformanceSettings from './PerformanceSettings'
 import DisplaySettings from './DisplaySettings'
+import SplitScreenSettings from './SplitScreenSettings'
 import CardBorderSettings from './CardBorderSettings'
+import CardBadgeSettings from './CardBadgeSettings'
 import AppearanceSettings from './AppearanceSettings'
 import LibraryFoldersSettings from './LibraryFoldersSettings'
 import ScheduleSettings from './ScheduleSettings'
+import UpdateSettings from './UpdateSettings'
 import CopyField from '../common/CopyField'
+import { t } from '../../i18n'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
   fedora: 'Fedora / Nobara / RHEL',
@@ -36,9 +40,7 @@ export default function SettingsView() {
   const [defaultLweRepo, setDefaultLweRepo] = useState('')
   const [repoSaved, setRepoSaved] = useState(false)
   const queryClient = useQueryClient()
-  // Lives in the query cache (written from App.tsx's always-mounted subscriber) instead of local
-  // state, so an in-progress build/install survives navigating away from Settings and back -
-  // this component unmounts on navigation, the query cache doesn't.
+  // in the query cache (fed by App.tsx) so progress survives navigation
   const { data: lweProgress = null } = useQuery<LweInstallProgress | null>({
     queryKey: ['lwe-install-progress'],
     queryFn: () => null,
@@ -116,10 +118,7 @@ export default function SettingsView() {
     window.electronAPI.lwe.listScreens().then(setScreens)
   }, [])
 
-  // The event subscription itself lives in App.tsx (see lwe-install-progress query above) so it
-  // survives navigation; this just reacts to the shared progress reaching a terminal stage to
-  // refresh the installed-status display, which is fine to keep local since it's re-fetched on
-  // every mount anyway.
+  // refresh the status once the install finished
   useEffect(() => {
     if (lweProgress?.stage === 'done' || lweProgress?.stage === 'error') {
       window.electronAPI.lwe.status().then(setLweStatus)
@@ -147,10 +146,10 @@ export default function SettingsView() {
       if (!filePath) return
       const result = await window.electronAPI.config.importWE(filePath)
       setImportStatus(
-        `Imported ${result.folders} folders and ${result.playlists} playlists. Paths fixed automatically.`
+        t('settings.importedConfig', { folders: result.folders, playlists: result.playlists })
       )
     } catch (err) {
-      setImportStatus(`Import failed: ${(err as Error).message}`)
+      setImportStatus(t('setup.importFailed', { error: (err as Error).message }))
     }
   }
 
@@ -159,13 +158,13 @@ export default function SettingsView() {
   }
 
   async function handleInstallDeps() {
-    setLweProgress({ stage: 'installing-deps', message: 'Starting dependency installation...', percentage: 0 })
+    setLweProgress({ stage: 'installing-deps', message: t('lwe.startingDeps'), percentage: 0 })
     try {
       await window.electronAPI.lwe.installDeps()
     } catch (err) {
       setLweProgress({
         stage: 'error',
-        message: `Dependency installation failed: ${(err as Error).message}`,
+        message: t('lwe.depsFailed', { error: (err as Error).message }),
         percentage: 0
       })
     }
@@ -179,36 +178,36 @@ export default function SettingsView() {
   }
 
   async function handleInstallLwe() {
-    setLweProgress({ stage: 'cloning', message: 'Starting installation...', percentage: 0 })
+    setLweProgress({ stage: 'cloning', message: t('lwe.startingInstall'), percentage: 0 })
     try {
-      // Persist the repo/cmake-args fields first so the build uses what's on screen
+      // the build uses what's on screen
       await window.electronAPI.config.setLweRepo(lweRepoUrl.trim() || null, lweRepoBranch.trim() || null)
       await window.electronAPI.config.setLweCmakeArgs(lweCmakeArgs.trim() || null)
       await window.electronAPI.lwe.install()
     } catch (err) {
       setLweProgress({
         stage: 'error',
-        message: `Installation failed: ${(err as Error).message}`,
+        message: t('lwe.installFailed', { error: (err as Error).message }),
         percentage: 0
       })
     }
   }
 
   async function handleInstallPrebuilt() {
-    setLweProgress({ stage: 'downloading', message: 'Starting download...', percentage: 0 })
+    setLweProgress({ stage: 'downloading', message: t('lwe.startingDownload'), percentage: 0 })
     try {
       await window.electronAPI.lwe.installPrebuilt()
     } catch (err) {
       setLweProgress({
         stage: 'error',
-        message: `Installation failed: ${(err as Error).message}`,
+        message: t('lwe.installFailed', { error: (err as Error).message }),
         percentage: 0
       })
     }
   }
 
   async function handleUninstallLwe() {
-    if (!confirm('Are you sure you want to uninstall linux-wallpaperengine?')) return
+    if (!confirm(t('lwe.uninstallConfirm'))) return
     setUninstalling(true)
     setUninstallMsg(null)
     try {
@@ -216,7 +215,7 @@ export default function SettingsView() {
       setUninstallMsg(result.message)
       window.electronAPI.lwe.status().then(setLweStatus)
     } catch (err) {
-      setUninstallMsg(`Uninstall failed: ${(err as Error).message}`)
+      setUninstallMsg(t('lwe.uninstallFailed', { error: (err as Error).message }))
     } finally {
       setUninstalling(false)
     }
@@ -229,7 +228,7 @@ export default function SettingsView() {
       const result = await window.electronAPI.lwe.killAll()
       setKillMsg(result.message)
     } catch (err) {
-      setKillMsg(`Failed: ${(err as Error).message}`)
+      setKillMsg(t('setup.failed', { error: (err as Error).message }))
     } finally {
       setKillingLwe(false)
     }
@@ -259,7 +258,7 @@ export default function SettingsView() {
     if (!resetFpsConfirm) { setResetFpsConfirm(true); return }
     setResetFpsConfirm(false)
     const result = await window.electronAPI.library.resetFpsOverrides()
-    setResetFpsMsg(`Reset FPS for ${result.count} wallpaper${result.count !== 1 ? 's' : ''}.`)
+    setResetFpsMsg(t('settings.resetFpsDone', { count: result.count }))
     setTimeout(() => setResetFpsMsg(null), 3000)
   }
 
@@ -317,7 +316,6 @@ export default function SettingsView() {
   async function handleAudioScreenChange(screen: string | null) {
     setAudioScreen(screen)
     await window.electronAPI.config.setAudioScreen(screen)
-    // Push live so a currently running instance updates without a relaunch
     await window.electronAPI.lwe.hotswapSettings({ audioScreen: screen ?? '' })
   }
 
@@ -346,8 +344,8 @@ export default function SettingsView() {
     if (isNaN(percent) || percent < 0 || percent > 200) return
     const multiplier = percent / 100
     await window.electronAPI.config.setDefaultAudioSensitivity(multiplier)
-    // Push live so a currently running instance updates without a relaunch - "*" is the engine's
-    // wildcard default, per-wallpaper overrides still win over it.
+    // per-wallpaper overrides win over "*"
+
     await window.electronAPI.lwe.hotswapSettings({ audioSensitivity: { '*': multiplier } })
     setDefaultAudioSensitivitySaved(true)
     setTimeout(() => setDefaultAudioSensitivitySaved(false), 2000)
@@ -371,17 +369,17 @@ export default function SettingsView() {
 
   return (
     <div className="p-6 overflow-y-auto h-full">
-      <h2 className="text-lg font-semibold text-gray-100">Settings</h2>
+      <h2 className="text-lg font-semibold text-gray-100">{t('nav.settings')}</h2>
 
       <div className="mt-6 max-w-lg space-y-8">
         <AppearanceSettings />
 
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            Workshop folder
+            {t('setup.workshopFolder')}
           </label>
           <p className="mt-1 text-xs text-gray-600">
-            Path to the Wallpaper Engine workshop content directory.
+            {t('settings.workshopPathHint')}
           </p>
           <div className="mt-2 flex gap-2">
             <input
@@ -398,7 +396,7 @@ export default function SettingsView() {
               className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
             >
               <FolderOpen size={16} />
-              Browse
+              {t('common.browse')}
             </button>
           </div>
           <button
@@ -407,7 +405,7 @@ export default function SettingsView() {
             className="mt-3 flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
           >
             <Save size={14} />
-            {saved ? 'Saved!' : 'Save'}
+            {saved ? t('common.saved') : t('common.save')}
           </button>
         </div>
 
@@ -415,12 +413,10 @@ export default function SettingsView() {
 
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            Backup folder
+            {t('settings.backupFolder')}
           </label>
           <p className="mt-1 text-xs text-gray-600">
-            Local folder for keeping your own copies of wallpapers, independent of the
-            Steam Workshop. Point this at an existing folder to load wallpapers already
-            backed up there.
+            {t('settings.backupFolderHint')}
           </p>
           <div className="mt-2 flex gap-2">
             <input
@@ -430,7 +426,7 @@ export default function SettingsView() {
                 setBackupPath(e.target.value)
                 setBackupSaved(false)
               }}
-              placeholder="Not configured"
+              placeholder={t('settings.notConfigured')}
               className="flex-1 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
             />
             <button
@@ -438,7 +434,7 @@ export default function SettingsView() {
               className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
             >
               <FolderOpen size={16} />
-              Browse
+              {t('common.browse')}
             </button>
           </div>
           <button
@@ -447,37 +443,37 @@ export default function SettingsView() {
             className="mt-3 flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
           >
             <Save size={14} />
-            {backupSaved ? 'Saved!' : 'Save'}
+            {backupSaved ? t('common.saved') : t('common.save')}
           </button>
 
           <label className="mt-4 flex items-center gap-3 cursor-pointer">
             <Toggle on={autoUnsubscribeAfterBackup} onClick={handleAutoUnsubscribeToggle} />
             <span className="flex items-center gap-2 text-sm text-gray-300">
               <Archive size={16} />
-              Unsubscribe from Steam Workshop after backup
+              {t('settings.autoUnsubscribe')}
             </span>
           </label>
         </div>
 
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            Wallpaper Engine Options
+            {t('settings.weOptions')}
           </label>
           <p className="mt-1 text-xs text-gray-600">
-            Launch options passed to linux-wallpaperengine.
+            {t('settings.weOptionsHint')}
           </p>
           <div className="mt-3 space-y-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Default FPS limit</label>
+              <label className="block text-xs text-gray-400 mb-1">{t('settings.defaultFps')}</label>
               <p className="text-xs text-gray-600 mb-2">
-                Limits frame rate for all wallpapers. Leave empty for unlimited. Can be overridden per wallpaper.
+                {t('settings.defaultFpsHint')}
               </p>
               <div className="flex gap-2 items-center">
                 <input
                   type="number"
                   min={1}
                   max={360}
-                  placeholder="unlimited"
+                  placeholder={t('settings.unlimited')}
                   value={defaultFps}
                   onChange={(e) => { setDefaultFps(e.target.value); setFpsSaved(false) }}
                   onKeyDown={(e) => e.key === 'Enter' && handleSaveDefaultFps()}
@@ -488,7 +484,7 @@ export default function SettingsView() {
                   className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
                 >
                   <Save size={14} />
-                  {fpsSaved ? 'Saved!' : 'Save'}
+                  {fpsSaved ? t('common.saved') : t('common.save')}
                 </button>
               </div>
             </div>
@@ -497,14 +493,11 @@ export default function SettingsView() {
                 <Toggle on={recommendedFpsEnabled} onClick={handleRecommendedFpsToggle} />
                 <span className="flex items-center gap-2 text-sm text-gray-300">
                   <Film size={16} />
-                  Recommended video settings
+                  {t('settings.recommendedVideo')}
                 </span>
               </label>
               <p className="mt-2 text-xs text-gray-600">
-                Reads each video wallpaper's actual frame rate and launches it at that FPS
-                instead of the default limit, which fixes stutter on videos that don't
-                match it. Wallpapers with a manual FPS override are unaffected. Requires
-                ffprobe (part of ffmpeg).
+                {t('settings.recommendedVideoHint')}
               </p>
             </div>
             <div>
@@ -512,36 +505,32 @@ export default function SettingsView() {
                 <Toggle on={recommendedWebFpsEnabled} onClick={handleRecommendedWebFpsToggle} />
                 <span className="flex items-center gap-2 text-sm text-gray-300">
                   <Globe size={16} />
-                  Recommended web wallpaper settings
+                  {t('settings.recommendedWeb')}
                 </span>
               </label>
               <p className="mt-2 text-xs text-gray-600">
-                Launches web (CEF-based) wallpapers at 60 FPS instead of the default limit.
-                The page produces a new frame each time the engine presents one (up to
-                about 60 per second), so a lower default makes HTML/Live2D wallpapers
-                animate at that lower rate. Wallpapers with a manual FPS override are
-                unaffected.
+                {t('settings.recommendedWebHint')}
               </p>
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Reset per-wallpaper FPS</label>
+              <label className="block text-xs text-gray-400 mb-1">{t('settings.resetFps')}</label>
               <p className="text-xs text-gray-600 mb-2">
-                Remove all per-wallpaper FPS overrides so they use the default.
+                {t('settings.resetFpsHint')}
               </p>
               {resetFpsConfirm ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">Are you sure?</span>
+                  <span className="text-xs text-gray-400">{t('settings.areYouSure')}</span>
                   <button
                     onClick={handleResetFpsOverrides}
                     className="rounded-lg bg-red-600/80 px-3 py-1.5 text-xs text-white hover:bg-red-600"
                   >
-                    Yes, reset all
+                    {t('settings.resetAllConfirm')}
                   </button>
                   <button
                     onClick={() => setResetFpsConfirm(false)}
                     className="rounded-lg bg-fg/5 px-3 py-1.5 text-xs text-gray-400 hover:bg-fg/10"
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </button>
                 </div>
               ) : (
@@ -550,7 +539,7 @@ export default function SettingsView() {
                   className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
                 >
                   <RotateCcw size={14} />
-                  Reset all FPS overrides
+                  {t('settings.resetAllFps')}
                 </button>
               )}
               {resetFpsMsg && (
@@ -562,23 +551,26 @@ export default function SettingsView() {
 
         <DisplaySettings screens={screens} />
 
+        <SplitScreenSettings />
+
         <CardBorderSettings />
+
+        <CardBadgeSettings />
 
         <ScheduleSettings />
 
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            Audio
+            {t('settings.audio')}
           </label>
           <p className="mt-1 text-xs text-gray-600">
-            Global audio behavior for all wallpapers, across every monitor.
+            {t('settings.audioHint')}
           </p>
           <div className="mt-3 space-y-4">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Play sound only on</label>
+              <label className="block text-xs text-gray-400 mb-1">{t('settings.audioScreen')}</label>
               <p className="text-xs text-gray-600 mb-2">
-                Restricts sound to a single monitor so wallpapers on other screens stay silent,
-                even if they have their own sound.
+                {t('settings.audioScreenHint')}
               </p>
               <div className="flex items-center gap-2">
                 <select
@@ -586,7 +578,7 @@ export default function SettingsView() {
                   onChange={(e) => handleAudioScreenChange(e.target.value || null)}
                   className="w-56 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                 >
-                  <option value="">All screens (default)</option>
+                  <option value="">{t('settings.allScreensDefault')}</option>
                   {screens.map((s) => (
                     <option key={s} value={s}>
                       {s}
@@ -598,26 +590,23 @@ export default function SettingsView() {
                   onClick={handleRefreshScreens}
                   disabled={screensRefreshing}
                   className="rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 outline-none hover:bg-fg/10 disabled:opacity-50"
-                  title="Redetect connected screens"
+                  title={t('settings.redetectHint')}
                 >
-                  {screensRefreshing ? '...' : 'Redetect'}
+                  {screensRefreshing ? '...' : t('settings.redetect')}
                 </button>
               </div>
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Ambient wallpaper volume</label>
+              <label className="block text-xs text-gray-400 mb-1">{t('settings.ambientVolume')}</label>
               <p className="text-xs text-gray-600 mb-2">
-                Separate volume (0-128) for non-video wallpapers (scene sound effects/music and
-                web wallpapers), instead of each wallpaper's own volume. Video wallpapers are
-                unaffected. Leave empty to use each wallpaper's normal volume. Web wallpapers only
-                support 0 (muted) vs. any other value (normal volume).
+                {t('settings.ambientVolumeHint')}
               </p>
               <div className="flex gap-2 items-center">
                 <input
                   type="number"
                   min={0}
                   max={128}
-                  placeholder="same as wallpaper volume"
+                  placeholder={t('settings.ambientPlaceholder')}
                   value={ambientVolume}
                   onChange={(e) => { setAmbientVolume(e.target.value); setAmbientVolumeSaved(false) }}
                   onKeyDown={(e) => e.key === 'Enter' && handleSaveAmbientVolume()}
@@ -628,17 +617,14 @@ export default function SettingsView() {
                   className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
                 >
                   <Save size={14} />
-                  {ambientVolumeSaved ? 'Saved!' : 'Save'}
+                  {ambientVolumeSaved ? t('common.saved') : t('common.save')}
                 </button>
               </div>
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Default audio reactivity sensitivity</label>
+              <label className="block text-xs text-gray-400 mb-1">{t('settings.audioSensitivity')}</label>
               <p className="text-xs text-gray-600 mb-2">
-                Default strength (0-200%) for wallpaper elements that pulse to music, applied to
-                every audio-reactive object that doesn't have its own override set in a
-                wallpaper's detail panel. 0% locks all of them (no pulse), 100% is each
-                wallpaper's original authored behavior.
+                {t('settings.audioSensitivityHint')}
               </p>
               <div className="flex gap-2 items-center">
                 <input
@@ -656,7 +642,7 @@ export default function SettingsView() {
                   className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
                 >
                   <Save size={14} />
-                  {defaultAudioSensitivitySaved ? 'Saved!' : 'Save'}
+                  {defaultAudioSensitivitySaved ? t('common.saved') : t('common.save')}
                 </button>
               </div>
             </div>
@@ -665,19 +651,17 @@ export default function SettingsView() {
 
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            Wallpaper Engine Config
+            {t('settings.weConfig')}
           </label>
           <p className="mt-1 text-xs text-gray-600">
-            Import your old Wallpaper Engine config.json to restore folders and
-            playlists. All paths will be automatically updated to your current workshop
-            folder.
+            {t('settings.weConfigHint')}
           </p>
           <button
             onClick={handleImportConfig}
             className="mt-3 flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
           >
             <Upload size={14} />
-            Import config.json
+            {t('settings.importConfig')}
           </button>
           {importStatus && (
             <p className="mt-2 text-xs text-gray-400">{importStatus}</p>
@@ -689,36 +673,35 @@ export default function SettingsView() {
             linux-wallpaperengine
           </label>
           <p className="mt-1 text-xs text-gray-600">
-            Required for animated/scene wallpapers on Linux. Renders Wallpaper Engine
-            scenes directly on your desktop.
+            {t('settings.lweHint')}
           </p>
 
           {lweStatus === null ? (
-            <p className="mt-3 text-xs text-gray-500">Checking...</p>
+            <p className="mt-3 text-xs text-gray-500">{t('settings.checking')}</p>
           ) : (
             <div className="mt-3 space-y-3">
               {lweStatus.installed ? (
                 <>
                   <div className="flex items-center gap-2 text-sm text-green-400">
                     <CheckCircle size={16} />
-                    Installed{lweStatus.version ? ` (${lweStatus.version})` : ''}
+                    {t('settings.installed')}{lweStatus.version ? ` (${lweStatus.version})` : ''}
                   </div>
                   {lweStatus.path && (
-                    <p className="text-xs text-gray-500">Path: {lweStatus.path}</p>
+                    <p className="text-xs text-gray-500">{t('settings.path')} {lweStatus.path}</p>
                   )}
                   {lweStatus.managedBy && !engineManaged && (
-                    <p className="text-xs text-gray-500">Installed by {lweStatus.managedBy}</p>
+                    <p className="text-xs text-gray-500">{t('settings.installedBy')} {lweStatus.managedBy}</p>
                   )}
                 </>
               ) : (
                 <div className="flex items-center gap-2 text-sm text-yellow-400">
                   <XCircle size={16} />
-                  Not installed
+                  {t('settings.notInstalled')}
                 </div>
               )}
 
               {prebuiltTarget?.supported ? (
-                <p className="text-xs text-gray-500">Prebuilt build: {prebuiltTarget.label}</p>
+                <p className="text-xs text-gray-500">{t('settings.prebuiltBuild')} {prebuiltTarget.label}</p>
               ) : prebuiltTarget && (
                 <p className={`text-xs ${engineManaged ? 'text-gray-500' : 'text-yellow-500/80'}`}>{prebuiltTarget.reason}</p>
               )}
@@ -736,12 +719,12 @@ export default function SettingsView() {
                       <Download size={14} />
                     )}
                     {lweInstalling
-                      ? 'Installing...'
+                      ? t('gnome.installing')
                       : !lweStatus.installed
-                        ? 'Download & install'
+                        ? t('lwe.downloadInstall')
                         : lweStatus.version
-                          ? 'Update'
-                          : 'Switch to prebuilt build'}
+                          ? t('lwe.update')
+                          : t('lwe.switchPrebuilt')}
                   </button>
                 )}
                 {lweStatus.installed && !engineManaged && !lweStatus.managedBy && (
@@ -755,14 +738,13 @@ export default function SettingsView() {
                     ) : (
                       <Trash2 size={14} />
                     )}
-                    {uninstalling ? 'Uninstalling...' : 'Uninstall'}
+                    {uninstalling ? t('lwe.uninstalling') : t('lwe.uninstall')}
                   </button>
                 )}
               </div>
               {prebuiltTarget?.supported && !lweStatus.installed && (
                 <p className="text-xs text-gray-600">
-                  Downloads the latest release from GitHub. Missing system libraries are
-                  installed through your package manager, which asks for your password.
+                  {t('settings.prebuiltHint')}
                 </p>
               )}
               {uninstallMsg && (
@@ -776,15 +758,15 @@ export default function SettingsView() {
               onClick={() => setShowSourceBuild(!sourceBuildVisible)}
               className="mt-4 text-xs text-gray-400 hover:text-gray-200"
             >
-              {sourceBuildVisible ? '▾' : '▸'} Build from source
+              {sourceBuildVisible ? '▾' : '▸'} {t('lwe.buildFromSource')}
             </button>
           )}
 
           {sourceBuildVisible && (
             <div className="mt-2 space-y-2 rounded-lg bg-fg/[0.02] p-3">
-              <label className="block text-xs text-gray-400">Source repository</label>
+              <label className="block text-xs text-gray-400">{t('settings.sourceRepo')}</label>
               <p className="text-xs text-gray-600">
-                A git URL or a local path. Leave empty to use the default repository.
+                {t('settings.sourceRepoHint')}
               </p>
               <input
                 type="text"
@@ -798,7 +780,7 @@ export default function SettingsView() {
                   type="text"
                   value={lweRepoBranch}
                   onChange={(e) => { setLweRepoBranch(e.target.value); setRepoSaved(false) }}
-                  placeholder="branch (default)"
+                  placeholder={t('settings.branchPlaceholder')}
                   className="w-44 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                 />
                 <button
@@ -806,12 +788,12 @@ export default function SettingsView() {
                   className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
                 >
                   <Save size={14} />
-                  {repoSaved ? 'Saved!' : 'Save'}
+                  {repoSaved ? t('common.saved') : t('common.save')}
                 </button>
               </div>
-              <label className="block text-xs text-gray-400">Extra cmake arguments</label>
+              <label className="block text-xs text-gray-400">{t('settings.cmakeArgs')}</label>
               <p className="text-xs text-gray-600">
-                Passed to cmake when configuring the build, e.g. -DDISABLE_KDE_FEATURES=ON
+                {t('settings.cmakeArgsHint')}
               </p>
               <input
                 type="text"
@@ -823,7 +805,7 @@ export default function SettingsView() {
 
               {distro && distro !== 'unknown' && (
                 <p className="text-xs text-gray-500">
-                  Detected: {DISTRO_LABELS[distro]}
+                  {t('settings.detected')} {DISTRO_LABELS[distro]}
                 </p>
               )}
 
@@ -833,7 +815,7 @@ export default function SettingsView() {
                   disabled={isBusy || !distro || distro === 'unknown'}
                   title={
                     !distro || distro === 'unknown'
-                      ? 'Could not detect your distro. Install dependencies manually.'
+                      ? t('lwe.noDistro')
                       : undefined
                   }
                   className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
@@ -843,7 +825,7 @@ export default function SettingsView() {
                   ) : (
                     <Package size={14} />
                   )}
-                  {depsInstalling ? 'Installing deps...' : 'Install build dependencies'}
+                  {depsInstalling ? t('lwe.installingDeps') : t('lwe.installDeps')}
                 </button>
 
                 <button
@@ -856,19 +838,17 @@ export default function SettingsView() {
                   ) : (
                     <Download size={14} />
                   )}
-                  {lweInstalling ? 'Building...' : lweStatus?.installed ? 'Rebuild & install' : 'Build & install'}
+                  {lweInstalling ? t('lwe.building') : lweStatus?.installed ? t('lwe.rebuild') : t('lwe.build')}
                 </button>
               </div>
 
               <p className="text-xs text-gray-600">
-                Install the build dependencies for your distro first, then build & install.
-                Both steps require sudo. Installing from source replaces a downloaded prebuilt build.
+                {t('settings.buildHint')}
               </p>
 
               {distro === 'unknown' && (
                 <p className="text-xs text-yellow-500/80">
-                  Could not detect your distro. Please install build dependencies
-                  manually (cmake, OpenGL, SDL2, FFmpeg, MPV, GLFW, GLEW, FFTW, PulseAudio, D-Bus dev packages).
+                  {t('settings.unknownDistro')}
                 </p>
               )}
             </div>
@@ -908,10 +888,10 @@ export default function SettingsView() {
               ) : (
                 <Skull size={14} />
               )}
-              {killingLwe ? 'Killing...' : 'Kill all linux-wallpaperengine processes'}
+              {killingLwe ? t('lwe.killing') : t('lwe.killAll')}
             </button>
             <p className="mt-1 text-xs text-gray-600">
-              Force-kills every running instance, including ones not launched by WE Manager.
+              {t('settings.killAllHint')}
             </p>
             {killMsg && (
               <p className="mt-2 text-xs text-gray-400">{killMsg}</p>
@@ -921,7 +901,7 @@ export default function SettingsView() {
               <Toggle on={killLweOnQuit} onClick={handleKillLweOnQuitToggle} />
               <span className="flex items-center gap-2 text-sm text-gray-300">
                 <Skull size={16} />
-                Kill all linux-wallpaperengine processes when WE Manager quits
+                {t('settings.killOnQuit')}
               </span>
             </label>
           </div>
@@ -934,52 +914,51 @@ export default function SettingsView() {
 
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            Troubleshooting
+            {t('settings.troubleshooting')}
           </label>
           <p className="mt-1 text-xs text-gray-600">
-            Freezes puppet (.mdl) meshes - rigged 2D character parts like eyes, hair, or limbs - at their bind
-            pose instead of animating them. Only applies to wallpapers played after enabling this; a wallpaper
-            already running needs to be replayed to pick it up.
+            {t('settings.puppetHint')}
           </p>
           <label className="mt-3 flex items-center gap-3 cursor-pointer">
             <Toggle on={disablePuppetAnimation} onClick={handleDisablePuppetAnimationToggle} />
             <span className="flex items-center gap-2 text-sm text-gray-300">
               <Bug size={16} />
-              Disable puppet mesh animation
+              {t('settings.puppet')}
             </span>
           </label>
         </div>
 
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            Desktop Icons
+            {t('settings.desktopIcons')}
           </label>
           <p className="mt-1 text-xs text-gray-600">
-            Show desktop icons on top of the animated wallpaper. Uses a transparent overlay
-            that reads your KDE Folder View layout. Clicks pass through to the desktop underneath.
+            {t('settings.desktopIconsHint')}
           </p>
           <label className="mt-3 flex items-center gap-3 cursor-pointer">
             <Toggle on={desktopIconsEnabled} onClick={handleDesktopIconsToggle} />
             <span className="flex items-center gap-2 text-sm text-gray-300">
               <Monitor size={16} />
-              {desktopIconsEnabled ? 'Desktop icons visible' : 'Desktop icons hidden'}
+              {desktopIconsEnabled ? t('settings.desktopIconsOn') : t('settings.desktopIconsOff')}
             </span>
           </label>
         </div>
 
+        <UpdateSettings />
+
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            System Tray &amp; Startup
+            {t('settings.trayStartup')}
           </label>
           <p className="mt-1 text-xs text-gray-600">
-            Keep WE Manager running in the background and optionally launch it automatically.
+            {t('settings.trayStartupHint')}
           </p>
 
           <label className="mt-3 flex items-center gap-3 cursor-pointer">
             <Toggle on={trayEnabled} onClick={handleTrayToggle} />
             <span className="flex items-center gap-2 text-sm text-gray-300">
               <LayoutGrid size={16} />
-              Enable system tray (closing the window minimizes to tray instead of quitting)
+              {t('settings.trayEnable')}
             </span>
           </label>
 
@@ -988,19 +967,18 @@ export default function SettingsView() {
               <Toggle on={autostartEnabled} onClick={() => autostartSupported && saveAutostart({ enabled: !autostartEnabled })} disabled={!autostartSupported} />
               <span className="flex items-center gap-2 text-sm text-gray-300">
                 <Power size={16} />
-                Launch on system startup
+                {t('settings.autostart')}
               </span>
             </label>
             {!autostartSupported && (
               <p className="text-xs text-yellow-500/80">
-                Only available in a packaged build (AppImage/deb), not in development mode.
+                {t('settings.autostartDev')}
               </p>
             )}
             {autostartCompositorLine && (
               <div className="space-y-1.5">
                 <p className="text-xs text-gray-500">
-                  This compositor does not run ~/.config/autostart entries by itself (a session manager like uwsm
-                  does). To start WE Manager at login, add this line to its config:
+                  {t('settings.autostartCompositor')}
                 </p>
                 <CopyField text={autostartCompositorLine} />
               </div>
@@ -1013,19 +991,19 @@ export default function SettingsView() {
                 disabled={!trayEnabled || !autostartEnabled}
               />
               <span className="text-sm text-gray-300">
-                Start minimized to tray
-                {!trayEnabled && <span className="text-gray-600"> (enable system tray first)</span>}
+                {t('settings.startMinimized')}
+                {!trayEnabled && <span className="text-gray-600"> {t('settings.enableTrayFirst')}</span>}
               </span>
             </label>
 
             <div className="pl-12">
-              <label className="block text-xs text-gray-400 mb-1">Auto-play playlist on startup</label>
+              <label className="block text-xs text-gray-400 mb-1">{t('settings.autoplay')}</label>
               <select
                 value={autostartPlaylistId ?? ''}
                 onChange={(e) => saveAutostart({ playlistId: e.target.value || null })}
                 className="w-56 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
               >
-                <option value="">None</option>
+                <option value="">{t('settings.none')}</option>
                 {playlists.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.title}
@@ -1038,13 +1016,10 @@ export default function SettingsView() {
 
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            Steam Integration
+            {t('settings.steam')}
           </label>
           <p className="mt-1 text-xs text-gray-600">
-            How WE Manager identifies itself to Steam. Like Wallpaper Engine itself, it is only
-            connected while its window is open: hiding it to the tray or minimizing it
-            disconnects, so it no longer shows up as a running game or blocks Steam game
-            recording. Takes effect the next time the window is opened.
+            {t('settings.steamHint')}
           </p>
 
           <div className="mt-3 flex rounded-lg overflow-hidden text-sm w-fit">
@@ -1057,7 +1032,7 @@ export default function SettingsView() {
               }`}
             >
               <Shield size={14} />
-              Steam app (Wallpaper Engine)
+              {t('settings.steamWe')}
             </button>
             <button
               onClick={() => handleSteamIdentityChange('standalone')}
@@ -1068,24 +1043,20 @@ export default function SettingsView() {
               }`}
             >
               <Shield size={14} />
-              Own app (standalone)
+              {t('settings.steamOwn')}
             </button>
           </div>
           {steamIdentitySaved && (
-            <p className="mt-2 text-xs text-green-400">Saved - used the next time the window is opened.</p>
+            <p className="mt-2 text-xs text-green-400">{t('settings.steamSaved')}</p>
           )}
           <p className="mt-2 text-xs text-gray-600">
             {steamIdentity === 'wallpaper-engine' ? (
               <>
-                Connects to Steam under Wallpaper Engine's own app id. While connected, Steam
-                considers WE Manager to be Wallpaper Engine itself and shows you as playing it.
+                {t('settings.steamWeHint')}
               </>
             ) : (
               <>
-                Connects under a neutral, unrelated Steam app id instead, so Steam doesn't
-                associate WE Manager with Wallpaper Engine. Workshop browsing, subscribing and voting still target Wallpaper Engine's
-                own workshop either way. This mode is less tested than the default - if
-                subscribing or voting misbehaves, switch back.
+                {t('settings.steamOwnHint')}
               </>
             )}
           </p>

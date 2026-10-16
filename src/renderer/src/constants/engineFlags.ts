@@ -1,83 +1,101 @@
-import type { EngineFlags, FullscreenPauseMode } from '@shared/types'
+import type { EngineFlagPreset, EngineFlags, FullscreenPauseMode } from '@shared/types'
+import type { MessageKey } from '@shared/i18n'
+import { t } from '../i18n'
 
-type ChoiceFlag = 'postProcessing' | 'volumetrics' | 'shadows' | 'msaa' | 'ssaa' | 'hwdec'
-// kdeBackgroundLayer is a global desktop setting with its own toggle, wallpapers don't override it
+type ChoiceFlag =
+  | 'postProcessing'
+  | 'volumetrics'
+  | 'shadows'
+  | 'msaa'
+  | 'ssaa'
+  | 'hwdec'
+  | 'hrtf'
+  | 'batteryFps'
+  | 'idlePause'
+// kdeBackgroundLayer is global only
 type BooleanFlag = Exclude<keyof EngineFlags, 'fullscreenPause' | 'kdeBackgroundLayer' | ChoiceFlag>
 
-export const BOOLEAN_FLAGS: { key: BooleanFlag; label: string; hint: string }[] = [
-  { key: 'disableParticles', label: 'Disable particles', hint: 'Skips particle systems (fog, sparks, rain), usually the biggest GPU cost' },
-  { key: 'disableAnimations', label: 'Freeze animations', hint: 'Stops scene time: scripts, particles, effects and puppets' },
-  { key: 'disableMouse', label: 'Ignore the mouse', hint: 'No parallax or cursor effects' },
+export const BOOLEAN_FLAGS: { key: BooleanFlag; label: MessageKey; hint?: MessageKey }[] = [
+  { key: 'disableParticles', label: 'flags.disableParticles.label', hint: 'flags.disableParticles.hint' },
+  { key: 'disableAnimations', label: 'flags.disableAnimations.label', hint: 'flags.disableAnimations.hint' },
+  { key: 'disableMouse', label: 'flags.disableMouse.label', hint: 'flags.disableMouse.hint' },
   {
     key: 'pauseOnFocus',
-    label: 'Pause while another app is focused',
-    hint: 'Like Wallpaper Engine\'s "Other application focused: Pause". On GNOME and KDE only the screen with the focused app pauses, elsewhere every screen'
+    label: 'flags.pauseOnFocus.label',
+    hint: 'flags.pauseOnFocus.hint'
   },
-  { key: 'noAudioProcessing', label: 'No audio visualizer', hint: 'Stops capturing system audio for audio-reactive wallpapers' },
-  { key: 'automute', label: 'Mute when other apps play sound', hint: '' },
-  { key: 'silent', label: 'Always muted', hint: '' },
+  {
+    key: 'pauseOnMaximized',
+    label: 'flags.pauseOnMaximized.label',
+    hint: 'flags.pauseOnMaximized.hint'
+  },
+  { key: 'noAudioProcessing', label: 'flags.noAudioProcessing.label', hint: 'flags.noAudioProcessing.hint' },
+  { key: 'automute', label: 'flags.automute.label' },
+  { key: 'silent', label: 'flags.silent.label' },
   {
     key: 'hdr',
-    label: 'HDR output',
-    hint: 'Sends HDR to monitors running in HDR mode (Wayland compositors with color management, e.g. KDE Plasma with HDR enabled); HDR videos keep their highlights'
+    label: 'flags.hdr.label',
+    hint: 'flags.hdr.hint'
   }
 ]
 
-export const FULLSCREEN_PAUSE_OPTIONS: { value: FullscreenPauseMode; label: string }[] = [
-  { value: 'default', label: 'Pause behind fullscreen apps' },
-  { value: 'active-only', label: 'Pause only for the focused fullscreen app' },
-  { value: 'off', label: 'Never pause' }
+export const FULLSCREEN_PAUSE_OPTIONS: { value: FullscreenPauseMode; label: MessageKey }[] = [
+  { value: 'default', label: 'flags.fullscreen.default' },
+  { value: 'active-only', label: 'flags.fullscreen.activeOnly' },
+  { value: 'off', label: 'flags.fullscreen.off' }
 ]
 
 const LIGHTING_QUALITY = [
-  { value: 'disabled', label: 'Off' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-  { value: 'ultra', label: 'Ultra' }
+  { value: 'disabled', label: 'flags.opt.disabled' },
+  { value: 'low', label: 'flags.opt.low' },
+  { value: 'medium', label: 'flags.opt.medium' },
+  { value: 'high', label: 'flags.opt.high' },
+  { value: 'ultra', label: 'flags.opt.ultra' }
 ]
 
-/** Quality settings mirroring Wallpaper Engine's own, `fallback` is what the engine uses when none is given */
+/** `fallback` is the engine's default */
 export const CHOICE_FLAGS: {
   key: ChoiceFlag
-  label: string
-  hint: string
-  /** Shown under the setting in Settings -> Performance */
-  note?: string
+  label: MessageKey
+  hint: MessageKey
+  note?: MessageKey
+  warning?: MessageKey
+  /** Shown per wallpaper for values other than `fallback` */
+  wallpaperNote?: MessageKey
   fallback: string
   options: { value: string; label: string }[]
 }[] = [
   {
     key: 'postProcessing',
-    label: 'Post processing',
-    hint: 'Ultra renders scenes that enable HDR bloom in HDR, with a softer, wider glow',
+    label: 'flags.postProcessing.label',
+    hint: 'flags.postProcessing.hint',
     fallback: 'enabled',
     options: [
-      { value: 'enabled', label: 'Enabled' },
-      { value: 'ultra', label: 'Ultra' }
+      { value: 'enabled', label: 'flags.opt.enabled' },
+      { value: 'ultra', label: 'flags.opt.ultra' }
     ]
   },
   {
     key: 'volumetrics',
-    label: 'Volumetric lighting',
-    hint: 'Glow around lights that cast volumetrics; higher levels take more samples at a higher resolution',
+    label: 'flags.volumetrics.label',
+    hint: 'flags.volumetrics.hint',
     fallback: 'medium',
     options: LIGHTING_QUALITY
   },
   {
     key: 'shadows',
-    label: 'Shadows',
-    hint: 'Shadow quality; for now it only changes how finely shadow casting lights sample their volumetrics',
+    label: 'flags.shadows.label',
+    hint: 'flags.shadows.hint',
     fallback: 'medium',
     options: LIGHTING_QUALITY
   },
   {
     key: 'msaa',
-    label: 'Anti-aliasing (MSAA)',
-    hint: 'Smooths the edges of 3D models; like Wallpaper Engine it only applies to scenes that contain a model',
+    label: 'flags.msaa.label',
+    hint: 'flags.msaa.hint',
     fallback: 'none',
     options: [
-      { value: 'none', label: 'Off' },
+      { value: 'none', label: 'flags.opt.none' },
       { value: 'x2', label: '2x' },
       { value: 'x4', label: '4x' },
       { value: 'x8', label: '8x' }
@@ -85,11 +103,13 @@ export const CHOICE_FLAGS: {
   },
   {
     key: 'ssaa',
-    label: 'Supersampling (SSAA)',
-    hint: 'Renders scenes at 2-4x the screen resolution per axis and scales them down: smoother edges and finer detail everywhere, but the GPU cost grows with the square (4x = 16 times the pixels)',
+    label: 'flags.ssaa.label',
+    hint: 'flags.ssaa.hint',
+    warning: 'flags.ssaa.warning',
+    wallpaperNote: 'flags.ssaa.wallpaperNote',
     fallback: 'none',
     options: [
-      { value: 'none', label: 'Off' },
+      { value: 'none', label: 'flags.opt.none' },
       { value: 'x2', label: '2x' },
       { value: 'x3', label: '3x' },
       { value: 'x4', label: '4x' }
@@ -97,18 +117,74 @@ export const CHOICE_FLAGS: {
   },
   {
     key: 'hwdec',
-    label: 'Video decoding',
-    hint: 'How video wallpapers and videos inside scenes are decoded. Automatic picks a GPU decoder; if videos crash, stay black or stutter (some NVIDIA drivers, some Intel iGPUs), try Software or a copy mode',
-    note: 'Only change this if videos misbehave. With the proprietary NVIDIA driver, Automatic can pick a decoder that is broken there (e.g. VA-API through nvidia-vaapi-driver), so videos crash, stay black or show green frames: try NVDEC (copy). Copy modes pass frames through system memory, a bit more CPU but they avoid most driver bugs. Software always works but decodes on the CPU. Applies to running wallpapers right away.',
+    label: 'flags.hwdec.label',
+    hint: 'flags.hwdec.hint',
+    note: 'flags.hwdec.note',
     fallback: 'auto',
     options: [
-      { value: 'auto', label: 'Automatic' },
-      { value: 'no', label: 'Software' },
+      { value: 'auto', label: 'flags.opt.auto' },
+      { value: 'no', label: 'flags.opt.no' },
       { value: 'vaapi', label: 'VA-API' },
-      { value: 'vaapi-copy', label: 'VA-API (copy)' },
+      { value: 'vaapi-copy', label: 'flags.opt.vaapiCopy' },
       { value: 'nvdec', label: 'NVDEC' },
-      { value: 'nvdec-copy', label: 'NVDEC (copy)' },
+      { value: 'nvdec-copy', label: 'flags.opt.nvdecCopy' },
       { value: 'vulkan', label: 'Vulkan' }
+    ]
+  },
+  {
+    key: 'hrtf',
+    label: 'flags.hrtf.label',
+    hint: 'flags.hrtf.hint',
+    note: 'flags.hrtf.note',
+    fallback: 'auto',
+    options: [
+      { value: 'auto', label: 'flags.opt.auto' },
+      { value: 'on', label: 'flags.opt.alwaysOn' },
+      { value: 'off', label: 'flags.opt.disabled' }
+    ]
+  },
+  {
+    key: 'batteryFps',
+    label: 'flags.batteryFps.label',
+    hint: 'flags.batteryFps.hint',
+    fallback: 'off',
+    options: [
+      { value: 'off', label: 'flags.batteryFps.same' },
+      { value: '30', label: '30 FPS' },
+      { value: '20', label: '20 FPS' },
+      { value: '15', label: '15 FPS' },
+      { value: '10', label: '10 FPS' },
+      { value: 'pause', label: 'flags.opt.pause' }
+    ]
+  },
+  {
+    key: 'idlePause',
+    label: 'flags.idlePause.label',
+    hint: 'flags.idlePause.hint',
+    fallback: 'off',
+    options: [
+      { value: 'off', label: 'flags.opt.disabled' },
+      { value: '1', label: 'flags.opt.minutes1' },
+      { value: '5', label: 'flags.opt.minutes5' },
+      { value: '10', label: 'flags.opt.minutes10' },
+      { value: '15', label: 'flags.opt.minutes15' },
+      { value: '30', label: 'flags.opt.minutes30' }
     ]
   }
 ]
+
+/** Message keys, except names like 2x or VA-API */
+
+export function optionLabel(label: string): string {
+  return label.startsWith('flags.') ? t(label as MessageKey) : label
+}
+
+const BUILT_IN_PRESET_NAMES: Record<string, MessageKey> = {
+  'builtin-battery': 'presets.battery',
+  'builtin-quality': 'presets.quality'
+}
+
+export function presetName(preset: EngineFlagPreset): string {
+  const key = preset.builtIn ? BUILT_IN_PRESET_NAMES[preset.id] : undefined
+  return key ? t(key) : preset.name
+}

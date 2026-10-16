@@ -69,13 +69,15 @@ import type {
   ImageAdjustments,
   ScreenTarget
 } from '@shared/types'
+import { t, tn, formatNumber, tagLabel } from '../../i18n'
+import type { MessageKey } from '@shared/i18n'
 
-const SCALING_MODE_OPTIONS: { value: ScalingMode; label: string }[] = [
-  { value: 'default', label: 'Default' },
-  { value: 'stretch', label: 'Stretch' },
-  { value: 'fill', label: 'Fill (crop to fit)' },
-  { value: 'fit', label: 'Fit (letterbox)' },
-  { value: 'center', label: 'Center (native size)' }
+const SCALING_MODE_OPTIONS: { value: ScalingMode; label: MessageKey }[] = [
+  { value: 'default', label: 'detail.scalingDefault' },
+  { value: 'stretch', label: 'detail.scalingStretch' },
+  { value: 'fill', label: 'detail.scalingFill' },
+  { value: 'fit', label: 'detail.scalingFit' },
+  { value: 'center', label: 'detail.scalingCenter' }
 ]
 
 const TYPE_TAGS = new Set(WE_TYPES.map((i) => i.tag))
@@ -83,7 +85,7 @@ const AGE_TAGS = new Set(WE_AGE_RATINGS.map((i) => i.tag))
 
 function StarRating({ upvotes, downvotes }: { upvotes: number; downvotes: number }) {
   const total = upvotes + downvotes
-  if (total === 0) return <p className="text-xs text-gray-600">No ratings yet</p>
+  if (total === 0) return <p className="text-xs text-gray-600">{t('detail.noRatings')}</p>
   const fraction = upvotes / total
   return (
     <div className="flex items-center gap-2">
@@ -103,7 +105,7 @@ function StarRating({ upvotes, downvotes }: { upvotes: number; downvotes: number
         </div>
       </div>
       <span className="text-xs text-gray-500">
-        {Math.round(fraction * 100)}% ({total.toLocaleString()})
+        {Math.round(fraction * 100)}% ({formatNumber(total)})
       </span>
     </div>
   )
@@ -134,10 +136,10 @@ function LayerRow({
       disabled={busy}
       title={
         state === 'default'
-          ? 'Visible (default) - click to hide'
+          ? t('detail.layerVisible')
           : state === 'hidden'
-            ? 'Hidden - click to force visible'
-            : 'Forced visible - click to reset to default'
+            ? t('detail.layerHidden')
+            : t('detail.forcedVisible')
       }
       className={clsx(
         'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-fg/5 disabled:opacity-40',
@@ -176,10 +178,10 @@ function EffectRow({
       disabled={busy}
       title={
         state === 'default'
-          ? 'Visible (default) - click to disable'
+          ? t('detail.effectVisible')
           : state === 'hidden'
-            ? 'Disabled - click to force visible'
-            : 'Forced visible - click to reset to default'
+            ? t('detail.effectDisabled')
+            : t('detail.forcedVisible')
       }
       className={clsx(
         'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-fg/5 disabled:opacity-40',
@@ -197,14 +199,13 @@ function EffectRow({
         {effect.name}
       </span>
       <span className="shrink-0 truncate text-gray-600" title={effect.objectName}>
-        on {effect.objectName}
+        {t('detail.onObject', { name: effect.objectName })}
       </span>
     </button>
   )
 }
 
-// Only booleans/sliders/combos and user shortcuts are user-facing in the WE customize UI - color/
-// text/file/scene-texture/textinput properties are left out of the sidebar entirely.
+// the only property types WE's customize UI shows
 function PropertyRow({
   property,
   value,
@@ -297,10 +298,7 @@ function PropertyRow({
   return null
 }
 
-// One row per unique object id detected as audio-reactive (an object can drive more than one
-// property, e.g. both scale and alpha, from the same sensitivity control - properties is just
-// shown as a hint). 0% locks the object (no pulse), 100% is the wallpaper's authored behavior,
-// up to 200% exaggerates it.
+// one row per object, 0% = no pulse, 100% = as authored
 function AudioObjectRow({
   objectName,
   properties,
@@ -342,9 +340,7 @@ function AudioObjectRow({
   )
 }
 
-// One row per Sound object (e.g. an alternate music track) - volume is independent per track, so
-// muting all but one (or blending several) is just a matter of where each slider sits, applied
-// live without a wallpaper reload.
+// one row per Sound object, e.g. alternate music tracks
 function SoundTrackRow({
   trackName,
   volume,
@@ -491,9 +487,7 @@ export default function DetailSidebar({
       : (item?.previewUrl ?? fallbackPreviewUrl)
   const disabledObjects = libraryMeta?.disabledObjects ?? []
   const enabledObjects = libraryMeta?.enabledObjects ?? []
-  // item resolves to exactly null (not undefined) once a workshop lookup confirms the id no
-  // longer exists on Steam - voting on it would just fail, so treat it like the library's own
-  // "unavailable" flag and grey out the vote buttons below.
+  // null (not undefined) = gone from Steam, voting would fail
   const unavailable = !!libraryMeta?.unavailable || item === null
 
   const { targets, perScreen } = useDisplayTargets()
@@ -530,7 +524,6 @@ export default function DetailSidebar({
     staleTime: Infinity,
     retry: false
   })
-  // Only these types have an actual editable control in the WE customize UI
   const properties = allProperties.filter(
     (p) => p.type === 'boolean' || p.type === 'slider' || p.type === 'combo' || p.type === 'usershortcut'
   )
@@ -543,8 +536,7 @@ export default function DetailSidebar({
     staleTime: Infinity,
     retry: false
   })
-  // An object can drive more than one audio-reactive property (e.g. scale and alpha) - the
-  // sensitivity control is per-object, so group by objectId and show one row per object.
+  // sensitivity is per object, which can drive several properties
   const audioObjects: { objectId: string; objectName: string; properties: string[] }[] = []
   for (const p of audioObjectProperties as LweAudioObject[]) {
     const existing = audioObjects.find((o) => o.objectId === p.objectId)
@@ -553,8 +545,6 @@ export default function DetailSidebar({
   }
   const audioSensitivity = libraryMeta?.audioSensitivity ?? {}
 
-  // Sound objects (e.g. alternate music tracks) are already in the objects list fetched for the
-  // Layers section above - no separate query needed, just filter by type.
   const soundObjects = objects.filter((o) => o.type === 'sound')
   const soundVolume = libraryMeta?.soundVolume ?? {}
 
@@ -566,15 +556,13 @@ export default function DetailSidebar({
     retry: false
   })
 
-  // Persists a settings patch and, if this wallpaper is currently playing, pushes it live via
-  // the control-file hotswap (no process restart). Falls back to a full stop+relaunch if the
-  // push fails, e.g. an older linux-wallpaperengine build without the extended protocol.
+  // pushed live when playing, relaunched if the hotswap fails
   async function persistAndMaybeRelaunch(patch: Partial<WallpaperMeta>) {
     const updated = await window.electronAPI.library.update(id, patch)
     queryClient.setQueryData(['library-item', id], updated)
     queryClient.invalidateQueries({ queryKey: ['library'] })
     if (isActive) {
-      // customArgs and effect overrides have no hotswap control-file key, so they always force a restart
+      // customArgs and effect overrides can't be hotswapped
       const { ok } = 'customArgs' in patch || 'disabledEffects' in patch || 'enabledEffects' in patch || 'engineFlags' in patch
         ? { ok: false }
         : await window.electronAPI.lwe.hotswapSettings({
@@ -599,7 +587,6 @@ export default function DetailSidebar({
             audioSensitivity: patch.audioSensitivity,
             soundVolume: patch.soundVolume
           }, localPath)
-      // a relaunch restarts the engine by itself when a launch-only setting changed
       if (!ok) {
         for (const screen of activeScreens) await window.electronAPI.wallpaper.apply({ wallpaperId: id, screen })
       }
@@ -616,9 +603,7 @@ export default function DetailSidebar({
 
   const livePreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Pushes a value live while a slider is being dragged, debounced so a fast drag doesn't flood
-  // the control-file/SIGUSR1 channel. Doesn't touch the library store - mouseup/touchend/keyup
-  // still do that persisted commit, which also re-pushes the final value.
+  // debounced live push while dragging, the commit on release persists it
   function previewLive(patch: {
     volume?: number
     zoom?: number
@@ -802,9 +787,7 @@ export default function DetailSidebar({
   const [isCommittingFps, setIsCommittingFps] = useState(false)
   const fps = fpsDraft ?? libraryMeta?.fpsOverride ?? null
 
-  // fps isn't part of hotswapSettings' payload, so persistAndMaybeRelaunch's hotswap push is
-  // always a no-op for this patch and it falls through to its stop+relaunch fallback - correct
-  // here, since the FPS cap is baked into the render loop and can't be changed live.
+  // fps can't be hotswapped, so this always relaunches
   async function commitFps(value: number | null) {
     setIsCommittingFps(true)
     try {
@@ -898,14 +881,14 @@ export default function DetailSidebar({
     }
   }
 
-  const typeTag = tags.find((t) => TYPE_TAGS.has(t))
-  const ageTag = tags.find((t) => AGE_TAGS.has(t))
+  const typeTag = tags.find((tag) => TYPE_TAGS.has(tag))
+  const ageTag = tags.find((tag) => AGE_TAGS.has(tag))
   const resolutionTags = resolutionsFromTags(tags)
   const genreTags = tags.filter(
-    (t) => t !== typeTag && t !== ageTag && !canonicalResolutionTag(t)
+    (tag) => tag !== typeTag && tag !== ageTag && !canonicalResolutionTag(tag)
   )
-  // Prefer the real on-disk size for an already-downloaded item over Steam's reported upload
-  // size (item.fileSize) - they can differ once extracted, and the local number is exact.
+  // the on-disk size is exact, Steam's can differ
+
   const fileSizeLabel = formatFileSize(libraryMeta?.fileSize ?? item?.fileSize ?? localFileSize)
 
   function handleVote(up: boolean) {
@@ -943,11 +926,11 @@ export default function DetailSidebar({
         {previewUrl ? (
           <img src={previewUrl} alt={title} className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full items-center justify-center text-gray-600">No preview</div>
+          <div className="flex h-full items-center justify-center text-gray-600">{t('card.noPreview')}</div>
         )}
         <button
           onClick={onClose}
-          title="Close"
+          title={t('common.close')}
           className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
         >
           <X size={14} />
@@ -964,7 +947,7 @@ export default function DetailSidebar({
               onClose()
             }}
             disabled={!onBrowseCreator}
-            title={onBrowseCreator ? "Browse this creator's wallpapers" : undefined}
+            title={onBrowseCreator ? t('detail.browseCreator') : undefined}
             className="flex items-center gap-2 text-left disabled:cursor-default"
           >
             {author?.avatarUrl ? (
@@ -985,22 +968,22 @@ export default function DetailSidebar({
         <div className="flex flex-wrap gap-1.5">
           {typeTag && (
             <span className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-300">
-              {typeTag}
+              {tagLabel(typeTag)}
               {fileSizeLabel ? ` · ${fileSizeLabel}` : ''}
             </span>
           )}
           {genreTags.map((tag) => (
             <span key={tag} className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-400">
-              {tag}
+              {tagLabel(tag)}
             </span>
           ))}
           {resolutionTags.map((tag) => (
             <span key={tag} className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-400">
-              {tag}
+              {tagLabel(tag)}
             </span>
           ))}
           {ageTag && (
-            <span className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-400">{ageTag}</span>
+            <span className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-400">{tagLabel(ageTag)}</span>
           )}
         </div>
 
@@ -1017,10 +1000,10 @@ export default function DetailSidebar({
               >
                 {layersOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                 <Layers size={12} />
-                <span className="flex-1 text-left">Layers</span>
+                <span className="flex-1 text-left">{t('detail.layers')}</span>
                 {isActive && (
                   <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                    live
+                    {t('image.live')}
                   </span>
                 )}
                 {objectsLoading && <Loader2 size={11} className="animate-spin" />}
@@ -1029,14 +1012,14 @@ export default function DetailSidebar({
                 <button
                   onClick={toggleFog}
                   disabled={togglingFog}
-                  title={fogDisabled ? 'Fog disabled - click to re-enable' : 'Click to disable fog'}
+                  title={fogDisabled ? t('detail.fogDisabled') : t('detail.fogEnabled')}
                   className={clsx(
                     'flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium normal-case transition-colors disabled:opacity-40',
                     fogDisabled ? 'bg-fg/5 text-gray-500' : 'bg-fg/10 text-gray-300 hover:bg-fg/15'
                   )}
                 >
                   {togglingFog ? <Loader2 size={10} className="animate-spin" /> : <CloudFog size={10} />}
-                  Fog
+                  {t('detail.fog')}
                 </button>
               )}
             </div>
@@ -1064,7 +1047,7 @@ export default function DetailSidebar({
             >
               {effectsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
               <Sparkles size={12} />
-              <span className="flex-1 text-left">Effects</span>
+              <span className="flex-1 text-left">{t('detail.effects')}</span>
               {effectsLoading && <Loader2 size={11} className="animate-spin" />}
             </button>
             {effectsOpen && (
@@ -1087,10 +1070,10 @@ export default function DetailSidebar({
           <div className="border-t border-fg/5 pt-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               <Maximize size={12} />
-              <span className="flex-1 text-left">Scaling</span>
+              <span className="flex-1 text-left">{t('detail.scaling')}</span>
               {isActive && (
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
+                  {t('image.live')}
                 </span>
               )}
               {isCommittingScaling && <Loader2 size={11} className="animate-spin" />}
@@ -1103,7 +1086,7 @@ export default function DetailSidebar({
             >
               {SCALING_MODE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
-                  {opt.label}
+                  {t(opt.label)}
                 </option>
               ))}
             </select>
@@ -1114,10 +1097,10 @@ export default function DetailSidebar({
           <div className="border-t border-fg/5 pt-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               {zoomPercent < 100 ? <ZoomOut size={12} /> : <ZoomIn size={12} />}
-              <span className="flex-1 text-left">Zoom</span>
+              <span className="flex-1 text-left">{t('detail.zoom')}</span>
               {isActive && (
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
+                  {t('image.live')}
                 </span>
               )}
               {isCommittingZoom && <Loader2 size={11} className="animate-spin" />}
@@ -1147,16 +1130,16 @@ export default function DetailSidebar({
           <div className="border-t border-fg/5 pt-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               <Move size={12} />
-              <span className="flex-1 text-left">Position</span>
+              <span className="flex-1 text-left">{t('detail.position')}</span>
               {isActive && (
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
+                  {t('image.live')}
                 </span>
               )}
               {isCommittingOffset && <Loader2 size={11} className="animate-spin" />}
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-12 shrink-0 text-[10px] normal-case text-gray-500">Left/Right</span>
+              <span className="w-12 shrink-0 text-[10px] normal-case text-gray-500">{t('detail.leftRight')}</span>
               <input
                 type="range"
                 min={-100}
@@ -1179,7 +1162,7 @@ export default function DetailSidebar({
               </span>
             </div>
             <div className="mt-1.5 flex items-center gap-1.5">
-              <span className="w-12 shrink-0 text-[10px] normal-case text-gray-500">Up/Down</span>
+              <span className="w-12 shrink-0 text-[10px] normal-case text-gray-500">{t('detail.upDown')}</span>
               <input
                 type="range"
                 min={-100}
@@ -1208,14 +1191,14 @@ export default function DetailSidebar({
           <div className="border-t border-fg/5 pt-3">
             <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               <Zap size={12} />
-              <span className="flex-1 text-left">FPS limit</span>
+              <span className="flex-1 text-left">{t('detail.fpsLimit')}</span>
               {isCommittingFps && <Loader2 size={11} className="animate-spin" />}
               <input
                 type="number"
                 min={1}
                 max={240}
                 step={1}
-                placeholder="default"
+                placeholder={t('library.fpsDefault')}
                 value={fps ?? ''}
                 disabled={isCommittingFps}
                 onChange={(e) => setFpsDraft(e.target.value === '' ? null : Number(e.target.value))}
@@ -1231,7 +1214,7 @@ export default function DetailSidebar({
                   const parsed = Number(raw)
                   commitFps(Number.isFinite(parsed) ? Math.min(240, Math.max(1, parsed)) : fps)
                 }}
-                title="Overrides the app-wide default FPS for this wallpaper only - changes require a relaunch, not live. Empty = use the default."
+                title={t('detail.fpsHint')}
                 className="w-14 rounded bg-fg/5 px-1 py-0.5 text-right normal-case text-gray-400 outline-none focus:ring-1 focus:ring-accent-500 disabled:opacity-50"
               />
             </div>
@@ -1242,10 +1225,10 @@ export default function DetailSidebar({
           <div className="border-t border-fg/5 pt-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               <Gauge size={12} />
-              <span className="flex-1 text-left">Playback speed</span>
+              <span className="flex-1 text-left">{t('detail.playbackSpeed')}</span>
               {isActive && (
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
+                  {t('image.live')}
                 </span>
               )}
               {isCommittingSpeed && <Loader2 size={11} className="animate-spin" />}
@@ -1265,7 +1248,7 @@ export default function DetailSidebar({
                   const clamped = Number.isFinite(raw) ? Math.min(200, Math.max(10, raw)) : speedPercent
                   commitSpeed(clamped)
                 }}
-                title="Type an exact speed percentage - applies on Enter or clicking away"
+                title={t('detail.speedInputHint')}
                 className="w-12 rounded bg-fg/5 px-1 py-0.5 text-right normal-case text-gray-400 outline-none focus:ring-1 focus:ring-accent-500 disabled:opacity-50"
               />
               <span className="normal-case text-gray-400">%</span>
@@ -1285,7 +1268,7 @@ export default function DetailSidebar({
               onMouseUp={(e) => commitSpeed(Number(e.currentTarget.value))}
               onTouchEnd={(e) => commitSpeed(Number(e.currentTarget.value))}
               onKeyUp={(e) => commitSpeed(Number(e.currentTarget.value))}
-              title="Slows down or speeds up particles, animated effects and scripts (100% = normal speed)"
+              title={t('detail.speedHint')}
               className="w-full accent-accent-500 disabled:opacity-50"
             />
           </div>
@@ -1316,10 +1299,10 @@ export default function DetailSidebar({
           <div className="border-t border-fg/5 pt-3">
             <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               <Palette size={12} />
-              <span className="flex-1 text-left">Corner color</span>
+              <span className="flex-1 text-left">{t('detail.cornerColor')}</span>
               {isActive && (
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
+                  {t('image.live')}
                 </span>
               )}
               {isCommittingCornerColor && <Loader2 size={11} className="animate-spin" />}
@@ -1328,7 +1311,7 @@ export default function DetailSidebar({
                 value={cornerColor}
                 disabled={isCommittingCornerColor}
                 onChange={(e) => commitCornerColor(e.target.value)}
-                title="Color shown outside the wallpaper's bounds (letterboxing / zoomed-out scaling)"
+                title={t('detail.cornerColorHint')}
                 className="h-5 w-8 shrink-0 cursor-pointer rounded border border-fg/10 bg-transparent p-0 disabled:opacity-50"
               />
             </label>
@@ -1339,18 +1322,17 @@ export default function DetailSidebar({
           <div className="border-t border-fg/5 pt-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               {volume === 0 ? <VolumeX size={12} /> : <Volume2 size={12} />}
-              <span className="flex-1 text-left">Volume</span>
+              <span className="flex-1 text-left">{t('playlist.volume')}</span>
               {isActive && (
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
+                  {t('image.live')}
                 </span>
               )}
               <span className="normal-case text-gray-400">{Math.round((volume / 128) * 100)}%</span>
             </div>
             {libraryMeta?.type === 'scene' && (
               <p className="mb-1.5 text-[11px] text-gray-600">
-                Controls this scene's sound objects. Overridden while Settings &rarr; Ambient
-                wallpaper volume is set.
+                {t('detail.volumeHint')}
               </p>
             )}
             <input
@@ -1377,14 +1359,14 @@ export default function DetailSidebar({
             <button
               onClick={() => setXray({ xrayFullReveal: !xrayFullReveal, xrayDisabled: false })}
               disabled={isCommittingXray}
-              title="Force the xray effect's reveal spot to cover the whole scene instead of following the mouse"
+              title={t('detail.fullXrayHint')}
               className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
             >
               <ScanEye size={12} />
-              <span className="flex-1 text-left">Full x-ray</span>
+              <span className="flex-1 text-left">{t('detail.fullXray')}</span>
               {isActive && (
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
+                  {t('image.live')}
                 </span>
               )}
               {isCommittingXray ? (
@@ -1398,14 +1380,14 @@ export default function DetailSidebar({
             <button
               onClick={() => setXray({ xrayDisabled: !xrayDisabled, xrayFullReveal: false })}
               disabled={isCommittingXray}
-              title="Never reveal what the xray effect hides, the mouse no longer uncovers anything"
+              title={t('detail.disableXrayHint')}
               className="mt-1.5 flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
             >
               <EyeOff size={12} />
-              <span className="flex-1 text-left">Disable x-ray</span>
+              <span className="flex-1 text-left">{t('detail.disableXray')}</span>
               {isActive && (
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
+                  {t('image.live')}
                 </span>
               )}
               {isCommittingXray ? (
@@ -1419,14 +1401,14 @@ export default function DetailSidebar({
             <button
               onClick={toggleParallax}
               disabled={isCommittingParallax}
-              title="Force-disable the mouse parallax effect on this wallpaper's layers"
+              title={t('detail.disableParallaxHint')}
               className="mt-1.5 flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
             >
               <Move3d size={12} />
-              <span className="flex-1 text-left">Disable parallax</span>
+              <span className="flex-1 text-left">{t('detail.disableParallax')}</span>
               {isActive && (
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
+                  {t('image.live')}
                 </span>
               )}
               {isCommittingParallax ? (
@@ -1440,14 +1422,14 @@ export default function DetailSidebar({
             <button
               onClick={toggleExpandCanvas}
               disabled={isCommittingExpandCanvas}
-              title="Grow the scene's canvas so layers taller or wider than the camera show in full instead of cropped. Pair with Disable parallax and Fit scaling to see the whole picture"
+              title={t('detail.showFullImageHint')}
               className="mt-1.5 flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
             >
               <Expand size={12} />
-              <span className="flex-1 text-left">Show full image</span>
+              <span className="flex-1 text-left">{t('detail.showFullImage')}</span>
               {isActive && (
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
+                  {t('image.live')}
                 </span>
               )}
               {isCommittingExpandCanvas ? (
@@ -1461,14 +1443,14 @@ export default function DetailSidebar({
             <button
               onClick={toggleRepairAssets}
               disabled={isCommittingRepairAssets}
-              title="Loads files the way the wallpaper's author meant where current Wallpaper Engine drops them, e.g. an image whose texture has no name"
+              title={t('detail.repairAssetsTitle')}
               className="mt-1.5 flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
             >
               <Wrench size={12} />
-              <span className="flex-1 text-left">Repair broken assets</span>
+              <span className="flex-1 text-left">{t('detail.repairAssets')}</span>
               {isActive && (
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
+                  {t('image.live')}
                 </span>
               )}
               {isCommittingRepairAssets ? (
@@ -1480,8 +1462,7 @@ export default function DetailSidebar({
               )}
             </button>
             <p className="mt-0.5 text-[11px] text-gray-600">
-              Might fix old wallpapers that show a blank or grey screen in current Wallpaper Engine but
-              worked in older versions. Off by default to match Wallpaper Engine.
+              {t('detail.repairAssetsHint')}
             </p>
           </div>
         )}
@@ -1490,13 +1471,11 @@ export default function DetailSidebar({
           <div className="border-t border-fg/5 pt-3">
             <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
               <Terminal size={12} />
-              <span className="flex-1 text-left">Custom launch arguments</span>
+              <span className="flex-1 text-left">{t('detail.customArgs')}</span>
               {isCommittingCustomArgs && <Loader2 size={11} className="animate-spin" />}
             </label>
             <p className="mb-1.5 text-[11px] text-gray-600">
-              Extra linux-wallpaperengine flags for this wallpaper only, e.g.{' '}
-              <code className="text-gray-500">--render-debug skip-effect=726</code>. Applying a
-              change always restarts the wallpaper if it's playing.
+              {tn('detail.customArgsHint', { example: <code className="text-gray-500">--render-debug skip-effect=726</code> })}
             </p>
             <input
               type="text"
@@ -1522,10 +1501,10 @@ export default function DetailSidebar({
             >
               {propertiesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
               <SlidersHorizontal size={12} />
-              <span className="flex-1 text-left">Properties</span>
+              <span className="flex-1 text-left">{t('detail.properties')}</span>
               {isActive && (
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
+                  {t('image.live')}
                 </span>
               )}
               {propertiesLoading && <Loader2 size={11} className="animate-spin" />}
@@ -1554,10 +1533,10 @@ export default function DetailSidebar({
             >
               {audioOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
               <Music2 size={12} />
-              <span className="flex-1 text-left">Audio Reactivity</span>
+              <span className="flex-1 text-left">{t('detail.audioReactivity')}</span>
               {isActive && (
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
+                  {t('image.live')}
                 </span>
               )}
               {audioObjectsLoading && <Loader2 size={11} className="animate-spin" />}
@@ -1587,10 +1566,10 @@ export default function DetailSidebar({
             >
               {soundTracksOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
               <Volume2 size={12} />
-              <span className="flex-1 text-left">Sound Tracks</span>
+              <span className="flex-1 text-left">{t('detail.soundTracks')}</span>
               {isActive && (
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
-                  live
+                  {t('image.live')}
                 </span>
               )}
               {objectsLoading && <Loader2 size={11} className="animate-spin" />}
@@ -1641,7 +1620,7 @@ export default function DetailSidebar({
             <button
               onClick={() => handleVote(true)}
               disabled={isLiked || isLiking || isDisliking || unavailable}
-              title={unavailable ? 'Removed from the Steam Workshop - voting is no longer possible' : undefined}
+              title={unavailable ? t('vote.unavailable') : undefined}
               className={clsx(
                 'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs transition-colors disabled:cursor-not-allowed',
                 unavailable
@@ -1652,12 +1631,12 @@ export default function DetailSidebar({
               )}
             >
               {isLiking ? <Loader2 size={12} className="animate-spin" /> : <ThumbsUp size={12} />}
-              {isLiked ? 'Liked' : 'Like'}
+              {isLiked ? t('vote.liked') : t('vote.like')}
             </button>
             <button
               onClick={() => handleVote(false)}
               disabled={isLiking || isDisliking || unavailable || (isDisliked && !isLiked)}
-              title={unavailable ? 'Removed from the Steam Workshop - voting is no longer possible' : undefined}
+              title={unavailable ? t('vote.unavailable') : undefined}
               className={clsx(
                 'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs transition-colors disabled:cursor-not-allowed',
                 unavailable
@@ -1668,7 +1647,7 @@ export default function DetailSidebar({
               )}
             >
               {isDisliking ? <Loader2 size={12} className="animate-spin" /> : <ThumbsDown size={12} />}
-              {isDisliked && !isLiked ? 'Disliked' : 'Dislike'}
+              {isDisliked && !isLiked ? t('borders.disliked') : t('vote.dislike')}
             </button>
             {workshopId && (
               <button
@@ -1676,10 +1655,10 @@ export default function DetailSidebar({
                 disabled={isFavoritePending || (unavailable && favoriteAdd)}
                 title={
                   favoriteFailure
-                    ? 'Try again'
+                    ? t('detail.tryAgain')
                     : isFavorite
-                      ? 'In your Steam favorites - click to remove'
-                      : 'Add to your Steam favorites'
+                      ? t('favorite.inFavorites')
+                      : t('favorite.addToSteam')
                 }
                 aria-pressed={isFavorite}
                 className={clsx(
@@ -1711,7 +1690,7 @@ export default function DetailSidebar({
                   disabled={isFavoritePending || (unavailable && favoriteFailure.add)}
                   className="underline underline-offset-2 hover:text-red-200 disabled:opacity-50"
                 >
-                  Try again
+                  {t('detail.tryAgain')}
                 </button>
               </span>
             </p>
@@ -1719,22 +1698,22 @@ export default function DetailSidebar({
           {workshopId && favoriteChecking && !favoriteFailure && (
             <p className="flex items-center gap-1.5 text-xs text-gray-500">
               <Loader2 size={11} className="animate-spin" />
-              Checking your Steam favorites list for the change
+              {t('detail.favoriteChecking')}
             </p>
           )}
 
           {canPlay && perScreen && (
-            <ScreenSelect targets={targets} value={playScreen} onChange={setPlayScreen} title="Which screen to play on" />
+            <ScreenSelect targets={targets} value={playScreen} onChange={setPlayScreen} title={t('playlist.whichScreen')} />
           )}
           {canPlay && (
             <button
               onClick={handlePlay}
               disabled={isApplying || !lweInstalled}
-              title={lweInstalled ? undefined : 'Install linux-wallpaperengine in Settings first'}
+              title={lweInstalled ? undefined : t('play.installFirst')}
               className="flex items-center justify-center gap-1.5 rounded-lg bg-accent-600 py-1.5 text-xs text-white transition-colors hover:bg-accent-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isApplying ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-              Play wallpaper
+              {t('play.wallpaper')}
             </button>
           )}
 
@@ -1754,28 +1733,28 @@ export default function DetailSidebar({
               ) : (
                 <Trash2 size={12} />
               )}
-              {unsubConfirm ? 'Click again to confirm' : 'Unsubscribe'}
+              {unsubConfirm ? t('detail.clickToConfirm') : t('subscribe.unsubscribe')}
             </button>
           ) : (
             <SidebarButton icon={Download} onClick={onSubscribe}>
-              Subscribe
+              {t('subscribe.subscribe')}
             </SidebarButton>
           )}
 
           {workshopId && (
             <>
               <SidebarButton icon={MessageCircle} onClick={() => window.electronAPI.steam.openWorkshopItem(id)}>
-                Comment
+                {t('detail.comment')}
               </SidebarButton>
               <SidebarButton icon={ExternalLink} onClick={() => openWorkshopPage(id)}>
-                Open in Steam Workshop
+                {t('menu.openWorkshop')}
               </SidebarButton>
             </>
           )}
 
           {creatorSteamId && (
             <SidebarButton icon={User} onClick={() => openProfilePage(creatorSteamId)}>
-              View creator's Steam profile
+              {t('detail.viewProfile')}
             </SidebarButton>
           )}
         </div>

@@ -2,6 +2,7 @@ import { BrowserWindow, dialog } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import type { WallpaperMeta } from '@shared/types'
+import { t } from '../i18n'
 
 type DependencyInstaller = (dependencyId: string) => Promise<void>
 
@@ -42,18 +43,16 @@ export async function ensureDependencyInstalled(
   const title = wallpaper.title || wallpaper.id
 
   if (mode === 'once' && alreadyAsked.has(dependencyId)) {
-    throw new Error(`"${title}" was skipped: it requires Workshop item ${dependencyId}`)
+    throw new Error(t('dependency.skipped', { title, id: dependencyId }))
   }
   alreadyAsked.add(dependencyId)
 
   const options = {
     type: 'warning' as const,
-    title: 'Missing required wallpaper',
-    message: `"${title}" needs another Workshop item that is not installed`,
-    detail:
-      `Workshop item ${dependencyId} is the base this wallpaper is built on. Without it the wallpaper ` +
-      `cannot load.\n\nSubscribe to it and download it now?`,
-    buttons: ['Install now', 'Apply anyway', 'Cancel'],
+    title: t('dependency.title'),
+    message: t('dependency.message', { title }),
+    detail: `${t('dependency.detail', { id: dependencyId })}\n\n${t('dependency.question')}`,
+    buttons: [t('dependency.install'), t('dependency.applyAnyway'), t('common.cancel')],
     defaultId: 0,
     cancelId: 2
   }
@@ -63,16 +62,14 @@ export async function ensureDependencyInstalled(
   if (response === 1) return
 
   if (response === 0) {
-    if (!installer) throw new Error(`Cannot install required item ${dependencyId}: Steam integration is not ready`)
+    if (!installer) throw new Error(t('dependency.notReady', { id: dependencyId }))
     try {
       await installer(dependencyId)
     } catch (err) {
-      throw new Error(
-        `Could not subscribe to required item ${dependencyId} (is Steam running?): ${(err as Error).message}`
-      )
+      throw new Error(t('dependency.subscribeFailed', { id: dependencyId, error: (err as Error).message }))
     }
-    throw new Error(`Downloading required item ${dependencyId} - apply "${title}" again once it has finished`)
+    throw new Error(t('dependency.downloading', { id: dependencyId, title }))
   }
 
-  throw new Error(`"${title}" was not applied: it requires Workshop item ${dependencyId}`)
+  throw new Error(t('dependency.notApplied', { title, id: dependencyId }))
 }

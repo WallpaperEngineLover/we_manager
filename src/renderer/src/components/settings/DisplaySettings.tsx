@@ -3,10 +3,12 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Loader2, Monitor, MonitorSmartphone } from 'lucide-react'
 import type { DisplayMode } from '@shared/types'
 import { useConfig } from '../../hooks/queries'
+import { t } from '../../i18n'
+import type { MessageKey } from '@shared/i18n'
 
-const MODES: { mode: DisplayMode; label: string; icon: typeof Monitor }[] = [
-  { mode: 'shared', label: 'Same on every screen', icon: Monitor },
-  { mode: 'per-screen', label: 'Each screen on its own', icon: MonitorSmartphone }
+const MODES: { mode: DisplayMode; label: MessageKey; icon: typeof Monitor }[] = [
+  { mode: 'shared', label: 'display.shared', icon: Monitor },
+  { mode: 'per-screen', label: 'display.perScreen', icon: MonitorSmartphone }
 ]
 
 export default function DisplaySettings({ screens }: { screens: string[] }) {
@@ -30,10 +32,9 @@ export default function DisplaySettings({ screens }: { screens: string[] }) {
 
   return (
     <div>
-      <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">Screens</label>
+      <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">{t('display.title')}</label>
       <p className="mt-1 text-xs text-gray-600">
-        With each screen on its own, every screen gets its own wallpaper and playlist, and Play asks which screen
-        to use. Switching stops whatever is playing now.
+        {t('display.description')}
       </p>
       <div className="mt-3 inline-flex overflow-hidden rounded-lg text-sm">
         {MODES.map(({ mode, label, icon: Icon }) => (
@@ -46,15 +47,15 @@ export default function DisplaySettings({ screens }: { screens: string[] }) {
             }`}
           >
             {switching && current !== mode ? <Loader2 size={14} className="animate-spin" /> : <Icon size={14} />}
-            {label}
+            {t(label)}
           </button>
         ))}
       </div>
       {current === 'per-screen' && (
         <p className="mt-2 text-xs text-gray-500">
-          {screens.length > 0 ? `Detected: ${screens.join(', ')}` : 'No screens detected, everything goes to one engine.'}
+          {screens.length > 0 ? t('display.detected', { screens: screens.join(', ') }) : t('display.noneDetected')}
           {screens.length > 1 &&
-            ' Switching wallpapers restarts that screen\'s engine instead of hot-swapping, since the engines would otherwise share one control file.'}
+            ` ${t('display.restartNote')}`}
         </p>
       )}
     </div>

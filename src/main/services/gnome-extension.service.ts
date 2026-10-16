@@ -7,13 +7,11 @@ import type { GnomeExtensionStatus } from '@shared/types'
 import { detectDesktopEnv, isWaylandSession } from '../utils/platform'
 import { hostCommand, isFlatpak, toHostPath } from '../utils/flatpak'
 import { getLweStatus } from './lwe.service'
+import { t } from '../i18n'
 
 const execFileAsync = promisify(execFile)
 
-/**
- * GNOME Wayland has no layer-shell, the engine's Shell extension makes its windows desktop windows. The Shell only
- * scans extensions at startup, so a fresh install needs a re-login.
- */
+/** GNOME has no layer-shell, the engine's extension makes desktop windows. A fresh install needs a re-login */
 export const GNOME_EXTENSION_UUID = 'linux-wallpaperengine@wallpaperenginelover.github.io'
 const GNOME_HELPER = 'linux-wallpaperengine-gnome-helper'
 
@@ -23,7 +21,6 @@ function userExtensionDir(): string {
   return path.join(dataHome, 'gnome-shell', 'extensions', GNOME_EXTENSION_UUID)
 }
 
-/** The copy next to the real engine binary */
 export function bundledExtensionDir(enginePath = getLweStatus().path): string | undefined {
   if (!enginePath) return undefined
   let real = enginePath
@@ -88,7 +85,6 @@ export async function getGnomeExtensionStatus(): Promise<GnomeExtensionStatus> {
   return { ...base, state: 'not-installed' }
 }
 
-/** Host terminal commands that install the Flatpak's copy */
 export function flatpakInstallCommands(hostDir: string): string[] {
   const quoted = `'${hostDir.replace(/'/g, "'\\''")}'`
   return [
@@ -108,7 +104,7 @@ export async function installGnomeExtension(): Promise<{ ok: boolean; message: s
   if (!bundled) {
     return {
       ok: false,
-      message: 'The installed engine has no gnome-shell-extension folder, update linux-wallpaperengine first',
+      message: t('gnome.noFolder'),
       status: await getGnomeExtensionStatus()
     }
   }
@@ -123,14 +119,13 @@ export async function installGnomeExtension(): Promise<{ ok: boolean; message: s
   await fs.promises.rm(target, { recursive: true, force: true })
   await fs.promises.rename(staging, target)
 
-  // recorded even if not loaded yet, starts at next login
   const enabled = await runHost('gnome-extensions', ['enable', GNOME_EXTENSION_UUID])
   if (!enabled.ok) await addToEnabledExtensions()
 
   const status = await getGnomeExtensionStatus()
   const message = status.state === 'active'
-    ? 'The GNOME Shell extension is active'
-    : 'Installed. Log out and back in once, GNOME Shell only loads new extensions at login'
+    ? t('gnome.active')
+    : t('gnome.installedRelogin')
   return { ok: true, message, status }
 }
 

@@ -8,8 +8,7 @@ import { findWallpaperVideoFile } from './video'
 
 const execFileAsync = promisify(execFile)
 
-// scene.pkg can be hundreds of MB, and libraries sit on HDDs, so only the entry table and the
-// one wanted entry are read. The table is small, 64KB covers it for all but huge packages.
+// .pkg files can be huge, read only the entry table (64KB covers most) and one entry
 const PKG_HEADER_CHUNK = 64 * 1024
 
 export function parsePkgHeader(buf: Buffer): { dataStart: number; entries: Map<string, { offset: number; length: number }> } | undefined {
@@ -74,13 +73,13 @@ async function readSceneJson(localPath: string, sceneFile: string): Promise<unkn
     try {
       raw = await fs.promises.readFile(path.join(localPath, sceneFile))
     } catch {
-      // packed next to its json name, gifscene.json -> gifscene.pkg, and scene.pkg for everything else
+      // gifscene.json -> gifscene.pkg, else scene.pkg
       const named = path.join(localPath, sceneFile.replace(/\.json$/i, '') + '.pkg')
       raw = fs.existsSync(named) ? await readPkgEntry(named, sceneFile) : undefined
       raw ??= await readPkgEntry(path.join(localPath, 'scene.pkg'), sceneFile)
     }
     if (!raw) return undefined
-    // same leniency as the engine's JSON::parseAsset: authors ship trailing commas
+    // authors ship trailing commas
     return JSON.parse(raw.toString('utf8').replace(/^\uFEFF/, '').replace(/,(\s*[}\]])/g, '$1'))
   } catch {
     return undefined
@@ -104,7 +103,7 @@ async function readProject(localPath: string): Promise<Project | undefined> {
   }
 }
 
-// general values are either plain or bound to a user property: { "user": "name", "value": default }
+// plain or { "user": "name", "value": default }
 function generalFlag(general: Record<string, unknown>, key: string, properties: ProjectProperties): boolean {
   const v = general[key]
   if (v && typeof v === 'object') {
@@ -115,7 +114,7 @@ function generalFlag(general: Record<string, unknown>, key: string, properties: 
   return !!v
 }
 
-// Same condition the engine renders HDR under (with ultra post processing): bloom and hdr both on
+// the engine's HDR condition under ultra post processing
 export function sceneUsesHdr(scene: unknown, properties: ProjectProperties): boolean {
   const general = (scene as { general?: Record<string, unknown> } | undefined)?.general ?? {}
   return generalFlag(general, 'bloom', properties) && generalFlag(general, 'hdr', properties)
@@ -138,19 +137,36 @@ async function videoIsHdr(file: string): Promise<boolean | undefined> {
   }
 }
 
-/** undefined = could not tell (files missing, no ffprobe) */
-export async function detectHdr(w: WallpaperMeta): Promise<boolean | undefined> {
-  if (!w.localPath) return undefined
+// spatialization marks the sounds HRTF positions
+export function sceneUsesSpatialSound(scene: unknown, properties: ProjectProperties): boolean {
+  const objects = (scene as { objects?: unknown } | undefined)?.objects
+  if (!Array.isArray(objects)) return false
+  return objects.some((o) => {
+    if (!o || typeof o !== 'object') return false
+    const object = o as Record<string, unknown>
+    return Array.isArray(object.sound) && object.sound.length > 0 && generalFlag(object, 'spatialization', properties)
+  })
+}
+
+export interface WallpaperFeatures {
+  hdr?: boolean
+  hrtf?: boolean
+}
+
+/** undefined when it could not be told */
+export async function detectFeatures(w: WallpaperMeta): Promise<WallpaperFeatures> {
+  if (!w.localPath) return {}
   let dir = w.localPath
   let project = await readProject(dir)
-  if (!project) return undefined
+  if (!project) return {}
   let properties = project.general?.properties ?? {}
 
-  // presets ship only properties, the wallpaper itself is the dependency in a sibling folder
+  // a preset's wallpaper is its dependency
+
   if (project.dependency && !project.file) {
     dir = path.join(path.dirname(dir), String(project.dependency))
     const base = await readProject(dir)
-    if (!base) return undefined
+    if (!base) return {}
     properties = { ...base.general?.properties, ...properties }
     project = base
   }
@@ -158,11 +174,14 @@ export async function detectHdr(w: WallpaperMeta): Promise<boolean | undefined> 
   const type = (project.type ?? w.type).toLowerCase()
   if (type === 'scene') {
     const scene = await readSceneJson(dir, project.file ?? 'scene.json')
-    return scene === undefined ? undefined : sceneUsesHdr(scene, properties)
+    if (scene === undefined) return {}
+    return { hdr: sceneUsesHdr(scene, properties), hrtf: sceneUsesSpatialSound(scene, properties) }
   }
   if (type === 'video') {
+    // a video's own audio doesn't go through OpenAL
+    if (w.hdr !== undefined) return { hdr: w.hdr, hrtf: false }
     const video = findWallpaperVideoFile(dir, project.file)
-    return video ? videoIsHdr(video) : undefined
+    return { hdr: video ? await videoIsHdr(video) : undefined, hrtf: false }
   }
-  return false
+  return { hdr: false, hrtf: false }
 }

@@ -1,5 +1,10 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { FolderOpen, Check, Upload, FilePlus, Loader2, ArrowRight } from 'lucide-react'
+import { t, tn } from '../../i18n'
+import LanguageSelect from '../settings/LanguageSelect'
+import UpdateCheckChoices from '../updates/UpdateCheckChoices'
+import { UPDATE_STATUS_KEY, useUpdateStatus } from '../../hooks/queries'
 
 interface SetupScreenProps {
   defaultPath: string
@@ -12,6 +17,10 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
   const [saving, setSaving] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<string | null>(null)
+  const [updateChecks, setUpdateChecks] = useState({ app: true, engine: true })
+  const updateStatus = useUpdateStatus()
+  const showEngineCheck = updateStatus?.engineInstall !== 'bundled'
+  const queryClient = useQueryClient()
 
   async function handleBrowse() {
     const picked = await window.electronAPI.config.pickFolder()
@@ -35,11 +44,9 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
         return
       }
       const result = await window.electronAPI.config.importWE(filePath)
-      setImportResult(
-        `Imported ${result.folders} folders and ${result.playlists} playlists. All paths updated automatically.`
-      )
+      setImportResult(t('setup.imported', { folders: result.folders, playlists: result.playlists }))
     } catch (err) {
-      setImportResult(`Import failed: ${(err as Error).message}`)
+      setImportResult(t('setup.importFailed', { error: (err as Error).message }))
     } finally {
       setImporting(false)
     }
@@ -49,15 +56,20 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
     setImporting(true)
     try {
       await window.electronAPI.config.createFresh()
-      setImportResult('Created a fresh configuration.')
+      setImportResult(t('setup.created'))
     } catch (err) {
-      setImportResult(`Failed: ${(err as Error).message}`)
+      setImportResult(t('setup.failed', { error: (err as Error).message }))
     } finally {
       setImporting(false)
     }
   }
 
   async function handleFinish() {
+    const status = await window.electronAPI.updates.setChecks({
+      app: updateChecks.app,
+      engine: showEngineCheck && updateChecks.engine
+    })
+    queryClient.setQueryData(UPDATE_STATUS_KEY, status)
     onComplete(selectedPath)
   }
 
@@ -69,28 +81,30 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
   return (
     <div className="flex h-full items-center justify-center bg-app">
       <div className="w-full max-w-lg rounded-xl border border-fg/10 bg-card p-8">
-        <h1 className="text-xl font-semibold text-gray-100">Welcome to WE Manager</h1>
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="text-xl font-semibold text-gray-100">{t('setup.welcome')}</h1>
+          <LanguageSelect />
+        </div>
 
         <div className="mt-4 flex items-center gap-2 text-xs text-gray-600">
           <span className={step === 1 ? 'text-accent-400' : 'text-gray-500'}>
-            1. Workshop folder
+            {t('setup.step1')}
           </span>
           <ArrowRight size={10} />
           <span className={step === 2 ? 'text-accent-400' : 'text-gray-500'}>
-            2. Import config
+            {t('setup.step2')}
           </span>
         </div>
 
         {step === 1 && (
           <>
             <p className="mt-4 text-sm text-gray-400">
-              Select your Wallpaper Engine workshop folder so the app can find your
-              wallpapers.
+              {t('setup.selectFolder')}
             </p>
 
             <div className="mt-6">
               <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-                Workshop folder
+                {t('setup.workshopFolder')}
               </label>
               <div className="mt-2 flex gap-2">
                 <input
@@ -104,12 +118,11 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
                   className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
                 >
                   <FolderOpen size={16} />
-                  Browse
+                  {t('common.browse')}
                 </button>
               </div>
               <p className="mt-1 text-xs text-gray-600">
-                Typically{' '}
-                <span className="font-mono">{platformHint}</span>
+                {tn('setup.typically', { path: <span className="font-mono">{platformHint}</span> })}
               </p>
             </div>
 
@@ -123,7 +136,7 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
               ) : (
                 <ArrowRight size={16} />
               )}
-              Next
+              {t('common.next')}
             </button>
           </>
         )}
@@ -131,10 +144,7 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
         {step === 2 && (
           <>
             <p className="mt-4 text-sm text-gray-400">
-              Do you have an existing Wallpaper Engine{' '}
-              <span className="font-mono text-gray-300">config.json</span>? Importing
-              it will bring over your folders and playlists with all paths automatically
-              fixed.
+              {tn('setup.importQuestion', { file: <span className="font-mono text-gray-300">config.json</span> })}
             </p>
 
             <div className="mt-6 flex flex-col gap-3">
@@ -146,10 +156,10 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
                 <Upload size={20} className="text-accent-400" />
                 <div>
                   <p className="text-sm font-medium text-gray-200">
-                    Import existing config.json
+                    {t('setup.importExisting')}
                   </p>
                   <p className="text-xs text-gray-500">
-                    From your old Wallpaper Engine installation
+                    {t('setup.importExistingHint')}
                   </p>
                 </div>
               </button>
@@ -161,9 +171,9 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
               >
                 <FilePlus size={20} className="text-gray-400" />
                 <div>
-                  <p className="text-sm font-medium text-gray-200">Start fresh</p>
+                  <p className="text-sm font-medium text-gray-200">{t('setup.fresh')}</p>
                   <p className="text-xs text-gray-500">
-                    Create a new empty configuration
+                    {t('setup.freshHint')}
                   </p>
                 </div>
               </button>
@@ -175,13 +185,18 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
               </div>
             )}
 
+            <div className="mt-6 rounded-lg border border-fg/10 px-4 py-3">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">{t('update.title')}</p>
+              <UpdateCheckChoices value={updateChecks} onChange={setUpdateChecks} showEngine={showEngineCheck} />
+            </div>
+
             <button
               onClick={handleFinish}
               disabled={importing}
               className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-accent-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
             >
               <Check size={16} />
-              {importResult ? 'Done' : 'Skip & Finish'}
+              {importResult ? t('common.done') : t('setup.skip')}
             </button>
           </>
         )}

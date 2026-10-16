@@ -1,6 +1,6 @@
 {
   "name": "we-manager",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "type": "module",
   "description": "Wallpaper Engine workshop manager",
   "author": "UwU <260361707+WallpaperEngineLover@users.noreply.github.com>",
@@ -63,14 +63,19 @@
           ]
         }
       ],
-      "category": "Utility"
+      "category": "Utility",
+      "icon": "resources/icons/linux"
     },
     "appImage": {
       "artifactName": "WE-Manager-${version}.${ext}"
     },
     "files": [
       "out/**/*",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "resources/icon.png"
+    ],
+    "asarUnpack": [
+      "resources/icon.png"
     ]
   },
   "homepage": "https://github.com/WallpaperEngineLover/we_manager"

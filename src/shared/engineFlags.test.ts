@@ -34,10 +34,18 @@ describe('engineFlagArgs', () => {
     expect(engineFlagArgs({ ssaa: 'none' })).toEqual([])
     expect(engineFlagArgs({ hwdec: 'nvdec-copy' })).toEqual(['--hwdec', 'nvdec-copy'])
     expect(engineFlagArgs({ hwdec: 'auto' })).toEqual([])
+    expect(engineFlagArgs({ hrtf: 'on' })).toEqual(['--hrtf', 'on'])
+    expect(engineFlagArgs({ hrtf: 'auto' })).toEqual([])
+    expect(engineFlagArgs({ batteryFps: '15' })).toEqual(['--fps-battery', '15'])
+    expect(engineFlagArgs({ batteryFps: 'pause' })).toEqual(['--pause-on-battery'])
+    expect(engineFlagArgs({ batteryFps: 'off' })).toEqual([])
+    expect(engineFlagArgs({ idlePause: '5' })).toEqual(['--idle-pause', '5'])
+    expect(engineFlagArgs({ idlePause: 'off' })).toEqual([])
     expect(engineFlagArgs({ kdeBackgroundLayer: true })).toEqual(['--layer', 'background'])
     expect(engineFlagArgs({ kdeBackgroundLayer: false })).toEqual([])
     expect(engineFlagArgs({ pauseOnFocus: true, fullscreenPause: 'off' })).toEqual(['--no-fullscreen-pause', '--pause-on-focus'])
     expect(engineFlagArgs({ pauseOnFocus: false })).toEqual([])
+    expect(engineFlagArgs({ pauseOnMaximized: true })).toEqual(['--pause-on-maximized'])
   })
 
   it('leaves disableAnimations to the caller, it needs its own capability probe', () => {

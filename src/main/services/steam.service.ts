@@ -2,6 +2,7 @@ import { execFileSync } from 'child_process'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import { setTimeout as sleep } from 'timers/promises'
 import { app, utilityProcess, type BrowserWindow, type UtilityProcess } from 'electron'
 import { WE_APP_ID, STANDALONE_APP_ID } from '@shared/constants'
 import type { DownloadProgressEvent, FavoriteFailure, FavoriteStatus, WorkshopAuthorInfo } from '@shared/types'
@@ -10,13 +11,10 @@ import { encodeBigInts, decodeBigInts, type SteamHostResponse } from '../steam-h
 import { hostCommand, isFlatpak } from '../utils/flatpak'
 import { SteamListCache } from './steam-list-cache'
 
-// Steam counts a process that called SteamAPI_Init as a running game, which also breaks Steam
-// Game Recording. Like WE's ui32.exe, the connection only lives while the window is shown.
+// Steam counts a connected process as a running game, so like WE's ui32.exe connect only while shown
 let windowActive = false
 
-// Steam not running is a normal, common state (this app works as a local library manager
-// without it). Only retry a failed connect - and only warn - once per cooldown window, and only
-// log the first failure of a run.
+// Steam not running is normal: warn once per cooldown
 const RETRY_COOLDOWN_MS = 15000
 let lastInitFailure = 0
 let hasWarnedThisOutage = false
@@ -34,7 +32,7 @@ const STEAM_PID_FILES = [
 const PROCESS_CHECK_TTL_MS = 5000
 let processCheck = { at: 0, alive: false }
 
-// Flatpak Steam writes a pid from its own namespace, hence the /proc scan fallback (the host is asked from our own Flatpak)
+// Flatpak Steam's pid is from its own namespace, hence the /proc scan
 function steamProcessAlive(): boolean {
   if (Date.now() - processCheck.at < PROCESS_CHECK_TTL_MS) return processCheck.alive
   if (isFlatpak()) {
@@ -92,7 +90,7 @@ export function bindSteamToWindow(win: BrowserWindow): void {
     const active = !win.isDestroyed() && win.isVisible() && !win.isMinimized()
     if (active === windowActive) return
     windowActive = active
-    // calls already running get to finish, steamCall() disconnects after the last one
+    // steamCall() disconnects after the last running call
     if (!active && host && inFlight === 0) {
       console.log('[Steam] Window hidden, disconnecting')
       stopHost()
@@ -110,8 +108,7 @@ export function isSteamAllowed(): boolean {
   return windowActive
 }
 
-// steamworks.js async calls have no timeout of their own, a hung one would otherwise keep the
-// connection open forever
+// steamworks.js calls have no timeout, a hung one would hold the connection
 const REQUEST_TIMEOUT_MS = 60 * 1000
 
 function send(proc: UtilityProcess, method: string, args: unknown[]): Promise<unknown> {
@@ -219,9 +216,7 @@ export async function subscribeToItem(itemId: bigint): Promise<void> {
   await steamCall('workshop.subscribe', itemId)
 }
 
-// Steam's subscribe doesn't reliably auto-download (seen with items subscribed via the Workshop
-// website rather than the Steam client) - items can sit at bare "Subscribed" forever. This is the
-// reliable kick; a no-op if already installed or downloading.
+// subscribing doesn't reliably start a download, no-op when already there
 export async function downloadItem(itemId: bigint, highPriority = true): Promise<boolean> {
   try {
     return await steamCall<boolean>('workshop.download', itemId, highPriority)
@@ -238,11 +233,6 @@ function isSteamOnline(): Promise<boolean> {
   return steamCall<boolean>('isOnline')
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-// steamworks.js async calls have no timeout and can hang forever if Steam stalls
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
@@ -259,7 +249,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   })
 }
 
-// steamworks.js has no vote bindings; this app's fork adds them (patches/steamworks-vote/), feature-detected so unpatched builds still work
+// vote bindings come from patches/steamworks-vote/, unpatched builds still work
 let hasPatchedVoteApi: boolean | null = null
 
 async function patchedVoteApiAvailable(): Promise<boolean> {
@@ -289,7 +279,7 @@ export async function openWorkshopItemOverlay(itemId: bigint): Promise<void> {
   await steamCall('overlay.activateToWebPage', `https://steamcommunity.com/sharedfiles/filedetails/?id=${itemId}`)
 }
 
-const USER_ITEM_TYPE = 13 // UGCType.All, since WE items span multiple subtypes
+const USER_ITEM_TYPE = 13 // UGCType.All
 const CREATION_ORDER_DESC = 1
 const VOTED_UP = 2
 const VOTED_DOWN = 3
@@ -409,14 +399,14 @@ async function withRetry(what: string, attempt: () => Promise<void>): Promise<vo
   throw lastErr
 }
 
-// kept for this session only, a failure usually means Steam was busy or offline at the time
+// session only
 const failedVotes = new Map<string, { up: boolean; message: string }>()
 let failedVotesChangeListener: ((failed: Record<string, string>) => void) | null = null
 
 export function getFailedVotes(): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [id, failure] of failedVotes) {
-    // liked elsewhere since, e.g. on the website or picked up by the background sync
+    // liked elsewhere since
     if ((failure.up ? likedList : dislikedList).has(id)) failedVotes.delete(id)
     else out[id] = failure.message
   }
@@ -456,8 +446,7 @@ export function voteOnItemAndConfirm(itemId: bigint, voteUp: boolean): Promise<b
   })
 }
 
-// Without the patched steamworks.js, success is reported once SetUserItemVote is enqueued: its result can't be read back,
-// because steamworks.js's manual dispatch loop consumes every call result on the shared Steam pipe first.
+// unpatched: success once enqueued, steamworks.js consumes the call result first
 async function voteOnce(itemId: bigint, voteUp: boolean): Promise<void> {
   if (await patchedVoteApiAvailable()) {
     await withTimeout(steamCall('workshop.voteItem', itemId, voteUp), VOTE_TIMEOUT_MS, 'Vote')
@@ -627,8 +616,7 @@ export async function getInstallInfo(itemId: bigint): Promise<{ folder: string; 
   }
 }
 
-// steamworks.js only exposes persona info for the local player/friends, so this
-// pulls it from the public community profile XML instead. Cached for the process lifetime.
+// steamworks.js only knows the player and friends, read the public profile XML
 const authorInfoCache = new Map<string, WorkshopAuthorInfo | null>()
 
 export async function getAuthorInfo(steamId: string): Promise<WorkshopAuthorInfo | null> {
@@ -647,22 +635,27 @@ export async function getAuthorInfo(steamId: string): Promise<WorkshopAuthorInfo
   }
 }
 
+/** EItemState, throws when Steam can't be asked */
+export function fetchItemState(itemId: bigint): Promise<number> {
+  return workshopCall<number>('state', itemId)
+}
+
+/** EItemState, 0 when Steam can't be asked */
 export async function getItemState(itemId: bigint): Promise<number> {
   try {
-    return await workshopCall<number>('state', itemId)
+    return await fetchItemState(itemId)
   } catch {
     return 0
   }
 }
 
 // EItemState flags from the Steamworks SDK (isteamugc.h)
-const ITEM_STATE_INSTALLED = 4
-const ITEM_STATE_NEEDS_UPDATE = 8
-const ITEM_STATE_DOWNLOADING = 16
-const ITEM_STATE_DOWNLOAD_PENDING = 32
+export const ITEM_STATE_INSTALLED = 4
+export const ITEM_STATE_NEEDS_UPDATE = 8
+export const ITEM_STATE_DOWNLOADING = 16
+export const ITEM_STATE_DOWNLOAD_PENDING = 32
 
-// True for a subscribed item Steam has never actually started fetching - not installed, not
-// mid-transfer, not even flagged as needing an update. See downloadItem() above.
+// subscribed but never fetched, not even flagged as needing an update
 function isStuckNeverDownloaded(state: number): boolean {
   const installed = (state & ITEM_STATE_INSTALLED) !== 0
   const inProgress = (state & (ITEM_STATE_DOWNLOADING | ITEM_STATE_DOWNLOAD_PENDING | ITEM_STATE_NEEDS_UPDATE)) !== 0
@@ -678,10 +671,8 @@ export async function isItemDownloading(itemId: bigint): Promise<boolean> {
   return (state & (ITEM_STATE_DOWNLOADING | ITEM_STATE_DOWNLOAD_PENDING)) !== 0
 }
 
-// NeedsUpdate stays set while Steam hasn't caught the local copy up to the server version. If
-// it's set but nothing is actively downloading/pending, Steam gave up on the transfer (e.g. it
-// errored out or the disk filled up). A never-downloaded item reports neither bit - treated as
-// "downloading" since the caller (scanLibrary) just kicked one off for it.
+// NeedsUpdate and not downloading = Steam gave up; never-downloaded counts as downloading
+
 export async function getItemDownloadStatus(itemId: bigint): Promise<{ downloading: boolean; failed: boolean }> {
   const state = await getItemState(itemId)
   const downloading =

@@ -17,6 +17,12 @@ export function detectDesktopEnv(): DesktopEnvironment {
   return parseDesktopEnv(process.env.XDG_CURRENT_DESKTOP, process.env)
 }
 
+/** children of an AppImage inherit APPIMAGE and APPDIR too */
+export function runningAppImage(): string | undefined {
+  const { APPIMAGE, APPDIR } = process.env
+  return APPIMAGE && APPDIR && process.execPath.startsWith(APPDIR) ? APPIMAGE : undefined
+}
+
 /** Electron often runs under XWayland without WAYLAND_DISPLAY, so the session type counts too. */
 export function isWaylandSession(): boolean {
   return !!process.env.WAYLAND_DISPLAY || process.env.XDG_SESSION_TYPE === 'wayland'

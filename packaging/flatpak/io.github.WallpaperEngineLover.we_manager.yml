@@ -1,6 +1,4 @@
-# WE Manager with linux-wallpaperengine inside. Both come from their releases: the app's .deb and the engine's
-# portable tarball, which carries its own libraries except what this runtime provides (GTK, NSS, CUPS, Mesa,
-# PipeWire). fetch-sources.sh puts them next to this file, CI uses the .deb it just built.
+# WE Manager + linux-wallpaperengine, from the release .deb and the engine's portable tarball.
 #
 #   packaging/flatpak/fetch-sources.sh
 #   flatpak-builder --user --install --force-clean build-dir packaging/flatpak/io.github.WallpaperEngineLover.we_manager.yml
@@ -29,13 +27,15 @@ finish-args:
   - --filesystem=/mnt
   - --filesystem=/media
   - --filesystem=/run/media
-  # the host's display tools (kscreen-doctor, wlr-randr, xrandr), wallpaper setters, the desktop icons overlay
-  # and the programs user shortcuts start
+  # display tools, wallpaper setters, desktop icons overlay, user shortcuts
+
   - --talk-name=org.freedesktop.Flatpak
   # KDE integration: KWin scripts for the cursor and fullscreen detection, which call back into the engine
   - --talk-name=org.kde.KWin
   - --talk-name=org.kde.plasmashell
   - --own-name=org.linuxwallpaperengine.*
+  # Hyprland IPC for the cursor position
+  - --filesystem=xdg-run/hypr:ro
   # media info for wallpapers that show the playing song
   - --talk-name=org.mpris.MediaPlayer2.*
   - --talk-name=org.kde.StatusNotifierWatcher
@@ -68,8 +68,8 @@ modules:
       - cp -a "opt/WE Manager" /app/we-manager
       - install -Dm755 we-manager.sh /app/bin/we-manager
       - install -Dm644 usr/share/applications/we-manager.desktop /app/share/applications/${FLATPAK_ID}.desktop
-      - desktop-file-edit --set-key=Exec --set-value='we-manager %U' --set-icon=${FLATPAK_ID}
+      - desktop-file-edit --set-key=Exec --set-value='we-manager %U' --set-key=StartupWMClass --set-value=we-manager --set-icon=${FLATPAK_ID}
         /app/share/applications/${FLATPAK_ID}.desktop
-      - for size in 16 32 48 64 128 256; do install -Dm644 usr/share/icons/hicolor/${size}x${size}/apps/we-manager.png
+      - for size in 16 22 24 32 48 64 128 256 512; do install -Dm644 usr/share/icons/hicolor/${size}x${size}/apps/we-manager.png
         /app/share/icons/hicolor/${size}x${size}/apps/${FLATPAK_ID}.png; done
       - install -Dm644 ${FLATPAK_ID}.metainfo.xml /app/share/metainfo/${FLATPAK_ID}.metainfo.xml

@@ -12,16 +12,19 @@ import {
 import Toggle from '../common/Toggle'
 import { useConfig } from '../../hooks/queries'
 import { applyAppearance } from '../../utils/appearance'
+import { t, translatedOr } from '../../i18n'
+import type { MessageKey } from '@shared/i18n'
+import LanguageSelect from './LanguageSelect'
 
-const THEMES: { value: ThemeMode; label: string; icon: typeof Moon }[] = [
-  { value: 'dark', label: 'Dark', icon: Moon },
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'system', label: 'System', icon: Monitor }
+const THEMES: { value: ThemeMode; label: MessageKey; icon: typeof Moon }[] = [
+  { value: 'dark', label: 'appearance.dark', icon: Moon },
+  { value: 'light', label: 'appearance.light', icon: Sun },
+  { value: 'system', label: 'appearance.system', icon: Monitor }
 ]
 
-const PREVIEW_ANIMATION: { value: PreviewAnimation; label: string; icon: typeof Moon }[] = [
-  { value: 'always', label: 'Always', icon: Play },
-  { value: 'hover', label: 'On hover', icon: MousePointer2 }
+const PREVIEW_ANIMATION: { value: PreviewAnimation; label: MessageKey; icon: typeof Moon }[] = [
+  { value: 'always', label: 'appearance.always', icon: Play },
+  { value: 'hover', label: 'appearance.onHover', icon: MousePointer2 }
 ]
 
 function Segmented<T extends string>({
@@ -29,7 +32,7 @@ function Segmented<T extends string>({
   value,
   onChange
 }: {
-  options: { value: T; label: string; icon: typeof Moon }[]
+  options: { value: T; label: MessageKey; icon: typeof Moon }[]
   value: T
   onChange: (value: T) => void
 }) {
@@ -45,7 +48,7 @@ function Segmented<T extends string>({
           )}
         >
           <Icon size={14} />
-          {label}
+          {t(label)}
         </button>
       ))}
     </div>
@@ -85,21 +88,25 @@ export default function AppearanceSettings() {
 
   return (
     <div>
-      <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">Appearance</label>
+      <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">{t('appearance.title')}</label>
+
+      <div className="mt-3">
+        <LanguageSelect />
+      </div>
 
       <div className="mt-3">
         <Segmented options={THEMES} value={draft.theme} onChange={(theme) => save({ theme })} />
       </div>
 
       <div className="mt-5">
-        <span className="block text-xs text-gray-400">Accent color</span>
+        <span className="block text-xs text-gray-400">{t('appearance.accent')}</span>
         <div className="mt-2 flex flex-wrap gap-2">
           {ACCENT_PRESETS.map((p) => {
             const active = presetMatch === p
             return (
               <button
                 key={p.name}
-                title={p.name}
+                title={translatedOr(`accent.${p.name}`, p.name)}
                 onClick={() => save({ accentHue: p.hue, accentChroma: p.chroma })}
                 className={clsx(
                   'flex h-7 w-7 items-center justify-center rounded-full text-white ring-offset-2 ring-offset-app transition-transform hover:scale-110',
@@ -113,7 +120,7 @@ export default function AppearanceSettings() {
           })}
         </div>
         <div className="mt-3 flex items-center gap-3">
-          <span className="w-16 shrink-0 text-xs text-gray-500">Custom</span>
+          <span className="w-16 shrink-0 text-xs text-gray-500">{t('thumb.custom')}</span>
           <input
             type="range"
             min={0}
@@ -123,13 +130,13 @@ export default function AppearanceSettings() {
             onPointerUp={() => save({})}
             onKeyUp={() => save({})}
             className="hue-slider h-2 w-full cursor-pointer appearance-none rounded-full"
-            aria-label="Accent hue"
+            aria-label={t('appearance.accentHue')}
           />
         </div>
       </div>
 
       <div className="mt-5">
-        <span className="block text-xs text-gray-400">Animated previews</span>
+        <span className="block text-xs text-gray-400">{t('appearance.animatedPreviews')}</span>
         <div className="mt-2">
           <Segmented
             options={PREVIEW_ANIMATION}
@@ -138,14 +145,13 @@ export default function AppearanceSettings() {
           />
         </div>
         <p className="mt-1 text-xs text-gray-600">
-          On hover, GIF previews show a still frame and only play while the pointer rests on their card, instead of
-          every card in view animating at once.
+          {t('appearance.animatedPreviewsHint')}
         </p>
       </div>
 
       <div className="mt-5">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-gray-400">Window opacity</span>
+          <span className="text-xs text-gray-400">{t('appearance.opacity')}</span>
           <span className="text-xs tabular-nums text-gray-500">{draft.windowOpacity}%</span>
         </div>
         <input
@@ -157,11 +163,10 @@ export default function AppearanceSettings() {
           onPointerUp={() => save({})}
           onKeyUp={() => save({})}
           className="mt-2 w-full accent-accent-500"
-          aria-label="Window opacity"
+          aria-label={t('appearance.opacity')}
         />
         <p className="mt-1 text-xs text-gray-600">
-          Below 100% the desktop shows through the window background. Turning it on or off applies the next time WE
-          Manager starts.
+          {t('appearance.opacityHint')}
         </p>
       </div>
 
@@ -171,19 +176,18 @@ export default function AppearanceSettings() {
           onClick={() => save({ blur: !draft.blur })}
           disabled={!isKde || !translucent}
         />
-        <span className="text-sm text-gray-300">Blur behind the window</span>
+        <span className="text-sm text-gray-300">{t('appearance.blur')}</span>
       </label>
       <p className="mt-1 text-xs text-gray-600">
         {isKde
-          ? 'KDE Plasma blurs the desktop behind the translucent window. KWin only does this for X11 windows, so on a Wayland session WE Manager runs through XWayland while blur is on.'
-          : 'Only available on KDE Plasma.'}
+          ? t('appearance.blurKde')
+          : t('appearance.blurKdeOnly')}
       </p>
 
       {config.appearanceRestartNeeded && (
         <p className="mt-3 flex items-center gap-2 rounded-lg bg-amber-600/15 px-3 py-2 text-xs text-amber-300 ring-1 ring-amber-500/30">
           <RotateCcw size={13} className="shrink-0" />
-          Quit WE Manager and start it again to apply the window changes
-          {config.trayEnabled ? ' (Quit from the tray menu, closing the window only hides it)' : ''}.
+          {config.trayEnabled ? t('appearance.restartTray') : t('appearance.restart')}
         </p>
       )}
     </div>

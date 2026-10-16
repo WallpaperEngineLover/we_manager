@@ -8,6 +8,7 @@ import { getPlaylist } from './playlist.service'
 import { getWallpaper, updateWallpaper } from './library.service'
 import { getLweStatus, ALL_SCREENS } from './lwe.service'
 import { getAutostartPlaylistId } from './config.service'
+import { getFavoriteItemIds } from './steam.service'
 import { expandScreen, getDisplayTargets, setPlaylistRecovery, showWallpaper } from './display.service'
 import { findWallpaperVideoFile, getVideoDurationSec } from '../utils/video'
 
@@ -39,7 +40,6 @@ let win: BrowserWindow | null = null
 const players = new Map<ScreenTarget, Player>()
 const listeners = new Set<() => void>()
 
-/** Subscribe to playback state changes (used by the tray to keep its menu labels accurate). */
 export function onPlaybackStateChanged(cb: () => void): () => void {
   listeners.add(cb)
   return () => listeners.delete(cb)
@@ -79,7 +79,6 @@ function buildOrder(playlist: Playlist): string[] {
       })
       break
     default:
-      // manual: keep playlist item order as-is
       break
   }
   return items.map((i) => i.wallpaperId)
@@ -112,21 +111,27 @@ function findItem(playlist: Playlist, wallpaperId: string): PlaylistItem | undef
   return playlist.items.find((i) => i.wallpaperId === wallpaperId)
 }
 
-/**
- * Shows the current item, moving on to the next one when it can't be shown. Wallpapers known to
- * crash on launch are passed over without trying, as long as something else is left to play.
- */
-async function applyCurrent(player: Player, playlist: Playlist): Promise<void> {
+/** Checked at every step so favorite changes apply on the next switch */
+function rotationFilter(playlist: Playlist, order: string[]): (id: string) => boolean {
+  if (!playlist.settings.favoritesOnly) return () => true
+  const favorites = new Set(getFavoriteItemIds())
+  return order.some((id) => favorites.has(id)) ? (id) => favorites.has(id) : () => true
+}
+
+/** Skips crashing items and non-favorites while something else is left. `picked` always plays */
+async function applyCurrent(player: Player, playlist: Playlist, picked?: string): Promise<void> {
   const { state } = player
   const count = state.order.length
+  const inRotation = rotationFilter(playlist, state.order)
   const known = (id: string) => compatStatus(getWallpaper(id)?.compat) !== 'crashes'
-  const anyPlayable = state.order.some(known)
+  const anyPlayable = state.order.some((id) => inRotation(id) && known(id))
 
   player.applying = true
   try {
     for (let tries = 0; tries < count; tries++, state.currentIndex = (state.currentIndex + 1) % count) {
       const wallpaper = getWallpaper(state.order[state.currentIndex])
-      if (!wallpaper || (anyPlayable && !known(wallpaper.id))) continue
+      if (!wallpaper) continue
+      if (wallpaper.id !== picked && (!inRotation(wallpaper.id) || (anyPlayable && !known(wallpaper.id)))) continue
 
       const item = findItem(playlist, wallpaper.id)
       try {
@@ -150,7 +155,7 @@ async function applyCurrent(player: Player, playlist: Playlist): Promise<void> {
   }
 }
 
-// Small margin so the last frames aren't cut off by engine startup/hotswap time
+// covers engine startup/hotswap time
 const VIDEO_END_GRACE_SEC = 2
 
 async function getVideoLengthSec(wallpaperId: string): Promise<number | undefined> {
@@ -201,7 +206,6 @@ async function advance(player: Player): Promise<void> {
 
   player.state.currentIndex++
   if (player.state.currentIndex >= player.state.order.length) {
-    // Loop: rebuild order (reshuffles if randomize is on)
     player.state.order = buildOrder(playlist)
     player.state.currentIndex = 0
   }
@@ -220,7 +224,7 @@ function playerFor(screen: ScreenTarget): Player {
   return player
 }
 
-/** Players the given screen selection refers to; nothing given means every screen */
+/** Nothing given = every screen */
 function selectPlayers(screen?: ScreenTarget): Player[] {
   if (screen === undefined || screen === ALL_SCREENS) return [...players.values()]
   const player = players.get(screen)
@@ -253,7 +257,6 @@ export function startPlaylist(id: string, screen?: ScreenTarget): PlaylistPlayba
 
   const targets = expandScreen(screen)
   if (targets.length === 0) throw new Error(`Screen ${screen} is not connected`)
-  // players on screens that no longer exist in this mode would fight over the same engine
   for (const s of players.keys()) {
     if (!getDisplayTargets().includes(s)) stopPlaylist(s)
   }
@@ -290,7 +293,7 @@ export async function playItem(playlistId: string, wallpaperId: string, screen?:
     player.state.currentIndex = index
     player.state.isPlaying = true
 
-    await applyCurrent(player, playlist)
+    await applyCurrent(player, playlist, wallpaperId)
     scheduleNext(player, playlist)
   }
   persist()
@@ -345,8 +348,12 @@ export async function previousItem(screen?: ScreenTarget): Promise<PlaylistPlayb
     const playlist = getPlaylist(player.state.playlistId)
     if (!playlist || playlist.items.length === 0) continue
 
-    player.state.currentIndex--
-    if (player.state.currentIndex < 0) player.state.currentIndex = player.state.order.length - 1
+    const { order } = player.state
+    const inRotation = rotationFilter(playlist, order)
+    for (let step = 0; step < order.length; step++) {
+      player.state.currentIndex = (player.state.currentIndex - 1 + order.length) % order.length
+      if (inRotation(order[player.state.currentIndex])) break
+    }
 
     await applyCurrent(player, playlist)
     scheduleNext(player, playlist)
@@ -359,7 +366,7 @@ export function getPlaybackStates(): PlaylistPlaybackState[] {
   return [...players.values()].map((p) => p.state)
 }
 
-/** The one state that matters most, for places with room for only one (the tray) */
+/** The most relevant state, for the tray */
 export function getPlaybackState(): PlaylistPlaybackState {
   const states = getPlaybackStates()
   return states.find((s) => s.isPlaying) ?? states[0] ?? idleState(ALL_SCREENS)
@@ -376,11 +383,8 @@ function savedPlayers(): Record<ScreenTarget, SavedPlayer> {
   return legacyId ? { [ALL_SCREENS]: { playlistId: legacyId, isPlaying: store.get('isPlaying') } } : {}
 }
 
-/**
- * Call once on app startup. Resumes the playlists that were active when the app last closed.
- * Returns true if any was resumed, so the caller can skip the "autostart playlist" config setting
- * to avoid starting two playlists at once. Does nothing if linux-wallpaperengine isn't installed.
- */
+/** Resumes the playlists active at the last close, true if any (the autostart playlist is then skipped) */
+
 export function initPlaylistPlayer(window: BrowserWindow): boolean {
   win = window
   setPlaylistRecovery((screen) => {

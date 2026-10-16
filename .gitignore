@@ -15,3 +15,6 @@ repo/
 # makepkg runs in the AUR package folder
 packaging/aur/*/*
 !packaging/aur/*/PKGBUILD
+
+# written by packaging/flathub/build-local.sh
+packaging/flathub/local.yml

@@ -46,6 +46,7 @@ import { openWorkshopPage, openProfilePage } from '../../utils/steam'
 import { isPlayable } from '../../utils/wallpaper'
 import { matchesSearchTerms, parseSearchQuery } from '../../utils/searchQuery'
 import { formatFileSize } from '../../utils/format'
+import { t } from '../../i18n'
 
 const STORAGE_KEY = 'we-workshop-filters'
 const QUERY_TYPES: WorkshopQueryType[] = [
@@ -106,7 +107,7 @@ function loadFilters(stored: unknown): WorkshopFilterState {
   return state
 }
 
-// Having every option of a category selected means no filter for that category
+// every option selected = no filter
 function effectiveTags(filters: WorkshopFilterState): Record<TagCategory, string[]> {
   const result = {} as Record<TagCategory, string[]>
   for (const key of TAG_CATEGORIES) {
@@ -184,8 +185,7 @@ export default function WorkshopBrowser({
 
   const effective = useMemo(() => effectiveTags(filters), [filters])
 
-  // AND mode: all selected tags passed to Steam as requiredTags (every tag must match)
-  // OR mode: single-selected categories pass to Steam; multi-selected use client-side OR
+  // AND: all tags go to Steam. OR: multi-selected categories are filtered here
   const steamTags: string[] = [
     ...filters.showOnly,
     ...effective.assetTypes,
@@ -248,8 +248,7 @@ export default function WorkshopBrowser({
   })
   const ignoredCreatorSet = useMemo(() => new Set(ignoredCreators), [ignoredCreators])
 
-  // What subscribing these ids would download: items already subscribed, queued or in the
-  // library are skipped, sizes come from Steam and can be missing for some items
+  // skips subscribed, queued and library items, sizes can be missing
   function downloadSize(ids: string[]): DownloadSize | null {
     let bytes = 0
     let count = 0
@@ -263,11 +262,11 @@ export default function WorkshopBrowser({
     }
     if (count === 0) return null
     const size = formatFileSize(bytes)
-    if (!size) return { label: 'size unknown', title: `${count} to download, Steam reports no size` }
+    if (!size) return { label: t('workshop.sizeUnknown'), title: t('workshop.toDownloadNoSize', { count }) }
     const label = unknown > 0 ? `${size}+` : size
-    let title = `${count} to download, ${size} total`
-    if (unknown > 0) title += ` (+ ${unknown} without a size from Steam)`
-    if (count < ids.length) title += `, ${ids.length - count} already subscribed or queued`
+    let title = t('workshop.toDownload', { count, size })
+    if (unknown > 0) title += ' ' + t('workshop.withoutSize', { count: unknown })
+    if (count < ids.length) title += ', ' + t('workshop.alreadyQueued', { count: ids.length - count })
     return { label, title }
   }
 
@@ -280,14 +279,13 @@ export default function WorkshopBrowser({
     queryClient.invalidateQueries({ queryKey: ['ignored-creators'] })
   }
 
-  // In OR mode: client-side OR filtering for multi-selected categories
   const tagFiltered = useMemo(() => {
     const sizeThresholdBytes = filters.sizeFilterMb * 1024 * 1024
 
     return allItems.filter((item) => {
       if (
         filters.filterMode === 'or' &&
-        !OR_CATEGORIES.every((key) => effective[key].length <= 1 || effective[key].some((t) => item.tags.includes(t)))
+        !OR_CATEGORIES.every((key) => effective[key].length <= 1 || effective[key].some((tag) => item.tags.includes(tag)))
       )
         return false
       if (filters.notDownloaded && playableSet.has(item.publishedFileId)) return false
@@ -308,10 +306,7 @@ export default function WorkshopBrowser({
     })
   }, [allItems, searchQuery, filters, effective, playableSet, votedSet, dislikedSet, favoriteSet])
 
-  // Page boundaries are fixed against the full tag-filtered list (ignored creators' items
-  // included) so a page's contents don't shift around as the ignore list changes. Within a
-  // page, ignored items are pulled out of the normal grid and - only once "Show ignored" is
-  // on - appended after that same page's own shown items, never mixed into another page.
+  // pages keep ignored items so they don't shift, "Show ignored" puts them at the end
   const totalFiltered = tagFiltered.length
   const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize))
   const safePage = Math.min(page, totalPages)
@@ -351,10 +346,7 @@ export default function WorkshopBrowser({
     setCtxMenu({ x: e.clientX, y: e.clientY, ids: selectForContextMenu(itemId) })
   }
 
-  // Auto-fetch more Steam API pages if needed to fill the current view.
-  // Must compare against the tag-filtered count, not the raw fetched count - in OR mode a
-  // raw batch can lose most of its items to client-side filtering, so having "enough" raw
-  // items doesn't mean the current page actually has enough items to show.
+  // fetch more pages until the filtered count fills the view
   const totalResults = data?.pages[0]?.totalResults ?? 0
   const needMore = totalFiltered < page * pageSize && allItems.length < totalResults
   useEffect(() => {
@@ -367,7 +359,6 @@ export default function WorkshopBrowser({
 
   const detailItem = detailId ? itemById.get(detailId) : undefined
 
-  // menu actions close the menu first, the action itself may take a while
   function run(action: () => unknown) {
     return () => {
       setCtxMenu(null)
@@ -387,17 +378,17 @@ export default function WorkshopBrowser({
         {single && playableSet.has(single.publishedFileId) && (
           <>
             <MenuItem icon={Play} onClick={run(() => applyWallpaper(single.publishedFileId))}>
-              Play wallpaper
+              {t('play.wallpaper')}
             </MenuItem>
             <MenuSeparator />
           </>
         )}
         <MenuItem onClick={run(() => enqueueSubscribe(menu.ids))}>
           <span title={menuSize?.title}>
-            Subscribe{menuSize && <span className="ml-1.5 text-xs text-gray-500">{menuSize.label}</span>}
+            {t('subscribe.subscribe')}{menuSize && <span className="ml-1.5 text-xs text-gray-500">{menuSize.label}</span>}
           </span>
         </MenuItem>
-        <MenuItem onClick={run(() => unsubscribeIds(menu.ids))}>Unsubscribe</MenuItem>
+        <MenuItem onClick={run(() => unsubscribeIds(menu.ids))}>{t('subscribe.unsubscribe')}</MenuItem>
         <MenuSeparator />
         <VoteMenuItems onVote={(up) => run(() => batchVote(menu.ids, up))()} />
         <FavoriteMenuItems
@@ -407,11 +398,11 @@ export default function WorkshopBrowser({
         />
         <MenuSeparator />
         <MenuItem icon={ExternalLink} onClick={run(() => menu.ids.forEach(openWorkshopPage))}>
-          Open in Steam Workshop
+          {t('menu.openWorkshop')}
         </MenuItem>
         {single && (
           <MenuItem icon={User} onClick={run(() => onBrowseCreator?.(single.creatorSteamId))}>
-            Browse wallpapers from this creator
+            {t('menu.browseCreator')}
           </MenuItem>
         )}
         {libraryIds.length > 0 && (
@@ -430,7 +421,7 @@ export default function WorkshopBrowser({
             icon={ignoredCreatorSet.has(single.creatorSteamId) ? Eye : EyeOff}
             onClick={run(() => toggleIgnoreCreator(single.creatorSteamId))}
           >
-            {ignoredCreatorSet.has(single.creatorSteamId) ? 'Unignore this creator' : 'Ignore this creator'}
+            {ignoredCreatorSet.has(single.creatorSteamId) ? t('creator.unignore') : t('creator.ignore')}
           </MenuItem>
         )}
       </ContextMenu>
@@ -443,8 +434,8 @@ export default function WorkshopBrowser({
         <FiltersToggle open={showFilters} activeCount={activeCount} onClick={() => setShowFilters((v) => !v)} />
         <SearchInput
           value={searchText}
-          placeholder="Search wallpapers... (a+b all words, -word to exclude)"
-          title="Join words with + to require all of them, e.g. luna+god. Prefix a word with - to exclude it, e.g. holo -hololive"
+          placeholder={t('workshop.searchPlaceholder')}
+          title={t('workshop.searchHint')}
           onChange={setSearchText}
         />
         <select
@@ -452,23 +443,23 @@ export default function WorkshopBrowser({
           onChange={(e) => setQueryType(e.target.value as WorkshopQueryType)}
           className="rounded-lg bg-card px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
         >
-          <option value="RankedByVote">Top Rated</option>
-          <option value="RankedByPublicationDate">Newest</option>
-          <option value="RankedByTrend">Trending</option>
-          <option value="RankedByTotalUniqueSubscriptions">Most Subscribed</option>
-          <option value="RankedByLastUpdatedDate">Recently Updated</option>
+          <option value="RankedByVote">{t('workshop.sortTop')}</option>
+          <option value="RankedByPublicationDate">{t('workshop.sortNewest')}</option>
+          <option value="RankedByTrend">{t('workshop.sortTrending')}</option>
+          <option value="RankedByTotalUniqueSubscriptions">{t('workshop.sortSubscribed')}</option>
+          <option value="RankedByLastUpdatedDate">{t('workshop.sortUpdated')}</option>
         </select>
         <PreviewSizeToggle value={previewSize} onChange={setPreviewSize} />
         {activeCount > 0 && <ResetFiltersButton onClick={clearAll} />}
         {selection.size > 0 && (
           <>
-            <span className="text-xs text-gray-500">{selection.size} selected</span>
+            <span className="text-xs text-gray-500">{t('picker.selected', { count: selection.size })}</span>
             <button
               onClick={() => enqueueSubscribe([...selection])}
-              title={selectionSize?.title ?? 'Everything selected is already subscribed or queued'}
+              title={selectionSize?.title ?? t('workshop.allQueued')}
               className="flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-2 text-sm text-white hover:bg-accent-500"
             >
-              <Download size={14} /> Subscribe selection
+              <Download size={14} /> {t('workshop.subscribeSelection')}
               {selectionSize && <span className="text-accent-200">({selectionSize.label})</span>}
             </button>
           </>
@@ -478,18 +469,18 @@ export default function WorkshopBrowser({
       {creatorFilter && (
         <div className="flex items-center gap-2 border-b border-fg/5 bg-accent-600/10 px-4 py-2 text-xs text-accent-200">
           <User size={12} />
-          <span>Showing wallpapers from this creator</span>
+          <span>{t('workshop.creatorFilter')}</span>
           <button
             onClick={() => openProfilePage(creatorFilter)}
             className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10"
           >
-            <ExternalLink size={11} /> View Steam profile
+            <ExternalLink size={11} /> {t('workshop.viewProfile')}
           </button>
           <button
             onClick={() => onClearCreatorFilter?.()}
             className="ml-auto flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10"
           >
-            <X size={11} /> Clear
+            <X size={11} /> {t('common.clear')}
           </button>
         </div>
       )}
@@ -498,7 +489,7 @@ export default function WorkshopBrowser({
         {showFilters && (
           <FilterPanel>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-500">Match</span>
+              <span className="text-xs text-gray-500">{t('filters.match')}</span>
               <div className="flex rounded-md overflow-hidden text-xs">
                 {(['or', 'and'] as const).map((mode) => (
                   <button
@@ -511,24 +502,24 @@ export default function WorkshopBrowser({
                         : 'bg-fg/5 text-gray-400 hover:text-gray-200'
                     )}
                   >
-                    {mode === 'or' ? 'Any (OR)' : 'All (AND)'}
+                    {mode === 'or' ? t('filters.matchAny') : t('filters.matchAll')}
                   </button>
                 ))}
               </div>
             </div>
 
             <FilterSection
-              title="Status"
+              title={t('filters.status')}
               activeCount={statusFilterCount}
             >
               <CheckItem
-                label="Not downloaded"
+                label={t('filters.notDownloaded')}
                 checked={filters.notDownloaded}
                 onChange={() => setFilter('notDownloaded', !filters.notDownloaded)}
               />
               <CheckItem
-                label="Not rated"
-                title="Hide wallpapers you've liked or disliked on Steam"
+                label={t('filters.notRated')}
+                title={t('filters.notRatedHint')}
                 checked={filters.notLiked && filters.notDisliked}
                 indeterminate={filters.notLiked !== filters.notDisliked}
                 onChange={() => {
@@ -539,32 +530,32 @@ export default function WorkshopBrowser({
               <CheckGroup>
                 <CheckItem
                   nested
-                  label="Not liked"
+                  label={t('filters.notLiked')}
                   checked={filters.notLiked}
                   onChange={() => setFilter('notLiked', !filters.notLiked)}
                 />
                 <CheckItem
                   nested
-                  label="Not disliked"
+                  label={t('filters.notDisliked')}
                   checked={filters.notDisliked}
                   onChange={() => setFilter('notDisliked', !filters.notDisliked)}
                 />
               </CheckGroup>
               <CheckItem
-                label="Not favorited"
+                label={t('filters.notFavorited')}
                 checked={filters.notFavorited}
                 onChange={() => setFilter('notFavorited', !filters.notFavorited)}
               />
             </FilterSection>
-            <FilterSection title="File Size" activeCount={filters.sizeFilterMode !== 'none' ? 1 : 0}>
+            <FilterSection title={t('filters.fileSize')} activeCount={filters.sizeFilterMode !== 'none' ? 1 : 0}>
               <select
                 value={filters.sizeFilterMode}
                 onChange={(e) => setFilter('sizeFilterMode', e.target.value as WorkshopFilterState['sizeFilterMode'])}
                 className="w-full rounded bg-card px-1.5 py-1 text-xs text-gray-300 outline-none"
               >
-                <option value="none">Any size</option>
-                <option value="lt">Less than</option>
-                <option value="gt">More than</option>
+                <option value="none">{t('filters.anySize')}</option>
+                <option value="lt">{t('filters.lessThan')}</option>
+                <option value="gt">{t('filters.moreThan')}</option>
               </select>
               {filters.sizeFilterMode !== 'none' && (
                 <div className="mt-1 flex items-center gap-1.5">
@@ -580,7 +571,7 @@ export default function WorkshopBrowser({
               )}
             </FilterSection>
             <TagFilterSection
-              title="Show Only"
+              title={t('filters.showOnly')}
               defaultOpen={false}
               options={WE_SHOW_ONLY}
               selected={filters.showOnly}
@@ -588,7 +579,7 @@ export default function WorkshopBrowser({
               onChange={(tags) => setFilter('showOnly', tags)}
             />
             <TagFilterSection
-              title="Type"
+              title={t('filters.type')}
               options={WE_TYPES}
               selected={filters.types}
               activeCount={effective.types.length}
@@ -596,7 +587,7 @@ export default function WorkshopBrowser({
             />
             {assetSelected && (
               <TagFilterSection
-                title="Asset Type"
+                title={t('filters.assetType')}
                 options={WE_ASSET_TYPES}
                 selected={filters.assetTypes}
                 activeCount={effective.assetTypes.length}
@@ -604,7 +595,7 @@ export default function WorkshopBrowser({
               />
             )}
             <TagFilterSection
-              title="Age Rating"
+              title={t('filters.ageRating')}
               options={WE_AGE_RATINGS}
               selected={filters.ageRatings}
               activeCount={effective.ageRatings.length}
@@ -617,7 +608,7 @@ export default function WorkshopBrowser({
               onChange={(tags) => setFilter('resolutions', tags)}
             />
             <TagFilterSection
-              title="Genre"
+              title={t('filters.genre')}
               defaultOpen={false}
               options={WE_GENRES}
               selected={filters.genres}
@@ -631,19 +622,18 @@ export default function WorkshopBrowser({
           {isLoading && <LoadingSpinner />}
           {error && (
             <div className="rounded-lg bg-red-900/20 p-4 text-sm text-red-400">
-              <p className="font-medium">Failed to load workshop</p>
+              <p className="font-medium">{t('workshop.loadFailed')}</p>
               <p className="mt-1 opacity-75">{(error as Error).message}</p>
               {(error as Error).message.includes('Steam') && (
                 <p className="mt-2 text-xs opacity-60">
-                  Make sure Steam is running and Wallpaper Engine is installed. Close Wallpaper
-                  Engine if it is currently running.
+                  {t('workshop.loadFailedHint')}
                 </p>
               )}
             </div>
           )}
           {!isLoading && tagFiltered.length === 0 && !error && (
             <div className="flex h-40 items-center justify-center text-gray-500">
-              No results found
+              {t('workshop.noResults')}
             </div>
           )}
           <div className="grid gap-4" style={previewGridStyle(previewSize)}>
@@ -676,21 +666,20 @@ export default function WorkshopBrowser({
           {pageIgnoredItems.length > 0 && (
             <div className="mt-4 flex items-center justify-center gap-2 border-t border-fg/5 pt-3 text-xs text-gray-500">
               <span>
-                {pageIgnoredItems.length} wallpaper{pageIgnoredItems.length === 1 ? '' : 's'} ignored on
-                this page
+                {t('workshop.ignoredOnPage', { count: pageIgnoredItems.length })}
               </span>
               <button
                 onClick={() => setShowIgnored((v) => !v)}
                 className="rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10"
               >
-                {showIgnored ? 'Hide ignored' : 'Show ignored'}
+                {showIgnored ? t('workshop.hideIgnored') : t('workshop.showIgnored')}
               </button>
             </div>
           )}
           {totalFiltered > 0 && (
             <div className="mt-4 flex items-center justify-between border-t border-fg/5 pt-3">
               <div className="flex items-center gap-2 text-xs text-gray-400">
-                <span>Per page:</span>
+                <span>{t('pagination.perPage')}</span>
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
@@ -707,7 +696,10 @@ export default function WorkshopBrowser({
                 canNext={safePage < totalPages || !!hasNextPage}
                 onPage={setPage}
               >
-                Page {safePage} of {totalPages} ({totalFiltered} items{totalResults > totalFiltered ? ` of ~${totalResults}` : ''})
+                {t('pagination.page', { page: safePage, total: totalPages })}{' '}
+                {totalResults > totalFiltered
+                  ? t('pagination.itemsOfAbout', { count: totalFiltered, total: totalResults })
+                  : t('pagination.items', { count: totalFiltered })}
               </Pagination>
             </div>
           )}

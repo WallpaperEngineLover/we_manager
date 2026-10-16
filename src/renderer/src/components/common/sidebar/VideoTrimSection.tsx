@@ -7,10 +7,12 @@ import {
   trimmedVideoLength,
   type VideoSegment
 } from '@shared/videoTrim'
+import { t } from '../../../i18n'
 
 interface Props {
   segments: VideoSegment[]
-  /** Length of the whole video in seconds, null when it couldn't be measured (no ffprobe) */
+  /** Seconds, null without ffprobe */
+
   duration: number | null
   live: boolean
   onCommit: (segments: VideoSegment[]) => Promise<void>
@@ -46,8 +48,8 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
   }
 
   function clearText(key: string) {
-    setTexts((t) => {
-      const rest = { ...t }
+    setTexts((prev) => {
+      const rest = { ...prev }
       delete rest[key]
       return rest
     })
@@ -120,16 +122,16 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
       <input
         type="text"
         value={texts[key] ?? (value === null ? '' : formatVideoTime(value))}
-        placeholder={side === 'start' ? '0:00' : 'end'}
+        placeholder={side === 'start' ? '0:00' : t('trim.endPlaceholder')}
         disabled={busy}
         onFocus={() => setSelected(i)}
-        onChange={(e) => setTexts((t) => ({ ...t, [key]: e.target.value }))}
+        onChange={(e) => setTexts((prev) => ({ ...prev, [key]: e.target.value }))}
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur()
           if (e.key === 'Escape') clearText(key)
         }}
         onBlur={(e) => texts[key] !== undefined && commitText(i, side, e.currentTarget.value)}
-        title="Seconds, m:ss or h:mm:ss - applies on Enter or clicking away"
+        title={t('trim.timeHint')}
         className={timeInputClass}
       />
     )
@@ -139,7 +141,7 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
     if (duration === null || !part) return null
     return (
       <div className="flex items-center gap-1.5">
-        <span className="w-7 text-gray-500">{side === 'start' ? 'Start' : 'End'}</span>
+        <span className="w-7 text-gray-500">{side === 'start' ? t('trim.start') : t('trim.end')}</span>
         <input
           type="range"
           min={0}
@@ -151,7 +153,7 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
           onMouseUp={() => draft && commit(draft)}
           onTouchEnd={() => draft && commit(draft)}
           onKeyUp={() => draft && commit(draft)}
-          title={side === 'start' ? 'Where this part starts' : 'Where this part ends and the next one starts'}
+          title={side === 'start' ? t('trim.startHint') : t('trim.endHint')}
           className="w-full accent-accent-500 disabled:opacity-50"
         />
       </div>
@@ -162,14 +164,14 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
     <div className="border-t border-fg/5 pt-3">
       <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
         <Scissors size={12} />
-        <span className="flex-1 text-left">Video trim</span>
-        {live && <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">live</span>}
+        <span className="flex-1 text-left">{t('trim.title')}</span>
+        {live && <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">{t('image.live')}</span>}
         {busy && <Loader2 size={11} className="animate-spin" />}
         {trimmed && (
           <button
             disabled={busy}
             onClick={() => commit([])}
-            title="Play the whole video again"
+            title={t('trim.reset')}
             className="text-gray-500 hover:text-gray-300 disabled:opacity-50"
           >
             <RotateCcw size={11} />
@@ -177,7 +179,7 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
         )}
       </div>
       <p className="mb-1.5 text-[11px] text-gray-600">
-        Only these parts play, one after the other, over and over. Everything between them is skipped.
+        {t('trim.description')}
       </p>
 
       <div className="space-y-1.5 text-[11px] text-gray-400">
@@ -199,14 +201,14 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
           </div>
         )}
 
-        {rows.length === 0 && <p className="text-gray-600">Plays the whole video.</p>}
+        {rows.length === 0 && <p className="text-gray-600">{t('trim.whole')}</p>}
         {rows.map((s, i) => (
           <div key={i} className={`flex items-center gap-1.5 rounded px-1 ${i === index ? 'bg-fg/5' : ''}`}>
             <button
               onClick={() => setSelected(i)}
               className={`flex-1 text-left ${i === index ? 'text-gray-200' : 'text-gray-500 hover:text-gray-300'}`}
             >
-              Part {i + 1}
+              {t('trim.part', { n: i + 1 })}
             </button>
             {timeInput(i, 'start')}
             <span className="text-gray-600">-</span>
@@ -214,7 +216,7 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
             <button
               disabled={busy}
               onClick={() => removePart(i)}
-              title="Remove this part"
+              title={t('trim.removePart')}
               className="text-gray-500 hover:text-red-300 disabled:opacity-50"
             >
               <X size={11} />
@@ -229,26 +231,26 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
           <span className="flex-1 text-gray-500">
             {duration !== null &&
               trimmed &&
-              `Plays ${formatVideoTime(trimmedVideoLength(duration, rows))} of ${formatVideoTime(duration)}`}
+              t('trim.plays', { length: formatVideoTime(trimmedVideoLength(duration, rows)), total: formatVideoTime(duration) })}
           </span>
           <button
             disabled={busy || newPart() === null}
             onClick={addPart}
-            title="Add another part after the last one"
+            title={t('trim.addPartHint')}
             className="flex items-center gap-1 rounded bg-fg/10 px-1.5 py-0.5 text-[10px] text-gray-300 hover:bg-fg/15 disabled:opacity-40"
           >
             <Plus size={9} />
-            Add part
+            {t('trim.addPart')}
           </button>
           {live && trimmed && part && seamSeek(part) !== undefined && (
             <button
               disabled={busy}
               onClick={() => onPreview(segments, seamSeek(part))}
-              title={`Jumps ${SEAM_LEAD} seconds before the end of part ${index + 1}, to see the cut into the next one`}
+              title={t('trim.cutHint', { seconds: SEAM_LEAD, n: index + 1 })}
               className="flex items-center gap-1 rounded bg-fg/10 px-1.5 py-0.5 text-[10px] text-gray-300 hover:bg-fg/15 disabled:opacity-40"
             >
               <Play size={9} />
-              Cut
+              {t('trim.cut')}
             </button>
           )}
         </div>

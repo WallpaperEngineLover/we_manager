@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Search, X, Plus, Check } from 'lucide-react'
 import { getPreviewSrc } from '../../utils/preview'
 import PreviewImage from '../common/PreviewImage'
+import { t } from '../../i18n'
 
 interface WallpaperPickerModalProps {
   excludeIds: Set<string>
@@ -52,7 +53,7 @@ export default function WallpaperPickerModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-8">
       <div className="flex h-full max-h-[600px] w-full max-w-2xl flex-col rounded-xl border border-fg/10 bg-popup shadow-2xl">
         <div className="flex items-center justify-between border-b border-fg/5 px-4 py-3">
-          <h3 className="text-sm font-semibold text-gray-100">Add wallpapers to playlist</h3>
+          <h3 className="text-sm font-semibold text-gray-100">{t('picker.title')}</h3>
           <button
             onClick={onClose}
             className="rounded p-1 text-gray-500 hover:bg-fg/5 hover:text-gray-300"
@@ -67,7 +68,7 @@ export default function WallpaperPickerModal({
             <input
               autoFocus
               type="text"
-              placeholder="Search library..."
+              placeholder={t('picker.search')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-lg bg-fg/5 py-1.5 pl-8 pr-3 text-sm text-gray-200 placeholder-gray-500 outline-none focus:ring-1 focus:ring-accent-500"
@@ -76,9 +77,9 @@ export default function WallpaperPickerModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-3">
-          {isLoading && <p className="p-4 text-center text-xs text-gray-500">Loading...</p>}
+          {isLoading && <p className="p-4 text-center text-xs text-gray-500">{t('common.loading')}</p>}
           {!isLoading && filtered.length === 0 && (
-            <p className="p-4 text-center text-xs text-gray-500">No wallpapers found.</p>
+            <p className="p-4 text-center text-xs text-gray-500">{t('picker.empty')}</p>
           )}
           <div className="grid grid-cols-3 gap-2">
             {filtered.map((w) => {
@@ -98,7 +99,7 @@ export default function WallpaperPickerModal({
                       <PreviewImage src={previewSrc} alt={w.title} />
                     ) : (
                       <div className="flex h-full items-center justify-center text-xs text-gray-600">
-                        No preview
+                        {t('card.noPreview')}
                       </div>
                     )}
                   </div>
@@ -115,14 +116,14 @@ export default function WallpaperPickerModal({
         </div>
 
         <div className="flex items-center justify-between border-t border-fg/5 px-4 py-3">
-          <span className="text-xs text-gray-500">{selected.size} selected</span>
+          <span className="text-xs text-gray-500">{t('picker.selected', { count: selected.size })}</span>
           <button
             onClick={handleAdd}
             disabled={selected.size === 0}
             className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
           >
             <Plus size={14} />
-            Add to playlist
+            {t('picker.add')}
           </button>
         </div>
       </div>

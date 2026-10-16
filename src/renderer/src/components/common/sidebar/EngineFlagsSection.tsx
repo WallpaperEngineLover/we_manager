@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Gauge, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Gauge, Loader2, TriangleAlert } from 'lucide-react'
 import type { EngineFlags, FullscreenPauseMode, WallpaperMeta } from '@shared/types'
 import { hasEngineFlags } from '@shared/engineFlags'
-import { BOOLEAN_FLAGS, CHOICE_FLAGS, FULLSCREEN_PAUSE_OPTIONS } from '../../../constants/engineFlags'
+import { BOOLEAN_FLAGS, CHOICE_FLAGS, FULLSCREEN_PAUSE_OPTIONS, optionLabel, presetName } from '../../../constants/engineFlags'
 import { useConfig } from '../../../hooks/queries'
+import { t } from '../../../i18n'
 
 interface Props {
   flags?: EngineFlags
@@ -13,6 +14,7 @@ interface Props {
 const selectClass = 'rounded bg-fg/5 px-1.5 py-1 text-xs text-gray-200 outline-none disabled:opacity-50'
 
 const onOff = (value: boolean | undefined) => (value ? 'on' : 'off')
+const onOffLabel = (value: boolean | undefined) => (value ? t('common.on') : t('common.off'))
 
 export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
   const [open, setOpen] = useState(false)
@@ -53,18 +55,16 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         <Gauge size={12} />
-        <span className="flex-1 text-left">Performance</span>
+        <span className="flex-1 text-left">{t('perf.title')}</span>
         {hasEngineFlags(flags) && (
-          <span className="rounded-full bg-accent-600/30 px-1.5 normal-case text-accent-300">custom</span>
+          <span className="rounded-full bg-accent-600/30 px-1.5 normal-case text-accent-300">{t('thumb.customBadge')}</span>
         )}
         {busy && <Loader2 size={11} className="animate-spin" />}
       </button>
 
       {open && (
         <div className="mt-2 flex flex-col gap-2">
-          <p className="text-[11px] text-gray-600">
-            Overrides the global settings for this wallpaper. Changing one restarts it if it's playing.
-          </p>
+          <p className="text-[11px] text-gray-600">{t('perf.overrideHint')}</p>
 
           <div className="flex items-center gap-2">
             <select
@@ -74,11 +74,11 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
               className={`${selectClass} flex-1`}
             >
               <option value="" disabled>
-                Apply a preset...
+                {t('perf.applyPreset')}
               </option>
               {presets.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {presetName(p)}
                 </option>
               ))}
             </select>
@@ -88,52 +88,62 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
                 disabled={busy}
                 className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-400 hover:bg-fg/10 disabled:opacity-50"
               >
-                Reset
+                {t('common.reset')}
               </button>
             )}
           </div>
 
           {BOOLEAN_FLAGS.map(({ key, label, hint }) => (
-            <label key={key} className="flex items-center justify-between gap-2 text-xs text-gray-300" title={hint}>
-              <span>{label}</span>
+            <label key={key} className="flex items-center justify-between gap-2 text-xs text-gray-300" title={hint && t(hint)}>
+              <span>{t(label)}</span>
               <select
                 value={flags[key] === undefined ? 'inherit' : onOff(flags[key])}
                 disabled={busy}
                 onChange={(e) => setFlag(key, e.target.value === 'inherit' ? undefined : e.target.value === 'on')}
                 className={selectClass}
               >
-                <option value="inherit">Default ({onOff(global[key])})</option>
-                <option value="on">On</option>
-                <option value="off">Off</option>
+                <option value="inherit">{t('common.defaultValue', { value: onOffLabel(global[key]) })}</option>
+                <option value="on">{t('common.on')}</option>
+                <option value="off">{t('common.off')}</option>
               </select>
             </label>
           ))}
 
-          {CHOICE_FLAGS.map(({ key, label, hint, fallback, options }) => (
-            <label key={key} className="flex items-center justify-between gap-2 text-xs text-gray-300" title={hint}>
-              <span>{label}</span>
-              <select
-                value={flags[key] ?? 'inherit'}
-                disabled={busy}
-                onChange={(e) =>
-                  setFlag(key, e.target.value === 'inherit' ? undefined : (e.target.value as EngineFlags[typeof key]))
-                }
-                className={selectClass}
-              >
-                <option value="inherit">
-                  Default ({options.find((o) => o.value === (global[key] ?? fallback))?.label.toLowerCase()})
-                </option>
-                {options.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
+          {CHOICE_FLAGS.map(({ key, label, hint, wallpaperNote, fallback, options }) => (
+            <div key={key}>
+              <label className="flex items-center justify-between gap-2 text-xs text-gray-300" title={t(hint)}>
+                <span>{t(label)}</span>
+                <select
+                  value={flags[key] ?? 'inherit'}
+                  disabled={busy}
+                  onChange={(e) =>
+                    setFlag(key, e.target.value === 'inherit' ? undefined : (e.target.value as EngineFlags[typeof key]))
+                  }
+                  className={selectClass}
+                >
+                  <option value="inherit">
+                    {t('common.defaultValue', {
+                      value: optionLabel(options.find((o) => o.value === (global[key] ?? fallback))?.label ?? '')
+                    })}
                   </option>
-                ))}
-              </select>
-            </label>
+                  {options.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {optionLabel(o.label)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {wallpaperNote && flags[key] !== undefined && flags[key] !== fallback && (
+                <p className="mt-1 flex gap-1.5 text-[11px] leading-snug text-amber-300">
+                  <TriangleAlert size={12} className="mt-px shrink-0" />
+                  {t(wallpaperNote)}
+                </p>
+              )}
+            </div>
           ))}
 
           <label className="flex flex-col gap-1 text-xs text-gray-300">
-            <span>Fullscreen apps</span>
+            <span>{t('perf.fullscreenApps')}</span>
             <select
               value={flags.fullscreenPause ?? 'inherit'}
               disabled={busy}
@@ -143,11 +153,13 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
               className={selectClass}
             >
               <option value="inherit">
-                Default ({FULLSCREEN_PAUSE_OPTIONS.find((o) => o.value === (global.fullscreenPause ?? 'default'))?.label})
+                {t('common.defaultValue', {
+                  value: t(FULLSCREEN_PAUSE_OPTIONS.find((o) => o.value === (global.fullscreenPause ?? 'default'))!.label)
+                })}
               </option>
               {FULLSCREEN_PAUSE_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
-                  {o.label}
+                  {t(o.label)}
                 </option>
               ))}
             </select>

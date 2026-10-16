@@ -17,7 +17,7 @@ export function useLweInstalled(): boolean {
   return data?.installed ?? false
 }
 
-// The whole library, unfiltered. Shares the ['library'] prefix so every library invalidation refreshes it.
+// ['library'] prefix so every library invalidation reaches it
 export function useAllWallpapers() {
   const { data = [] } = useQuery({
     queryKey: ['library'],
@@ -63,7 +63,6 @@ export function useFolders() {
     queryFn: () => window.electronAPI.folders.getAll()
   })
 
-  // each wallpaper lives in at most one folder
   const folderOfItem = useMemo(() => {
     const map = new Map<string, string>()
     for (const f of folders) {
@@ -98,4 +97,15 @@ export function useFolders() {
   }
 
   return { folders, foldersLoaded, folderOfItem, refetchFolders, moveToFolder, removeFromFolders, menuState }
+}
+
+export const UPDATE_STATUS_KEY = ['update-status']
+
+// pushed by main after every check (App.tsx), fetched once on mount
+export function useUpdateStatus() {
+  return useQuery({
+    queryKey: UPDATE_STATUS_KEY,
+    queryFn: () => window.electronAPI.updates.status(),
+    staleTime: Infinity
+  }).data
 }
