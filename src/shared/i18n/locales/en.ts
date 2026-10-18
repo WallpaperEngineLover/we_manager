@@ -569,6 +569,8 @@ export const en = {
   'perf.backgroundLayer': 'Use the background layer',
   'perf.backgroundLayerHint': 'Draws the wallpaper in the compositor\'s background layer instead of the bottom one. Some compositors (niri) need it.',
   'perf.backgroundLayerKde': 'Older versions always did this on KDE. It is the layer of Plasma\'s own desktop, and whichever of the two shows up last is drawn on top. At login Plasma\'s desktop often starts after the wallpaper and hides it, so leave this off unless the default layer causes problems for you, e.g. with "keep below others" windows.',
+  'perf.windowed': 'Run in a window',
+  'perf.windowedHint': 'For X11 desktops where the root-window wallpaper stays black (some Cinnamon setups). The engine opens a window with the size of the screen instead, below all other windows and desktop icons, on every workspace and off the taskbar. Only one window, on the first screen.',
   'perf.clickForwarding': 'Click forwarding',
   'perf.clickForwardingHint': 'Lets a desktop shell or compositor binding pass the left mouse button on when something covers the wallpaper: it writes {json} to the file of the screen while the button is held, and the engine ignores the file once it is older than 2 seconds.',
   'perf.deletePreset': 'Delete preset',

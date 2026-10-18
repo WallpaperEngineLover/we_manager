@@ -571,6 +571,8 @@ export const pt: Messages = {
   'perf.backgroundLayer': 'Usar a camada de fundo',
   'perf.backgroundLayerHint': 'Desenha o papel de parede na camada background do compositor em vez da camada bottom. Alguns compositores (niri) precisam disso.',
   'perf.backgroundLayerKde': 'Versões antigas sempre faziam isso no KDE. É a camada da própria área de trabalho do Plasma, e a que aparecer por último fica por cima. No login a área de trabalho do Plasma muitas vezes inicia depois do papel de parede e o esconde, então deixe desligado a menos que a camada padrão cause problemas, ex.: com janelas "manter abaixo das outras".',
+  'perf.windowed': 'Executar em uma janela',
+  'perf.windowedHint': 'Para desktops X11 em que o papel de parede na janela raiz continua preto (algumas configurações do Cinnamon). O motor abre no lugar uma janela do tamanho da tela, abaixo de todas as outras janelas e dos ícones da área de trabalho, em todas as áreas de trabalho e fora da barra de tarefas. Apenas uma janela, na primeira tela.',
   'perf.clickForwarding': 'Encaminhamento de cliques',
   'perf.clickForwardingHint': 'Permite que um shell de desktop ou um atalho do compositor repasse o botão esquerdo do mouse quando algo cobre o papel de parede: ele escreve {json} no arquivo da tela enquanto o botão está pressionado, e o motor ignora o arquivo quando ele tem mais de 2 segundos.',
   'perf.deletePreset': 'Excluir predefinição',

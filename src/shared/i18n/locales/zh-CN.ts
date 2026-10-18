@@ -539,6 +539,8 @@ export const zhCN: Messages = {
   'perf.backgroundLayer': '使用背景层',
   'perf.backgroundLayerHint': '把壁纸画在合成器的 background 层而不是 bottom 层。部分合成器 (niri) 需要这样。',
   'perf.backgroundLayerKde': '旧版本在 KDE 上总是这样做。这是 Plasma 自己桌面所在的层，两者中后出现的会画在上面。登录时 Plasma 桌面经常比壁纸晚启动并把它遮住，所以除非默认层给你带来问题 (例如"保持在其他窗口下方"的窗口)，请保持关闭。',
+  'perf.windowed': '在窗口中运行',
+  'perf.windowedHint': '适用于根窗口壁纸一直是黑色的 X11 桌面 (部分 Cinnamon 环境)。引擎会改为打开一个与屏幕等大的窗口, 位于所有其他窗口和桌面图标下方, 显示在所有工作区, 不出现在任务栏。只有一个窗口, 位于第一块屏幕。',
   'perf.clickForwarding': '点击转发',
   'perf.clickForwardingHint': '当有东西遮住壁纸时，让桌面 shell 或合成器绑定把鼠标左键传给壁纸: 按住按钮期间向该屏幕的文件写入 {json}，文件超过 2 秒后引擎会忽略它。',
   'perf.deletePreset': '删除预设',

@@ -204,6 +204,8 @@ export interface EngineFlags {
   batteryFps?: BatteryFps
   /** --idle-pause */
   idlePause?: IdlePause
+  /** --window sized like the first screen instead of --screen-root, global only */
+  windowed?: boolean
   /** --layer background; key kept for stored configs */
   kdeBackgroundLayer?: boolean
 }

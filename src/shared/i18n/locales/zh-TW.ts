@@ -539,6 +539,8 @@ export const zhTW: Messages = {
   'perf.backgroundLayer': '使用背景圖層',
   'perf.backgroundLayerHint': '把桌布畫在合成器的 background 圖層而不是 bottom 圖層。部分合成器 (niri) 需要這樣。',
   'perf.backgroundLayerKde': '舊版在 KDE 上一律這麼做。這是 Plasma 自己桌面所在的圖層，兩者中較晚出現的會畫在上面。登入時 Plasma 桌面經常比桌布晚啟動而把它蓋住，所以除非預設圖層造成問題 (例如「保持在其他視窗下方」的視窗)，請保持關閉。',
+  'perf.windowed': '在視窗中執行',
+  'perf.windowedHint': '適用於根視窗桌布一直是黑色的 X11 桌面 (部分 Cinnamon 環境)。引擎會改為開啟一個與螢幕等大的視窗, 位於所有其他視窗和桌面圖示下方, 顯示在所有工作區, 不出現在工作列。只有一個視窗, 位於第一個螢幕。',
   'perf.clickForwarding': '點擊轉送',
   'perf.clickForwardingHint': '當有東西蓋住桌布時，讓桌面 shell 或合成器繫結把滑鼠左鍵傳給桌布: 按住按鈕期間會向該螢幕的檔案寫入 {json}，檔案超過 2 秒後引擎會忽略它。',
   'perf.deletePreset': '刪除預設組合',

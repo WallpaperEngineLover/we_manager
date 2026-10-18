@@ -28,6 +28,7 @@ import {
   invalidateCommandCache,
   whichCommand,
   getConnectedScreens,
+  getScreenGeometry,
   getWaylandDisplay,
   getXdgRuntimeDir,
   isWaylandSession
@@ -904,6 +905,12 @@ export interface LweLaunchOptions {
   forceFresh?: boolean
 }
 
+const FALLBACK_WINDOW = '0x0x1920x1080'
+
+function windowedGeometry(screen?: ScreenTarget): string {
+  return getScreenGeometry(screen && screen !== ALL_SCREENS ? screen : undefined) ?? FALLBACK_WINDOW
+}
+
 export function buildLweArgs(
   wallpaperPath: string,
   options: LweLaunchOptions,
@@ -916,8 +923,11 @@ export function buildLweArgs(
   // before any --screen-root, so they apply to every screen
   if (supportsFlag('--image-filter')) args.push(...imageAdjustmentArgs(options.imageAdjustments))
 
-  if (capture) {
-    args.push('--window', capture.window)
+  const windowGeometry = capture ? capture.window : options.engineFlags?.windowed ? windowedGeometry(options.screen) : null
+  if (windowGeometry) {
+    args.push('--window', windowGeometry)
+    // without it the engine's window is a normal one on top of everything
+    if (!capture && supportsFlag('--window-background')) args.push('--window-background')
   } else if (options.split && options.screen && options.screen !== ALL_SCREENS) {
     // every option after a --screen-slot belongs to that slot
     for (const slot of options.split.slots) {

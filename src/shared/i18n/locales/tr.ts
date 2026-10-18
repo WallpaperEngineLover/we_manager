@@ -571,6 +571,8 @@ export const tr: Messages = {
   'perf.backgroundLayer': 'Arka plan katmanını kullan',
   'perf.backgroundLayerHint': 'Duvar kağıdını birleştiricinin bottom katmanı yerine background katmanına çizer. Bazı birleştiriciler (niri) buna ihtiyaç duyar.',
   'perf.backgroundLayerKde': 'Eski sürümler KDE\'de bunu hep yapıyordu. Bu, Plasma\'nın kendi masaüstünün katmanıdır ve ikisinden hangisi son görünürse üstte çizilir. Oturum açarken Plasma masaüstü çoğu zaman duvar kağıdından sonra başlar ve onu gizler, bu yüzden varsayılan katman size sorun çıkarmadıkça (ör. "diğerlerinin altında tut" pencereleriyle) bunu kapalı bırakın.',
+  'perf.windowed': 'Pencerede çalıştır',
+  'perf.windowedHint': 'Kök penceredeki duvar kağıdının siyah kaldığı X11 masaüstleri için (bazı Cinnamon kurulumları). Motor bunun yerine ekran boyutunda bir pencere açar; pencere tüm diğer pencerelerin ve masaüstü simgelerinin altında, her çalışma alanında ve görev çubuğunun dışındadır. Yalnızca tek pencere, ilk ekranda.',
   'perf.clickForwarding': 'Tıklama iletme',
   'perf.clickForwardingHint': 'Duvar kağıdının üstünde bir şey olduğunda bir masaüstü kabuğunun veya birleştirici kısayolunun sol fare düğmesini iletmesini sağlar: düğme basılıyken ekranın dosyasına {json} yazar ve motor dosya 2 saniyeden eskiyse onu yok sayar.',
   'perf.deletePreset': 'Ön ayarı sil',

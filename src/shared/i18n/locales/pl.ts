@@ -635,6 +635,8 @@ export const pl: Messages = {
   'perf.backgroundLayer': 'Używaj warstwy tła',
   'perf.backgroundLayerHint': 'Rysuje tapetę w warstwie background kompozytora zamiast w warstwie bottom. Niektóre kompozytory (niri) tego wymagają.',
   'perf.backgroundLayerKde': 'Starsze wersje zawsze tak robiły w KDE. To warstwa pulpitu Plasmy, a to, co pojawi się później, jest rysowane na wierzchu. Przy logowaniu pulpit Plasmy często startuje po tapecie i ją zasłania, więc zostaw to wyłączone, chyba że domyślna warstwa sprawia problemy, np. z oknami "zawsze pod spodem".',
+  'perf.windowed': 'Uruchom w oknie',
+  'perf.windowedHint': 'Dla pulpitów X11, na których tapeta w oknie głównym pozostaje czarna (niektóre konfiguracje Cinnamon). Silnik otwiera zamiast tego okno o rozmiarze ekranu, pod wszystkimi innymi oknami i ikonami pulpitu, na każdym obszarze roboczym i poza paskiem zadań. Tylko jedno okno, na pierwszym ekranie.',
   'perf.clickForwarding': 'Przekazywanie kliknięć',
   'perf.clickForwardingHint': 'Pozwala powłoce pulpitu lub skrótowi kompozytora przekazać lewy przycisk myszy, gdy coś zasłania tapetę: zapisuje {json} do pliku ekranu, dopóki przycisk jest wciśnięty, a silnik ignoruje plik, gdy jest starszy niż 2 sekundy.',
   'perf.deletePreset': 'Usuń ustawienie wstępne',

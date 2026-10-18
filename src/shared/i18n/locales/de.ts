@@ -571,6 +571,8 @@ export const de: Messages = {
   'perf.backgroundLayer': 'Hintergrundebene verwenden',
   'perf.backgroundLayerHint': 'Zeichnet den Hintergrund in der Background-Ebene des Compositors statt in der Bottom-Ebene. Manche Compositoren (niri) brauchen das.',
   'perf.backgroundLayerKde': 'Ältere Versionen haben das unter KDE immer gemacht. Es ist die Ebene von Plasmas eigenem Desktop, und was von beiden zuletzt erscheint, liegt oben. Bei der Anmeldung startet Plasmas Desktop oft nach dem Hintergrund und verdeckt ihn, lass das also aus, solange die Standardebene keine Probleme macht, z. B. mit "Immer im Hintergrund"-Fenstern.',
+  'perf.windowed': 'In einem Fenster ausführen',
+  'perf.windowedHint': 'Für X11-Desktops, auf denen das Root-Window-Hintergrundbild schwarz bleibt (manche Cinnamon-Setups). Die Engine öffnet stattdessen ein Fenster in Bildschirmgröße, unter allen anderen Fenstern und Desktop-Symbolen, auf jeder Arbeitsfläche und nicht in der Taskleiste. Nur ein Fenster, auf dem ersten Bildschirm.',
   'perf.clickForwarding': 'Klickweiterleitung',
   'perf.clickForwardingHint': 'Lässt eine Desktop-Shell oder eine Compositor-Tastenbelegung die linke Maustaste weitergeben, wenn etwas den Hintergrund verdeckt: Sie schreibt {json} in die Datei des Bildschirms, solange die Taste gedrückt ist, und die Engine ignoriert die Datei, sobald sie älter als 2 Sekunden ist.',
   'perf.deletePreset': 'Voreinstellung löschen',

@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }))
+vi.mock('../utils/platform', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utils/platform')>()),
+  getScreenGeometry: () => '1920x0x2560x1440',
+  getConnectedScreens: () => ['DP-1']
+}))
 vi.mock('./config.service', () => ({
   getConfiguredWorkshopPath: () => null,
   getLweRepoUrl: () => null,
@@ -38,6 +43,14 @@ describe('parseCustomArgs', () => {
 })
 
 describe('buildLweArgs', () => {
+  it('opens a window the size of the screen in windowed mode', () => {
+    const args = buildLweArgs('/w/a', { screen: 'DP-1', engineFlags: { windowed: true } })
+    expect(args).toContain('--window')
+    expect(args[args.indexOf('--window') + 1]).toBe('1920x0x2560x1440')
+    expect(args).not.toContain('--screen-root')
+    expect(buildLweArgs('/w/a', { screen: 'DP-1' })).toContain('--screen-root')
+  })
+
   it('gives every slot of a split screen its own settings', () => {
     const args = buildLweArgs('/w/a', {
       screen: 'DP-1',

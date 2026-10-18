@@ -8,7 +8,8 @@ import { startWatcher } from './services/watcher.service'
 import { checkOutdatedBackups, recoverInterruptedCopiesIn } from './services/backup.service'
 import { registerAllHandlers } from './ipc'
 import { initDesktopIcons, cleanupDesktopIcons } from './services/desktop-icons.service'
-import { getTrayEnabled, getAutostartPlaylistId, getKillLweOnQuit, getConfiguredBackupPath } from './services/config.service'
+import { getTrayEnabled, getAutostartEnabled, getAutostartMinimized, getAutostartPlaylistId, getKillLweOnQuit, getConfiguredBackupPath } from './services/config.service'
+import { refreshAutostartExec } from './services/autostart.service'
 import { createTray } from './services/tray.service'
 import { initPlaylistPlayer, startPlaylist } from './services/playlist-player.service'
 import { checkEarlierRunEngines, killAllLweProcesses, getLweStatus } from './services/lwe.service'
@@ -225,6 +226,8 @@ app.whenReady().then(async () => {
   const resumed = initPlaylistPlayer(win)
 
   if (getTrayEnabled()) createTray(win)
+
+  if (getAutostartEnabled()) refreshAutostartExec(getAutostartMinimized())
 
   const autostartPlaylistId = getAutostartPlaylistId()
   if (!resumed && autostartPlaylistId && getLweStatus().installed) {

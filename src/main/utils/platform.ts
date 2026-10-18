@@ -153,6 +153,27 @@ export function getConnectedScreens(): string[] {
   return []
 }
 
+/** `NAME connected [primary] WxH+X+Y` lines of xrandr, as the engine's XxYxWxH */
+export function parseXrandrGeometries(output: string): Map<string, string> {
+  const geometries = new Map<string, string>()
+  for (const line of output.split('\n')) {
+    const m = line.match(/^(\S+) connected (?:primary )?(\d+)x(\d+)\+(\d+)\+(\d+)/)
+    if (m) geometries.set(m[1], `${m[4]}x${m[5]}x${m[2]}x${m[3]}`)
+  }
+  return geometries
+}
+
+/** Geometry of the named screen, else of the first one */
+export function getScreenGeometry(screen?: string): string | null {
+  try {
+    const output = execSync(hostShell('xrandr --query 2>/dev/null'), { encoding: 'utf8', timeout: 5000 })
+    const geometries = parseXrandrGeometries(output)
+    return (screen && geometries.get(screen)) || geometries.values().next().value || null
+  } catch {
+    return null
+  }
+}
+
 /** Answer of a NameHasOwner call, from busctl (`b true`) or gdbus (`(true,)`), null when it is neither */
 export function parseNameHasOwner(output: string): boolean | null {
   const m = output.trim().match(/^(?:b\s+|\(\s*)(true|false)\b/)

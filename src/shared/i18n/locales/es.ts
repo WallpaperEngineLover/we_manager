@@ -571,6 +571,8 @@ export const es: Messages = {
   'perf.backgroundLayer': 'Usar la capa de fondo',
   'perf.backgroundLayerHint': 'Dibuja el fondo en la capa background del compositor en lugar de la capa bottom. Algunos compositores (niri) lo necesitan.',
   'perf.backgroundLayerKde': 'Las versiones anteriores siempre lo hacían en KDE. Es la capa del propio escritorio de Plasma, y el que aparezca último de los dos se dibuja encima. Al iniciar sesión el escritorio de Plasma suele arrancar después del fondo y lo tapa, así que déjalo desactivado salvo que la capa predeterminada te dé problemas, p. ej. con ventanas "mantener por debajo".',
+  'perf.windowed': 'Ejecutar en una ventana',
+  'perf.windowedHint': 'Para escritorios X11 donde el fondo en la ventana raíz se queda negro (algunas configuraciones de Cinnamon). El motor abre en su lugar una ventana del tamaño de la pantalla, debajo de todas las demás ventanas y de los iconos del escritorio, en todos los espacios de trabajo y fuera de la barra de tareas. Solo una ventana, en la primera pantalla.',
   'perf.clickForwarding': 'Reenvío de clics',
   'perf.clickForwardingHint': 'Permite que un shell de escritorio o un atajo del compositor pase el botón izquierdo del ratón cuando algo tapa el fondo: escribe {json} en el archivo de la pantalla mientras se mantiene pulsado el botón, y el motor ignora el archivo cuando tiene más de 2 segundos.',
   'perf.deletePreset': 'Eliminar preajuste',

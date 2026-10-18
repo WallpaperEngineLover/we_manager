@@ -539,6 +539,8 @@ export const ko: Messages = {
   'perf.backgroundLayer': '배경 레이어 사용',
   'perf.backgroundLayerHint': '배경화면을 컴포지터의 bottom 레이어 대신 background 레이어에 그립니다. 일부 컴포지터(niri)에는 이것이 필요합니다.',
   'perf.backgroundLayerKde': '예전 버전은 KDE에서 항상 이렇게 했습니다. Plasma 자체 바탕 화면의 레이어이며, 둘 중 나중에 나타난 쪽이 위에 그려집니다. 로그인할 때 Plasma 바탕 화면이 배경화면보다 늦게 시작되어 가리는 경우가 많으므로, 기본 레이어가 문제를 일으키지 않는 한(예: "다른 창 아래에 유지" 창) 끄세요.',
+  'perf.windowed': '창으로 실행',
+  'perf.windowedHint': '루트 윈도우의 배경화면이 검게 나오는 X11 데스크톱용입니다 (일부 Cinnamon 환경). 엔진이 대신 화면 크기의 창을 열며, 이 창은 다른 모든 창과 바탕화면 아이콘 아래, 모든 작업 공간에 있고 작업 표시줄에는 나타나지 않습니다. 창은 하나만, 첫 번째 화면에 열립니다.',
   'perf.clickForwarding': '클릭 전달',
   'perf.clickForwardingHint': '무언가가 배경화면을 가릴 때 데스크톱 셸이나 컴포지터 바인딩이 마우스 왼쪽 버튼을 전달할 수 있게 합니다: 버튼을 누르고 있는 동안 해당 화면의 파일에 {json}을(를) 쓰며, 엔진은 2초보다 오래된 파일을 무시합니다.',
   'perf.deletePreset': '프리셋 삭제',

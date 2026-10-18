@@ -33,6 +33,10 @@ function execWord(word: string): string {
   return quoted.replace(/%/g, '%%')
 }
 
+function execLineFor(minimized: boolean): string {
+  return [...launchCommand(), ...(minimized ? ['--minimized'] : [])].map(execWord).join(' ')
+}
+
 export function setAutostartEnabled(enabled: boolean, minimized: boolean): void {
   if (!isAutostartSupported()) return
 
@@ -46,7 +50,7 @@ export function setAutostartEnabled(enabled: boolean, minimized: boolean): void 
 
   fs.mkdirSync(dir, { recursive: true })
 
-  const execLine = [...launchCommand(), ...(minimized ? ['--minimized'] : [])].map(execWord).join(' ')
+  const execLine = execLineFor(minimized)
 
   const contents = [
     '[Desktop Entry]',
@@ -70,4 +74,16 @@ export function getCompositorAutostartLine(): string | null {
 
 export function isAutostartFileEnabled(): boolean {
   return fs.existsSync(getAutostartDesktopPath())
+}
+
+/** Rewrites the entry when the app moved since autostart was saved */
+export function refreshAutostartExec(minimized: boolean): void {
+  if (!isAutostartSupported()) return
+  try {
+    const contents = fs.readFileSync(getAutostartDesktopPath(), 'utf8')
+    const current = /^Exec=(.*)$/m.exec(contents)?.[1]
+    if (current !== execLineFor(minimized)) setAutostartEnabled(true, minimized)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') console.error('[Autostart] Failed to refresh entry:', err)
+  }
 }

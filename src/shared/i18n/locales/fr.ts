@@ -571,6 +571,8 @@ export const fr: Messages = {
   'perf.backgroundLayer': 'Utiliser la couche d\'arrière-plan',
   'perf.backgroundLayerHint': 'Dessine le fond d\'écran dans la couche background du compositeur au lieu de la couche bottom. Certains compositeurs (niri) en ont besoin.',
   'perf.backgroundLayerKde': 'Les anciennes versions le faisaient toujours sous KDE. C\'est la couche du bureau de Plasma lui-même, et celui des deux qui apparaît en dernier est dessiné par-dessus. À la connexion, le bureau de Plasma démarre souvent après le fond d\'écran et le cache, alors laissez ceci désactivé sauf si la couche par défaut vous pose problème, p. ex. avec les fenêtres "garder en dessous des autres".',
+  'perf.windowed': 'Exécuter dans une fenêtre',
+  'perf.windowedHint': 'Pour les bureaux X11 où le fond d\'écran sur la fenêtre racine reste noir (certaines configurations de Cinnamon). Le moteur ouvre à la place une fenêtre à la taille de l\'écran, sous toutes les autres fenêtres et les icônes du bureau, sur tous les espaces de travail et hors de la barre des tâches. Une seule fenêtre, sur le premier écran.',
   'perf.clickForwarding': 'Transfert des clics',
   'perf.clickForwardingHint': 'Permet à un shell de bureau ou à un raccourci du compositeur de transmettre le bouton gauche de la souris quand quelque chose recouvre le fond d\'écran : il écrit {json} dans le fichier de l\'écran tant que le bouton est maintenu, et le moteur ignore le fichier dès qu\'il a plus de 2 secondes.',
   'perf.deletePreset': 'Supprimer le préréglage',

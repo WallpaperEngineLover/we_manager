@@ -11,7 +11,8 @@ const {
   parseHyprctlMonitors,
   parseNameHasOwner,
   parseNiriOutputs,
-  parseSwayOutputs
+  parseSwayOutputs,
+  parseXrandrGeometries
 } = await import('./platform')
 
 function answerCommands(answers: Record<string, string>): void {
@@ -185,5 +186,21 @@ describe.skipIf(process.platform !== 'linux')('hasStatusNotifierHost', () => {
     answerCommands({ busctl: 'b true\n' })
     expect(hasStatusNotifierHost()).toBe(false)
     expect(hasStatusNotifierHost(0)).toBe(true)
+  })
+})
+
+describe('parseXrandrGeometries', () => {
+  it('reads connected outputs as XxYxWxH', () => {
+    const out = [
+      'Screen 0: minimum 320 x 200, current 4480 x 1440, maximum 16384 x 16384',
+      'DP-1 connected primary 2560x1440+1920+0 (normal left inverted right x axis y axis) 600mm x 340mm',
+      'HDMI-1 connected 1920x1080+0+0 (normal left inverted right) 510mm x 290mm',
+      'HDMI-2 disconnected (normal left inverted right x axis y axis)',
+      'DP-2 connected (normal left inverted right x axis y axis)'
+    ].join('\n')
+    expect([...parseXrandrGeometries(out)]).toEqual([
+      ['DP-1', '1920x0x2560x1440'],
+      ['HDMI-1', '0x0x1920x1080']
+    ])
   })
 })

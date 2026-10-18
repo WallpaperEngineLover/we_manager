@@ -571,6 +571,8 @@ export const it: Messages = {
   'perf.backgroundLayer': 'Usa il livello di sfondo',
   'perf.backgroundLayerHint': 'Disegna lo sfondo nel livello background del compositor invece che in quello bottom. Alcuni compositor (niri) ne hanno bisogno.',
   'perf.backgroundLayerKde': 'Le versioni precedenti lo facevano sempre su KDE. È il livello del desktop di Plasma stesso, e quello dei due che compare per ultimo viene disegnato sopra. All\'accesso il desktop di Plasma spesso parte dopo lo sfondo e lo copre, quindi lascialo disattivato a meno che il livello predefinito non ti dia problemi, ad es. con le finestre "mantieni sotto le altre".',
+  'perf.windowed': 'Esegui in una finestra',
+  'perf.windowedHint': 'Per i desktop X11 in cui lo sfondo sulla finestra radice resta nero (alcune configurazioni di Cinnamon). Il motore apre invece una finestra grande quanto lo schermo, sotto tutte le altre finestre e le icone del desktop, su ogni area di lavoro e fuori dalla barra delle applicazioni. Una sola finestra, sul primo schermo.',
   'perf.clickForwarding': 'Inoltro dei clic',
   'perf.clickForwardingHint': 'Permette a una shell desktop o a una scorciatoia del compositor di inoltrare il tasto sinistro del mouse quando qualcosa copre lo sfondo: scrive {json} nel file dello schermo mentre il tasto è premuto, e il motore ignora il file quando ha più di 2 secondi.',
   'perf.deletePreset': 'Elimina preset',
