@@ -11,7 +11,6 @@ import { workshopCall, getSubscribedItems } from './steam.service'
 type SteamWorkshopItem = workshop.WorkshopItem
 type WorkshopPage = workshop.WorkshopPaginatedResult
 
-// Maps our string names to steamworks.js UGCQueryType enum values
 const QUERY_TYPE_MAP: Record<string, number> = {
   RankedByVote: 0,
   RankedByPublicationDate: 1,
@@ -21,9 +20,6 @@ const QUERY_TYPE_MAP: Record<string, number> = {
   RankedByLastUpdatedDate: 19
 }
 
-// Maps our string names to steamworks.js UserListOrder enum values, used for
-// UserUGCList queries (querying a specific creator) which don't support the
-// UGCQueryType ranking options above.
 const USER_LIST_ORDER_MAP: Record<string, number> = {
   RankedByVote: 5, // VoteScoreDesc
   RankedByPublicationDate: 1, // CreationOrderDesc
@@ -58,9 +54,7 @@ export async function getWorkshopItem(publishedFileId: string): Promise<Workshop
       includeLongDescription: true
     })
   } catch {
-    // Steam's UGC details lookup throws a generic failure for an id it can no longer resolve
-    // (taken down, banned) rather than returning null the way a batch getItems() call does -
-    // treat it the same way: "we can't tell you about this item" rather than a hard error.
+    // an id Steam can no longer resolve (taken down, banned) throws here instead of returning null like getItems()
     return null
   }
   if (!item) return null
@@ -71,8 +65,6 @@ export async function getWorkshopItem(publishedFileId: string): Promise<Workshop
   return transformed
 }
 
-// UserUGCList lets us query another Steam user's published items directly,
-// unlike getAllItems which only ranks/filters across the whole workshop.
 export async function queryWorkshopByCreator(
   creatorSteamId: string,
   params: CreatorWorkshopQueryParams = {}
@@ -127,11 +119,14 @@ async function getItemsBatched(publishedFileIds: string[]) {
   return items
 }
 
+export async function isWallpaperEngineItem(publishedFileId: string): Promise<boolean> {
+  const [item] = await getItemsBatched([publishedFileId])
+  return !!item && (item.consumerAppId === undefined || item.consumerAppId === WE_APP_ID)
+}
+
 export interface WorkshopDetails {
   timeUpdated: number
-  // Steam tags an item's type ("Video", "Scene", ...) and age rating ("Everyone", ...)
-  // alongside its genre/resolution tags, so this works even for items that never
-  // finished downloading and have no local project.json to read that from.
+  // includes type and age rating, so items without a local project.json can still be classified
   tags: string[]
   authorSteamId: string
 }
@@ -152,23 +147,16 @@ export async function getWorkshopDetails(publishedFileIds: string[]): Promise<Ma
   return map
 }
 
-// Steam returns a null entry for any id that no longer resolves to a workshop
-// item (removed by its author or taken down), so anything missing from the
-// result is treated as unavailable. Lets a request error (network hiccup)
-// propagate rather than swallowing it here - the caller decides what "we
-// couldn't tell" should mean, instead of this silently reporting "all clear".
+// ids missing from the result are unavailable; a request error propagates so the caller doesn't read it as "all clear"
 export async function getUnavailableWorkshopItems(publishedFileIds: string[]): Promise<Set<string>> {
   const details = await getWorkshopDetails(publishedFileIds)
   return new Set(publishedFileIds.filter((id) => !details.has(id)))
 }
 
-// steamworks.js's UGC query bindings don't surface a file's size (the underlying Steamworks SDK
-// struct has it, the napi wrapper just doesn't map that field). Steam's own public web API does,
-// unauthenticated, for any published file regardless of subscription state - this is the exact
-// "File Size" figure shown on the item's Steam Workshop page. Cached per id for the process
-// lifetime since it barely ever changes.
+// steamworks.js doesn't map the file size field; Steam's public web API has the figure shown on the Workshop page
 const fileSizeCache = new Map<string, number>()
 const FILE_SIZE_BATCH = 100
+const FILE_SIZE_TIMEOUT_MS = 15_000
 
 async function fetchFileSizesBatch(ids: string[]): Promise<void> {
   if (ids.length === 0) return
@@ -177,7 +165,8 @@ async function fetchFileSizesBatch(ids: string[]): Promise<void> {
 
   const res = await fetch('https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/', {
     method: 'POST',
-    body
+    body,
+    signal: AbortSignal.timeout(FILE_SIZE_TIMEOUT_MS)
   })
   const data = await res.json()
   const details = data?.response?.publishedfiledetails ?? []

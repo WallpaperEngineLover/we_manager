@@ -70,6 +70,18 @@ describe('buildHotswapLines', () => {
     expect(buildHotswapLines({})).toEqual([])
   })
 
+  it('leaves out a line whose value would split into two requests', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const lines = buildHotswapLines({
+      propertyOverrides: { title: 'a\npath=/etc/passwd', fine: 'ok', 'bad\rkey': '1' },
+      path: '/wallpapers/1\n/wallpapers/2',
+      volume: 30
+    })
+    expect(lines).toEqual(['volume=30', 'property=fine=ok'])
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
   it('sends the video parts and seeks after setting them', () => {
     expect(
       buildHotswapLines({

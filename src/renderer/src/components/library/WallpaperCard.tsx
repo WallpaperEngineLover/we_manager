@@ -66,11 +66,8 @@ export default function WallpaperCard({
   const [downloadPercentage, setDownloadPercentage] = useState<number | null>(null)
 
   useEffect(() => {
-    if (!wallpaper.downloading) {
-      setDownloadPercentage(null)
-      return
-    }
-    return window.electronAPI.on.downloadProgress((progress) => {
+    if (!wallpaper.downloading) return
+    const off = window.electronAPI.on.downloadProgress((progress) => {
       if (progress.itemId !== wallpaper.id) return
       if (progress.status === 'downloading') {
         setDownloadPercentage(progress.percentage)
@@ -80,6 +77,10 @@ export default function WallpaperCard({
         queryClient.invalidateQueries({ queryKey: ['library'] })
       }
     })
+    return () => {
+      off()
+      setDownloadPercentage(null)
+    }
   }, [wallpaper.downloading, wallpaper.id, queryClient])
 
   function refreshLibrary() {

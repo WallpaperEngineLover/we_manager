@@ -458,13 +458,10 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
         })
       : null
   const [lingeringProgress, setLingeringProgress] = useState<string | null>(null)
+  if (liveProgress && liveProgress !== lingeringProgress) setLingeringProgress(liveProgress)
 
   useEffect(() => {
-    if (liveProgress) {
-      setLingeringProgress(liveProgress)
-      return
-    }
-    if (backupTaskRunning) return
+    if (liveProgress || backupTaskRunning) return
     const timer = setTimeout(() => setLingeringProgress(null), 1500)
     return () => clearTimeout(timer)
   }, [liveProgress, backupTaskRunning])
@@ -605,9 +602,11 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     setFolderMenu({ folder, x: e.clientX, y: e.clientY })
   }
 
-  useEffect(() => {
+  const [selectionFolder, setSelectionFolder] = useState(activeFolder)
+  if (selectionFolder !== activeFolder) {
+    setSelectionFolder(activeFolder)
     clearSelection()
-  }, [activeFolder, clearSelection])
+  }
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {

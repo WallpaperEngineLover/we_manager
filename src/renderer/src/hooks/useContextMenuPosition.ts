@@ -5,10 +5,6 @@ export interface Point {
   y: number
 }
 
-// Right-click menus anchor at the cursor, which is often close to a window
-// edge - without clamping, the menu overflows the window and its text gets
-// cut off instead of staying fully visible. Measures the menu after it
-// mounts and nudges it back inside the viewport if needed.
 export function useClampedPosition(
   ref: RefObject<HTMLElement | null>,
   point: Point | null | undefined,
@@ -38,8 +34,6 @@ export function useClampedPosition(
   return point
 }
 
-// For a submenu that normally opens to the right of its parent (left-full):
-// flips it to open to the left instead when it would run off the right edge.
 export function useFlipSide(ref: RefObject<HTMLElement | null>, active: boolean, padding = 8): 'left' | 'right' {
   const [side, setSide] = useState<'left' | 'right'>('right')
 

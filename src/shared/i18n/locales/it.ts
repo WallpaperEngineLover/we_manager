@@ -223,6 +223,8 @@ export const it: Messages = {
   'dialog.pickShortcutFolder': 'Scegli una cartella da aprire',
   'dialog.pickThumbnail': 'Scegli una miniatura',
   'dialog.pickWorkshopFolder': 'Seleziona la cartella Workshop di Wallpaper Engine',
+  'dialog.storeReset': 'Non è stato possibile leggere {name}, quindi l\'app è partita con i valori predefiniti per questo file. Il file danneggiato è stato conservato come {keptAs}.',
+  'dialog.storeResetTitle': 'Un file delle impostazioni è stato reimpostato',
 
   'display.description': 'Con "Ogni schermo per conto suo", ogni schermo ha il proprio sfondo e la propria playlist, e Riproduci chiede quale schermo usare. Cambiare ferma ciò che è in riproduzione.',
   'display.detected': 'Rilevati: {screens}',

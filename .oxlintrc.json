@@ -13,7 +13,8 @@
     "react/react-in-jsx-scope": "off",
     "unicorn/no-array-sort": "off",
     "no-unused-vars": "warn",
-    "no-control-regex": "off"
+    "no-control-regex": "off",
+    "unicorn/require-post-message-target-origin": "off"
   },
   "ignorePatterns": ["out/**", "dist/**", "node_modules/**", "patches/**"]
 }

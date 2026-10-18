@@ -54,7 +54,6 @@ async function backupOne(id: string, win: BrowserWindow): Promise<BackupItemResu
         try {
           await fs.promises.rm(sourcePath, { recursive: true, force: true })
         } catch {
-          /* ignore */
         }
       }
       unsubscribed = true

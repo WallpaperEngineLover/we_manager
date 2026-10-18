@@ -209,6 +209,8 @@ export const zhTW: Messages = {
   'dialog.pickShortcutFolder': '選擇要開啟的資料夾',
   'dialog.pickThumbnail': '選擇縮圖',
   'dialog.pickWorkshopFolder': '選取 Wallpaper Engine 工作坊資料夾',
+  'dialog.storeReset': '無法讀取 {name}，應用程式已對此檔案使用預設值啟動。損毀的檔案已另存為 {keptAs}。',
+  'dialog.storeResetTitle': '設定檔已重設',
 
   'display.description': '選擇「每個螢幕各自獨立」後，每個螢幕有自己的桌布和播放清單，播放時會詢問要使用哪個螢幕。切換會停止目前正在播放的內容。',
   'display.detected': '已偵測到: {screens}',

@@ -85,7 +85,7 @@ function evaluateEngine(): void {
   let version: string | null = status.version ?? null
   let managedBy: string | undefined
   let real = status.path
-  try { real = fs.realpathSync(status.path) } catch { /* keep the path */ }
+  try { real = fs.realpathSync(status.path) } catch { }
 
   if (status.version) {
     install = 'prebuilt'

@@ -118,7 +118,6 @@ export default function SettingsView() {
     window.electronAPI.lwe.listScreens().then(setScreens)
   }, [])
 
-  // refresh the status once the install finished
   useEffect(() => {
     if (lweProgress?.stage === 'done' || lweProgress?.stage === 'error') {
       window.electronAPI.lwe.status().then(setLweStatus)

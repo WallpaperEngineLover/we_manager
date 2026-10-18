@@ -209,6 +209,8 @@ export const zhCN: Messages = {
   'dialog.pickShortcutFolder': '选择要打开的文件夹',
   'dialog.pickThumbnail': '选择缩略图',
   'dialog.pickWorkshopFolder': '选择 Wallpaper Engine 创意工坊文件夹',
+  'dialog.storeReset': '无法读取 {name}，应用已对该文件使用默认值启动。损坏的文件已保存为 {keptAs}。',
+  'dialog.storeResetTitle': '设置文件已重置',
 
   'display.description': '选择"每个屏幕独立"后，每个屏幕有自己的壁纸和播放列表，播放时会询问使用哪个屏幕。切换会停止当前正在播放的内容。',
   'display.detected': '已检测到: {screens}',

@@ -34,7 +34,6 @@ export function usePreviewSize(): [PreviewSize, (size: PreviewSize) => void] {
     try {
       localStorage.setItem(STORAGE_KEY, size)
     } catch {
-      // ignore write failures (e.g. storage disabled)
     }
   }, [size])
 

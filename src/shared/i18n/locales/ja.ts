@@ -209,6 +209,8 @@ export const ja: Messages = {
   'dialog.pickShortcutFolder': '開くフォルダーを選択',
   'dialog.pickThumbnail': 'サムネイルを選択',
   'dialog.pickWorkshopFolder': 'Wallpaper Engine のワークショップフォルダーを選択',
+  'dialog.storeReset': '{name} を読み込めなかったため、このファイルは初期値で起動しました。破損したファイルは {keptAs} として保存されています。',
+  'dialog.storeResetTitle': '設定ファイルを初期化しました',
 
   'display.description': '「画面ごとに個別」では、画面ごとに別の壁紙とプレイリストを使い、再生時にどの画面を使うか尋ねます。切り替えると現在再生中のものは停止します。',
   'display.detected': '検出: {screens}',

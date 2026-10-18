@@ -2,6 +2,7 @@ import { resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { RENDERER_CSP } from './src/shared/csp'
 
 export default defineConfig({
   main: {
@@ -44,6 +45,16 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: 'renderer-csp',
+        apply: 'build',
+        transformIndexHtml: () => [
+          { tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: RENDERER_CSP }, injectTo: 'head-prepend' }
+        ]
+      }
+    ]
   }
 })

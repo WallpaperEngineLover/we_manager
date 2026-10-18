@@ -42,7 +42,7 @@ export function getWaylandDisplay(): string | undefined {
       { encoding: 'utf8', timeout: 3000 }
     ).trim()
     if (sessionType === 'wayland') return 'wayland-0'
-  } catch { /* loginctl not available */ }
+  } catch { }
 
   return undefined
 }
@@ -92,7 +92,6 @@ const COMPOSITOR_QUERIES: { marker: string; command: string; parse: (output: str
   { marker: 'NIRI_SOCKET', command: 'niri msg --json outputs', parse: parseNiriOutputs }
 ]
 
-/** Detect connected screen/output names for use with linux-wallpaperengine --screen-root. */
 export function getConnectedScreens(): string[] {
   if (process.platform !== 'linux') return []
 
@@ -105,10 +104,9 @@ export function getConnectedScreens(): string[] {
         const output = execSync(hostShell(`${command} 2>/dev/null`), { encoding: 'utf8', timeout: 5000 })
         const screens = parse(output)
         if (screens.length > 0) return screens
-      } catch { /* not available */ }
+      } catch { }
     }
 
-    // wlr-randr (wlroots compositors: hyprland, sway, etc.)
     try {
       const output = execSync(hostShell('wlr-randr 2>/dev/null'), { encoding: 'utf8', timeout: 5000 })
       const screens = output
@@ -117,12 +115,10 @@ export function getConnectedScreens(): string[] {
         .map(line => line.split(/\s+/)[0])
         .filter(Boolean)
       if (screens.length > 0) return screens
-    } catch { /* not available */ }
+    } catch { }
 
-    // KDE Plasma Wayland: kscreen-doctor
     try {
       const output = execSync(hostShell('kscreen-doctor --outputs 2>/dev/null'), { encoding: 'utf8', timeout: 5000 })
-      // Strip ANSI color/escape codes before parsing
       const clean = output.replace(/\x1b\[[0-9;]*m/g, '')
       const screens = clean
         .split('\n')
@@ -132,9 +128,8 @@ export function getConnectedScreens(): string[] {
         })
         .filter((s): s is string => s !== null)
       if (screens.length > 0) return screens
-    } catch { /* not available */ }
+    } catch { }
 
-    // GNOME Wayland: gnome-randr or mutter output names via gdbus
     try {
       const output = execSync(
         hostShell("gdbus call --session --dest org.gnome.Mutter.DisplayConfig --object-path /org/gnome/Mutter/DisplayConfig --method org.gnome.Mutter.DisplayConfig.GetCurrentState 2>/dev/null"),
@@ -142,10 +137,9 @@ export function getConnectedScreens(): string[] {
       )
       const screens = [...output.matchAll(/connector:\s*'([^']+)'/gi)].map(m => m[1])
       if (screens.length > 0) return screens
-    } catch { /* not available */ }
+    } catch { }
   }
 
-  // X11: use xrandr
   try {
     const output = execSync(hostShell('xrandr --query 2>/dev/null'), { encoding: 'utf8', timeout: 5000 })
     const screens = output
@@ -154,7 +148,7 @@ export function getConnectedScreens(): string[] {
       .map(line => line.split(/\s+/)[0])
       .filter(Boolean)
     if (screens.length > 0) return screens
-  } catch { /* xrandr not available */ }
+  } catch { }
 
   return []
 }
@@ -190,13 +184,12 @@ export function hasStatusNotifierHost(maxAgeMs = TRAY_HOST_CACHE_MS): boolean {
         value = owned
         break
       }
-    } catch { /* tool missing or no session bus */ }
+    } catch { }
   }
   trayHostCache = { value, at: Date.now() }
   return value
 }
 
-// Cache results so we only call which/where once per session
 const commandCache = new Map<string, boolean>()
 
 export function isCommandAvailable(cmd: string): boolean {

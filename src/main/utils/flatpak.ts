@@ -44,18 +44,18 @@ export function isHostCommandAvailable(cmd: string): boolean {
   return found
 }
 
-let info: string | undefined
+let infoCache: string | undefined
 
 // written once when the sandbox starts
 function flatpakInfo(): string {
-  if (info === undefined) {
+  if (infoCache === undefined) {
     try {
-      info = fs.readFileSync('/.flatpak-info', 'utf8')
+      infoCache = fs.readFileSync('/.flatpak-info', 'utf8')
     } catch {
-      info = ''
+      infoCache = ''
     }
   }
-  return info
+  return infoCache
 }
 
 /** The sandbox's /app as the host sees it */

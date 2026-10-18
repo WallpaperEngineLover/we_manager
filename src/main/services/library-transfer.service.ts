@@ -3,8 +3,16 @@ import * as fs from 'fs'
 import * as path from 'path'
 import type { WallpaperMeta } from '@shared/types'
 import * as library from './library.service'
-import { copyWallpaperFolder, exists, hasBackupFiles, sameFileList, syncDir, verifyOnDisk } from './backup.service'
-import { getScreenAssignments } from './display.service'
+import {
+  copyWallpaperFolder,
+  exists,
+  hasBackupFiles,
+  recoverInterruptedCopy,
+  sameFileList,
+  syncDir,
+  verifyOnDisk
+} from './backup.service'
+import { getWallpapersInUse } from './display.service'
 import { unsubscribeFromItem } from './steam.service'
 import { getExtraLibraryRoots } from '../utils/paths'
 
@@ -36,11 +44,12 @@ async function transferOne(
     throw new Error('no complete local files')
   }
   if (path.dirname(sourcePath) === root) return false
-  if (mode === 'move' && getScreenAssignments().some((a) => a.wallpaperId === wallpaper.id)) {
-    throw new Error('it is on a screen right now')
+  if (mode === 'move' && getWallpapersInUse().has(wallpaper.id)) {
+    throw new Error('it is on a screen, or a playlist or schedule is switching to it right now')
   }
 
   const destDir = path.join(root, path.basename(sourcePath))
+  await recoverInterruptedCopy(destDir)
   if (await exists(destDir)) {
     // reuse an identical copy from an earlier run, anything else is someone's data
     if (!(await verifyOnDisk(sourcePath, destDir))) {

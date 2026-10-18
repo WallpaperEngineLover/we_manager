@@ -6,6 +6,8 @@ import type { WallpaperMeta } from '@shared/types'
 
 let state = 0
 let steamDown = false
+let hostBoot: Promise<void> = Promise.resolve()
+let hostRequested = false
 let subscribed: string[] = []
 let installInfo: { folder: string; sizeOnDisk: number } | null = null
 const wallpapers = new Map<string, WallpaperMeta>()
@@ -20,8 +22,15 @@ vi.mock('./steam.service', () => ({
   ITEM_STATE_DOWNLOAD_PENDING: 32,
   isSteamRunning: () => true,
   getSubscribedItems: async () => subscribed,
-  fetchItemState: async () => {
+  whenHostReady: async () => {
+    hostRequested = true
     if (steamDown) throw new Error('Steam is only used while the window is open')
+    await hostBoot
+  },
+  fetchItemState: async () => {
+    hostRequested = true
+    if (steamDown) throw new Error('Steam is only used while the window is open')
+    await hostBoot
     return state
   },
   getInstallInfo: async () => installInfo
@@ -175,6 +184,16 @@ describe('verifyItems', () => {
   })
 })
 
+function stashed(id: string, newFiles: Record<string, string>): { item: string; stash: string } {
+  const item = path.join(dir, id)
+  const stash = verify.repairStashOf(item, id)
+  fs.mkdirSync(stash)
+  fs.writeFileSync(path.join(stash, 'project.json'), '{"old":true}')
+  fs.mkdirSync(item)
+  for (const [name, content] of Object.entries(newFiles)) fs.writeFileSync(path.join(item, name), content)
+  return { item, stash }
+}
+
 describe('settleRepairStash', () => {
   it('puts the old copy back over a folder that is no wallpaper', async () => {
     const item = path.join(dir, '8')
@@ -203,5 +222,61 @@ describe('settleRepairStash', () => {
 
     expect(fs.existsSync(stash)).toBe(false)
     expect(fs.readFileSync(path.join(item, 'project.json'), 'utf8')).toBe('{"new":true}')
+  })
+
+
+  it('keeps the old copy while the new folder only has its project.json so far', async () => {
+    const { item, stash } = stashed('10', { 'project.json': '{"type":"video","file":"clip.mp4"}' })
+
+    expect(await verify.settleRepairStash(item, stash)).toBe(true)
+
+    expect(fs.existsSync(stash)).toBe(false)
+    expect(fs.readFileSync(path.join(item, 'project.json'), 'utf8')).toBe('{"old":true}')
+  })
+
+  it('touches neither folder while Steam is still fetching the item', async () => {
+    const { item, stash } = stashed('11', { 'project.json': '{"type":"video","file":"clip.mp4"}', 'clip.mp4': 'half' })
+    state = 4 | 16
+
+    expect(await verify.settleRepairStash(item, stash)).toBe(false)
+
+    expect(fs.existsSync(path.join(stash, 'project.json'))).toBe(true)
+    expect(fs.existsSync(path.join(item, 'clip.mp4'))).toBe(true)
+  })
+
+  it('starts timing Steam\'s answer once the host is up, a slow start is not an answer', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const { item, stash } = stashed('14', { 'project.json': '{"type":"video","file":"clip.mp4"}', 'clip.mp4': 'half' })
+      state = 4 | 16
+      hostBoot = new Promise((resolve) => setTimeout(resolve, 5000))
+
+      hostRequested = false
+
+      const settled = verify.settleRepairStash(item, stash)
+      await vi.waitFor(() => expect(hostRequested).toBe(true))
+      await vi.advanceTimersByTimeAsync(5000)
+
+      expect(await settled).toBe(false)
+      expect(fs.existsSync(path.join(stash, 'project.json'))).toBe(true)
+      expect(fs.existsSync(path.join(item, 'clip.mp4'))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+      hostBoot = Promise.resolve()
+    }
+  })
+
+  it('does not wait for a Steam that cannot be asked', async () => {
+    const complete = stashed('12', { 'project.json': '{"type":"video","file":"clip.mp4"}', 'clip.mp4': 'video' })
+    steamDown = true
+
+    await verify.settleRepairStash(complete.item, complete.stash)
+
+    expect(fs.existsSync(complete.stash)).toBe(false)
+    expect(fs.existsSync(path.join(complete.item, 'clip.mp4'))).toBe(true)
+
+    const partial = stashed('13', { 'project.json': '{"type":"video","file":"clip.mp4"}' })
+    expect(await verify.settleRepairStash(partial.item, partial.stash)).toBe(true)
+    expect(fs.readFileSync(path.join(partial.item, 'project.json'), 'utf8')).toBe('{"old":true}')
   })
 })

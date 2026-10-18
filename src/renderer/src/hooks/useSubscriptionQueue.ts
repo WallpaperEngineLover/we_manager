@@ -1,6 +1,8 @@
 import { useCallback, useRef, useState } from 'react'
 import type { DownloadProgressEvent } from '@shared/types'
 
+function noop(): void {}
+
 export type SubscribeState =
   | 'queued'
   | 'subscribing'
@@ -52,7 +54,7 @@ export function useSubscriptionQueue(onSettled?: () => void) {
   const waitForSettled = useCallback((id: string) => {
     return new Promise<'completed' | 'error'>((resolve) => {
       let settled = false
-      let off: () => void = () => {}
+      let off: () => void = noop
       const finish = (status: 'completed' | 'error') => {
         if (settled) return
         settled = true

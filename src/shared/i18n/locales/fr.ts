@@ -223,6 +223,8 @@ export const fr: Messages = {
   'dialog.pickShortcutFolder': 'Choisir un dossier à ouvrir',
   'dialog.pickThumbnail': 'Choisir une miniature',
   'dialog.pickWorkshopFolder': 'Sélectionner le dossier Workshop de Wallpaper Engine',
+  'dialog.storeReset': '{name} n\'a pas pu être lu, l\'application a donc démarré avec les valeurs par défaut pour ce fichier. Le fichier endommagé a été conservé sous {keptAs}.',
+  'dialog.storeResetTitle': 'Un fichier de réglages a été réinitialisé',
 
   'display.description': 'Avec "Chaque écran séparément", chaque écran a son propre fond d\'écran et sa propre playlist, et Lire demande quel écran utiliser. Changer arrête ce qui est en cours de lecture.',
   'display.detected': 'Détectés : {screens}',

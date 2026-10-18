@@ -15,6 +15,7 @@ import { applyAppearance } from '../../utils/appearance'
 import { t, translatedOr } from '../../i18n'
 import type { MessageKey } from '@shared/i18n'
 import LanguageSelect from './LanguageSelect'
+import { isRangeKey } from '../../utils/dom'
 
 const THEMES: { value: ThemeMode; label: MessageKey; icon: typeof Moon }[] = [
   { value: 'dark', label: 'appearance.dark', icon: Moon },
@@ -128,7 +129,7 @@ export default function AppearanceSettings() {
             value={draft.accentHue}
             onChange={(e) => preview({ accentHue: Number(e.target.value), accentChroma: draft.accentChroma || 1 })}
             onPointerUp={() => save({})}
-            onKeyUp={() => save({})}
+            onKeyUp={(e) => isRangeKey(e.key) && save({})}
             className="hue-slider h-2 w-full cursor-pointer appearance-none rounded-full"
             aria-label={t('appearance.accentHue')}
           />
@@ -161,7 +162,7 @@ export default function AppearanceSettings() {
           value={draft.windowOpacity}
           onChange={(e) => preview({ windowOpacity: Number(e.target.value) })}
           onPointerUp={() => save({})}
-          onKeyUp={() => save({})}
+          onKeyUp={(e) => isRangeKey(e.key) && save({})}
           className="mt-2 w-full accent-accent-500"
           aria-label={t('appearance.opacity')}
         />

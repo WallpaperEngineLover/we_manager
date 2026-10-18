@@ -189,7 +189,6 @@ export function useSelectableGrid({ ids, dataAttr, onOpenDetail }: UseSelectable
     clearSelection,
     selectForContextMenu,
     handleCardSelect,
-    // spread onto the scrolling grid container
     containerProps: {
       ref: gridRef,
       onMouseDown: handleMarqueeStart,

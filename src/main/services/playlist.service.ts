@@ -1,4 +1,4 @@
-import Store from 'electron-store'
+import { openStore } from '../utils/safeStore'
 import { randomUUID } from 'crypto'
 import type { Playlist, PlaylistItem, PlaylistSettings } from '@shared/types'
 import { findAndMutate } from '../utils/collections'
@@ -15,7 +15,7 @@ const DEFAULT_SETTINGS: PlaylistSettings = {
   defaultVolume: 100
 }
 
-const store = new Store<PlaylistStore>({
+const store = openStore<PlaylistStore>({
   name: 'playlists',
   defaults: { playlists: [] }
 })
@@ -93,7 +93,6 @@ export function removeItemsFromPlaylist(id: string, wallpaperIds: string[]): Pla
   })
 }
 
-/** Reorders items to match the given wallpaperId sequence (used for manual drag-reorder). */
 export function reorderPlaylistItems(id: string, orderedWallpaperIds: string[]): Playlist | null {
   return updatePlaylist(id, (playlist) => {
     const byId = new Map(playlist.items.map((i) => [i.wallpaperId, i]))
@@ -105,7 +104,6 @@ export function reorderPlaylistItems(id: string, orderedWallpaperIds: string[]):
         byId.delete(wallpaperId)
       }
     }
-    // Append anything not mentioned in orderedWallpaperIds (defensive, shouldn't normally happen)
     reordered.push(...byId.values())
     playlist.items = reordered
   })
@@ -124,10 +122,6 @@ export function updatePlaylistItem(
   })
 }
 
-/**
- * Remove playlist item references that don't exist in the library anymore.
- * Returns the number of stale references removed.
- */
 export function cleanupPlaylists(validWallpaperIds: Set<string>): number {
   const playlists = store.get('playlists')
   let removed = 0

@@ -223,6 +223,8 @@ export const tr: Messages = {
   'dialog.pickShortcutFolder': 'Açılacak klasörü seçin',
   'dialog.pickThumbnail': 'Küçük resim seçin',
   'dialog.pickWorkshopFolder': 'Wallpaper Engine Atölye klasörünü seçin',
+  'dialog.storeReset': '{name} okunamadı, bu yüzden uygulama bu dosya için varsayılanlarla başladı. Hasarlı dosya {keptAs} adıyla saklandı.',
+  'dialog.storeResetTitle': 'Bir ayar dosyası sıfırlandı',
 
   'display.description': '"Her ekran ayrı" seçiliyken her ekranın kendi duvar kağıdı ve çalma listesi olur, Oynat hangi ekranın kullanılacağını sorar. Geçiş yapmak şu an oynayan her şeyi durdurur.',
   'display.detected': 'Algılanan: {screens}',

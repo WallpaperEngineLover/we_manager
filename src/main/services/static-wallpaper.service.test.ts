@@ -100,13 +100,13 @@ describe('applySwww', () => {
   })
 })
 
-describe('applySwaybg', () => {
-  function fakeChild() {
-    const child = new EventEmitter() as ChildProcess & EventEmitter
-    Object.assign(child, { exitCode: null, kill: vi.fn<() => boolean>() })
-    return child
-  }
+function fakeChild() {
+  const child = new EventEmitter() as ChildProcess & EventEmitter
+  Object.assign(child, { exitCode: null, kill: vi.fn<() => boolean>() })
+  return child
+}
 
+describe('applySwaybg', () => {
   it('keeps the new swaybg running and stops the previous one', async () => {
     const first = Object.assign(fakeChild(), { pid: 4242 })
     const second = Object.assign(fakeChild(), { pid: 4243 })
@@ -128,10 +128,10 @@ describe('applySwaybg', () => {
   })
 })
 
-describe('prefersHyprpaper', () => {
-  const installed = (...cmds: string[]) => (cmd: string) => cmds.includes(cmd)
-  const runningOnly = (...names: string[]) => (name: string) => names.includes(name)
+const installed = (...cmds: string[]) => (cmd: string) => cmds.includes(cmd)
+const runningOnly = (...names: string[]) => (name: string) => names.includes(name)
 
+describe('prefersHyprpaper', () => {
   it('takes hyprpaper unless a swww daemon already draws', () => {
     expect(prefersHyprpaper(installed('hyprpaper', 'hyprctl'), runningOnly())).toBe(true)
     expect(prefersHyprpaper(installed('hyprpaper', 'hyprctl', 'swww'), runningOnly())).toBe(true)

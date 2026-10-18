@@ -8,7 +8,6 @@ const execFileAsync = promisify(execFile)
 
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.avi', '.mkv', '.mov', '.m4v']
 
-/** Locate a wallpaper's video file: the project.json `file` entry, or the first video in the folder. */
 export function findWallpaperVideoFile(localPath: string, projectFile?: string): string | undefined {
   if (projectFile) {
     const direct = path.join(localPath, projectFile)
@@ -18,7 +17,7 @@ export function findWallpaperVideoFile(localPath: string, projectFile?: string):
     const files = fs.readdirSync(localPath)
     const video = files.find((f) => VIDEO_EXTENSIONS.includes(path.extname(f).toLowerCase()))
     if (video) return path.join(localPath, video)
-  } catch { /* unreadable dir */ }
+  } catch { }
   return undefined
 }
 
@@ -35,7 +34,6 @@ function parseFrameRate(raw?: string): number | undefined {
 // reapply the same wallpapers repeatedly).
 const fpsCache = new Map<string, number | undefined>()
 
-/** Read a video's native frame rate via ffprobe. Returns undefined if ffprobe is missing or fails. */
 export async function getVideoFps(filePath: string): Promise<number | undefined> {
   if (fpsCache.has(filePath)) return fpsCache.get(filePath)
   if (!isCommandAvailable('ffprobe')) return undefined
@@ -61,7 +59,6 @@ export async function getVideoFps(filePath: string): Promise<number | undefined>
 
 const durationCache = new Map<string, number | undefined>()
 
-/** Read a video's length in seconds via ffprobe. Returns undefined if ffprobe is missing or fails. */
 export async function getVideoDurationSec(filePath: string): Promise<number | undefined> {
   if (durationCache.has(filePath)) return durationCache.get(filePath)
   if (!isCommandAvailable('ffprobe')) return undefined

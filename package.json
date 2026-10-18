@@ -1,8 +1,9 @@
 {
   "name": "we-manager",
-  "version": "0.8.5",
+  "version": "0.9.0",
   "type": "module",
   "description": "Wallpaper Engine workshop manager",
+  "desktopName": "we-manager.desktop",
   "author": "UwU <260361707+WallpaperEngineLover@users.noreply.github.com>",
   "email": "260361707+WallpaperEngineLover@users.noreply.github.com",
   "license": "MIT",
@@ -33,7 +34,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
-    "electron": "^43.2.0",
+    "electron": "^43.7.11",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "oxlint": "^1.85.0",
@@ -64,7 +65,8 @@
         }
       ],
       "category": "Utility",
-      "icon": "resources/icons/linux"
+      "icon": "resources/icons/linux",
+      "syncDesktopName": true
     },
     "appImage": {
       "artifactName": "WE-Manager-${version}.${ext}"
@@ -72,6 +74,8 @@
     "files": [
       "out/**/*",
       "node_modules/**/*",
+      "!node_modules/steamworks.js/dist/{osx,win64}/**",
+      "!node_modules/@koromix/koffi-linux-x64/musl_x64/**",
       "resources/icon.png"
     ],
     "asarUnpack": [

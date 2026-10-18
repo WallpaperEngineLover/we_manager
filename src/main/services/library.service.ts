@@ -1,7 +1,8 @@
-import Store from 'electron-store'
+import { openStore } from '../utils/safeStore'
 import type { WallpaperMeta, WallpaperType, ContentRating, LibraryFilters, WallpaperFolder } from '@shared/types'
 import { getExtraLibraryRoots, getThumbnailsPath, getWorkshopPath } from '../utils/paths'
 import { findLocalWallpapers, localWallpaperId } from '../utils/localLibrary'
+import { containedPath } from '../utils/contained'
 import * as path from 'path'
 import * as fs from 'fs'
 import { randomUUID } from 'crypto'
@@ -25,7 +26,7 @@ interface LibraryStore {
   resolutionsVersion: number
 }
 
-const store = new Store<LibraryStore>({
+const store = openStore<LibraryStore>({
   name: 'library',
   defaults: {
     wallpapers: {},
@@ -278,10 +279,10 @@ export function getDirSize(dirPath: string): number {
       if (entry.isDirectory()) {
         total += getDirSize(full)
       } else if (entry.isFile()) {
-        try { total += fs.statSync(full).size } catch { /* skip */ }
+        try { total += fs.statSync(full).size } catch { }
       }
     }
-  } catch { /* skip unreadable dirs */ }
+  } catch { }
   return total
 }
 
@@ -299,7 +300,7 @@ export async function getDirSizeAsync(dirPath: string): Promise<number> {
     if (entry.isDirectory()) {
       total += await getDirSizeAsync(full)
     } else if (entry.isFile()) {
-      try { total += (await fs.promises.stat(full)).size } catch { /* skip */ }
+      try { total += (await fs.promises.stat(full)).size } catch { }
     }
   }
   return total
@@ -318,7 +319,7 @@ function buildMeta(
   const now = Date.now()
   const { downloading: _d, downloadFailed: _df, ...existingRest } = existing ?? { appliedCount: 0, categories: [] }
   // the preview can still be downloading, the next scan picks it up
-  const previewPath = pj?.preview ? path.join(localPath, pj.preview) : undefined
+  const previewPath = containedPath(localPath, pj?.preview)
   // Steam can flag an item Mature later, only the live tags show that
   const fromProject = stricterRating(normalizeRating(pj?.contentrating), deriveRatingFromTags(pj?.tags ?? []))
   const contentRating = stricterRating(fromProject, deriveRatingFromTags(liveWorkshopTags ?? []))
@@ -891,7 +892,6 @@ export function cleanupFolders(): number {
 export function importWEConfig(configPath: string): { folders: number; playlists: number } {
   const raw = fs.readFileSync(configPath, 'utf8')
   const data = JSON.parse(raw)
-  const workshopPath = getWorkshopPath()
 
   const imported: WallpaperFolder[] = []
   const existingTitles = new Set(store.get('folders').map((f) => f.title))

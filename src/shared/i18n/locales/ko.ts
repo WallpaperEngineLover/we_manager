@@ -209,6 +209,8 @@ export const ko: Messages = {
   'dialog.pickShortcutFolder': '열 폴더 선택',
   'dialog.pickThumbnail': '썸네일 선택',
   'dialog.pickWorkshopFolder': 'Wallpaper Engine 창작마당 폴더 선택',
+  'dialog.storeReset': '{name} 파일을 읽을 수 없어 이 파일은 기본값으로 시작했습니다. 손상된 파일은 {keptAs} 이름으로 보관되었습니다.',
+  'dialog.storeResetTitle': '설정 파일이 초기화되었습니다',
 
   'display.description': '"화면마다 따로"에서는 화면마다 배경화면과 재생 목록을 따로 쓰고, 재생할 때 어느 화면을 쓸지 묻습니다. 전환하면 지금 재생 중인 것이 멈춥니다.',
   'display.detected': '감지됨: {screens}',

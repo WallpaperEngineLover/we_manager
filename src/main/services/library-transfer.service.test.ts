@@ -6,6 +6,7 @@ import type { WallpaperMeta } from '@shared/types'
 
 let roots: string[] = []
 let onScreen: string[] = []
+let busy: string[] = []
 const wallpapers = new Map<string, WallpaperMeta>()
 const unsubscribe = vi.fn<(id: bigint) => Promise<void>>(async () => {})
 
@@ -13,7 +14,7 @@ vi.mock('electron', () => ({ app: { getPath: () => os.tmpdir() } }))
 vi.mock('./config.service', () => ({ getConfiguredBackupPath: () => null }))
 vi.mock('../utils/paths', () => ({ getExtraLibraryRoots: () => roots }))
 vi.mock('./display.service', () => ({
-  getScreenAssignments: () => onScreen.map((wallpaperId) => ({ screen: 'DP-1', wallpaperId }))
+  getWallpapersInUse: () => new Set([...onScreen, ...busy])
 }))
 vi.mock('./steam.service', () => ({ unsubscribeFromItem: (id: bigint) => unsubscribe(id) }))
 vi.mock('./library.service', () => ({
@@ -57,6 +58,7 @@ beforeEach(() => {
   fs.mkdirSync(target)
   roots = [path.join(tmp, 'ssd'), target]
   onScreen = []
+  busy = []
   wallpapers.clear()
   unsubscribe.mockClear()
 })
@@ -112,6 +114,29 @@ describe('transferWallpapers', () => {
     expect(result.failed.map((f) => f.id)).toEqual(['444', '555'])
     expect(fs.existsSync(path.join(tmp, 'ssd', '555'))).toBe(true)
     expect(fs.existsSync(path.join(target, '444', 'other.txt'))).toBe(true)
+  })
+
+  it('refuses to move what a playlist or schedule is switching to, but still copies it', async () => {
+    const src = path.join(tmp, 'ssd', '888')
+    addWallpaper('888', src, 'local')
+    busy = ['888']
+
+    const moved = await transferWallpapers(['888'], target, 'move', win)
+    expect(moved.failed.map((f) => f.id)).toEqual(['888'])
+    expect(moved.failed[0].reason).toMatch(/playlist or schedule/)
+    expect(fs.existsSync(src)).toBe(true)
+    expect(wallpapers.get('888')!.localPath).toBe(src)
+
+    expect(await transferWallpapers(['888'], target, 'copy', win)).toMatchObject({ done: 1, failed: [] })
+  })
+
+  it('finishes an interrupted copy in the target before looking at what is there', async () => {
+    const src = path.join(tmp, 'ssd', '999')
+    addWallpaper('999', src, 'local')
+    fs.cpSync(src, path.join(target, '.999.old'), { recursive: true })
+    expect(await transferWallpapers(['999'], target, 'move', win)).toMatchObject({ done: 1, failed: [] })
+    expect(fs.readdirSync(target)).toEqual(['999'])
+    expect(fs.existsSync(src)).toBe(false)
   })
 
   it('reuses an identical folder left by an earlier copy after checking it on disk', async () => {

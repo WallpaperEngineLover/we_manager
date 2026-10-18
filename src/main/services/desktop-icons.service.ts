@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
-import Store from 'electron-store'
+import { openStore } from '../utils/safeStore'
 import { app } from 'electron'
 import { getConnectedScreens, getWaylandDisplay, getXdgRuntimeDir } from '../utils/platform'
 import { isFlatpak } from '../utils/flatpak'
@@ -10,7 +10,7 @@ interface DesktopIconsStoreSchema {
   desktopIconsEnabled: boolean
 }
 
-const store = new Store<DesktopIconsStoreSchema>({
+const store = openStore<DesktopIconsStoreSchema>({
   defaults: { desktopIconsEnabled: false }
 })
 
@@ -22,7 +22,6 @@ function getOverlayScriptPath(): string {
   const candidates = [
     path.join(__dirname, '..', '..', 'src', 'main', 'services', 'desktop-icons-overlay.py'),
     path.join(process.resourcesPath ?? '', 'desktop-icons-overlay.py'),
-    // Fallback: next to compiled output
     path.join(__dirname, 'desktop-icons-overlay.py')
   ]
   for (const c of candidates) {
@@ -64,10 +63,8 @@ function buildOverlayEnvVars(): string[] {
   const waylandDisplay = getWaylandDisplay()
   if (waylandDisplay) vars.push(`WAYLAND_DISPLAY=${waylandDisplay}`)
 
-  // XDG_RUNTIME_DIR is needed for the Wayland socket
   vars.push(`XDG_RUNTIME_DIR=${getXdgRuntimeDir()}`)
 
-  // DISPLAY for the XWayland fallback
   if (process.env.DISPLAY) vars.push(`DISPLAY=${process.env.DISPLAY}`)
 
   return vars
@@ -112,7 +109,6 @@ export function stopDesktopIconsOverlay(): void {
     try {
       child.kill('SIGTERM')
     } catch {
-      /* already dead */
     }
   }
   overlayProcesses = []
@@ -131,7 +127,6 @@ export function getDesktopIconsEnabled(): boolean {
   return store.get('desktopIconsEnabled', false)
 }
 
-/** Call on app startup to restore overlay if it was enabled. */
 export function initDesktopIcons(): void {
   if (getDesktopIconsEnabled()) {
     startDesktopIconsOverlay()

@@ -1,4 +1,4 @@
-import Store from 'electron-store'
+import { openStore } from '../utils/safeStore'
 import type { BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import type { Playlist, PlaylistItem, PlaylistPlaybackState, ScreenTarget } from '@shared/types'
@@ -9,7 +9,7 @@ import { getWallpaper, updateWallpaper } from './library.service'
 import { getLweStatus, ALL_SCREENS } from './lwe.service'
 import { getAutostartPlaylistId } from './config.service'
 import { getFavoriteItemIds } from './steam.service'
-import { expandScreen, getDisplayTargets, setPlaylistRecovery, showWallpaper } from './display.service'
+import { expandScreen, getDisplayTargets, setBusyWallpaperSource, setPlaylistRecovery, showWallpaper } from './display.service'
 import { findWallpaperVideoFile, getVideoDurationSec } from '../utils/video'
 
 interface SavedPlayer {
@@ -24,7 +24,7 @@ interface PlaybackStore {
   players: Record<ScreenTarget, SavedPlayer> | null
 }
 
-const store = new Store<PlaybackStore>({
+const store = openStore<PlaybackStore>({
   name: 'playlist-playback',
   defaults: { activePlaylistId: null, isPlaying: false, players: null }
 })
@@ -118,12 +118,15 @@ function rotationFilter(playlist: Playlist, order: string[]): (id: string) => bo
   return order.some((id) => favorites.has(id)) ? (id) => favorites.has(id) : () => true
 }
 
+function known(id: string): boolean {
+  return compatStatus(getWallpaper(id)?.compat) !== 'crashes'
+}
+
 /** Skips crashing items and non-favorites while something else is left. `picked` always plays */
 async function applyCurrent(player: Player, playlist: Playlist, picked?: string): Promise<void> {
   const { state } = player
   const count = state.order.length
   const inRotation = rotationFilter(playlist, state.order)
-  const known = (id: string) => compatStatus(getWallpaper(id)?.compat) !== 'crashes'
   const anyPlayable = state.order.some((id) => inRotation(id) && known(id))
 
   player.applying = true
@@ -387,6 +390,9 @@ function savedPlayers(): Record<ScreenTarget, SavedPlayer> {
 
 export function initPlaylistPlayer(window: BrowserWindow): boolean {
   win = window
+  setBusyWallpaperSource('playlist', () =>
+    [...players.values()].flatMap((p) => [p.state.currentItemId, p.applying ? p.state.order[p.state.currentIndex] : null]).filter((id): id is string => !!id)
+  )
   setPlaylistRecovery((screen) => {
     const player = players.get(screen)
     if (!player?.state.isPlaying || player.applying) return false

@@ -48,6 +48,17 @@ export async function download(url: string, dest: string, total: number, onProgr
   await pipeline(body, fs.createWriteStream(dest))
 }
 
+/** download() and verifyAsset(): a file that doesn't match its release asset is removed and never reaches the caller */
+export async function downloadVerified(asset: GithubAsset, dest: string, onProgress: (fraction: number) => void): Promise<void> {
+  await download(asset.browser_download_url, dest, asset.size, onProgress)
+  try {
+    await verifyAsset(dest, asset)
+  } catch (err) {
+    fs.rmSync(dest, { force: true })
+    throw err
+  }
+}
+
 export async function verifyAsset(file: string, asset: GithubAsset): Promise<void> {
   const size = fs.statSync(file).size
   if (size !== asset.size) throw new Error(`${asset.name} is ${size} bytes, the release says ${asset.size}.`)

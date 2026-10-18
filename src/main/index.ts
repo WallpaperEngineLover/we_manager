@@ -1,14 +1,14 @@
-import { app, BrowserWindow, net, protocol, shell } from 'electron'
+import { app, BrowserWindow, dialog, net, protocol, shell } from 'electron'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { IpcChannels } from '@shared/ipc-channels'
 import { isSteamRunning, startUserListSync, onFailedVotesChange, onFavoriteStatusChange, bindSteamToWindow } from './services/steam.service'
 import { initLibrary, checkUnavailableWallpapers, backfillResolutions, onHdrDetected, queueHdrCheck } from './services/library.service'
 import { startWatcher } from './services/watcher.service'
-import { checkOutdatedBackups } from './services/backup.service'
+import { checkOutdatedBackups, recoverInterruptedCopiesIn } from './services/backup.service'
 import { registerAllHandlers } from './ipc'
 import { initDesktopIcons, cleanupDesktopIcons } from './services/desktop-icons.service'
-import { getTrayEnabled, getAutostartPlaylistId, getKillLweOnQuit } from './services/config.service'
+import { getTrayEnabled, getAutostartPlaylistId, getKillLweOnQuit, getConfiguredBackupPath } from './services/config.service'
 import { createTray } from './services/tray.service'
 import { initPlaylistPlayer, startPlaylist } from './services/playlist-player.service'
 import { checkEarlierRunEngines, killAllLweProcesses, getLweStatus } from './services/lwe.service'
@@ -16,6 +16,10 @@ import { initDisplay } from './services/display.service'
 import { initSchedule } from './services/schedule.service'
 import { initUpdates } from './services/update.service'
 import { hasStatusNotifierHost } from './utils/platform'
+import { takeResetStores } from './utils/safeStore'
+import { t } from './i18n'
+import { getExtraLibraryRoots, getPreviewCachePath, getThumbnailsPath, getWorkshopPath } from './utils/paths'
+import { isAppUrl, isSafeExternalUrl, isServablePreview } from './utils/urlPolicy'
 import { attachAppearance, prepareAppearance, windowAppearanceOptions } from './services/appearance.service'
 import appIcon from '../../resources/icon.png?asset'
 
@@ -122,16 +126,32 @@ function createWindow(): BrowserWindow {
       preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      // the preload only needs electron's own modules
+      sandbox: true
     }
   })
 
   attachAppearance(win)
 
+  const devUrl = process.env.NODE_ENV === 'development' ? process.env['ELECTRON_RENDERER_URL'] : undefined
+  const appUrl = devUrl ?? pathToFileURL(path.join(__dirname, '../renderer/index.html')).toString()
+
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    if (isSafeExternalUrl(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
+
+  // The window only ever shows the app. A file dropped outside the drop targets, a link without a target or a
+  // redirect would load that page with the whole electronAPI in it: links go to the browser, the rest is dropped
+  const keepOnApp = (event: { url: string; preventDefault: () => void }, openLinks: boolean): void => {
+    if (isAppUrl(event.url, appUrl)) return
+    event.preventDefault()
+    if (openLinks && isSafeExternalUrl(event.url)) void shell.openExternal(event.url)
+  }
+  // will-frame-navigate comes first, for the main frame as well, and will-navigate is skipped once that one prevents it
+  win.webContents.on('will-frame-navigate', (event) => keepOnApp(event, event.isMainFrame))
+  win.webContents.on('will-navigate', (event) => keepOnApp(event, true))
+  win.webContents.on('will-redirect', (event) => keepOnApp(event, false))
 
   // closing hides to the tray, or quits without a StatusNotifier host
   win.on('close', (event) => {
@@ -141,8 +161,8 @@ function createWindow(): BrowserWindow {
     }
   })
 
-  if (process.env.NODE_ENV === 'development' && process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  if (devUrl) {
+    win.loadURL(devUrl)
   } else {
     win.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
@@ -152,9 +172,31 @@ function createWindow(): BrowserWindow {
   return win
 }
 
+function announceResetStores(): void {
+  const reset = takeResetStores()
+  if (reset.length === 0) return
+  void dialog.showMessageBox({
+    type: 'warning',
+    message: t('dialog.storeResetTitle'),
+    detail: reset.map(({ file, keptAs }) => t('dialog.storeReset', { name: path.basename(file), keptAs })).join('\n\n')
+  })
+}
+
 app.whenReady().then(async () => {
   protocol.handle('wallpaper', async (request) => {
-    const filePath = decodeURIComponent(request.url.replace('wallpaper://', ''))
+    let filePath: string
+    try {
+      filePath = decodeURIComponent(request.url.replace('wallpaper://', ''))
+    } catch {
+      return new Response(null, { status: 400 })
+    }
+
+    // previews only: pictures and videos inside the library, backup and thumbnail folders, not any file of the user
+    const roots = [getWorkshopPath(), getConfiguredBackupPath(), ...getExtraLibraryRoots(), getThumbnailsPath(), getPreviewCachePath()]
+    if (request.method !== 'GET' || !isServablePreview(filePath, roots.filter((root): root is string => !!root))) {
+      return new Response(null, { status: 403 })
+    }
+
     try {
       const res = await net.fetch(pathToFileURL(filePath).toString())
       const headers = new Headers(res.headers)
@@ -167,9 +209,12 @@ app.whenReady().then(async () => {
     }
   })
 
+  const copyRoots = [getConfiguredBackupPath(), ...getExtraLibraryRoots()].filter((root): root is string => !!root)
+  await recoverInterruptedCopiesIn(copyRoots)
   initLibrary()
 
   const win = createWindow()
+  announceResetStores()
   bindSteamToWindow(win)
   registerAllHandlers(win)
   startWatcher(win)

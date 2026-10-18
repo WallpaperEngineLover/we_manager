@@ -59,10 +59,43 @@ export function repairStashOf(dir: string, itemId: string): string {
   return path.join(path.dirname(dir), `.reverify-${itemId}`)
 }
 
-/** after an interrupted repair, restores the old copy (true) unless Steam's folder is readable */
+const STASH_NAME = /^\.reverify-(\d+)$/
+const STATE_CHECK_TIMEOUT_MS = 3000
+const HOST_START_TIMEOUT_MS = 15_000
+
+async function within<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Steam did not answer')), ms)
+      })
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function steamIsFetching(itemId: string): Promise<boolean> {
+  try {
+    await within(steam.whenHostReady(), HOST_START_TIMEOUT_MS)
+    const state = await within(steam.fetchItemState(BigInt(itemId)), STATE_CHECK_TIMEOUT_MS)
+    return (state & (steam.ITEM_STATE_DOWNLOADING | steam.ITEM_STATE_DOWNLOAD_PENDING)) !== 0
+  } catch {
+    return false
+  }
+}
+
+/**
+ * After an interrupted repair, restores the old copy (true) unless Steam's folder is complete. While Steam is still
+ * fetching the item neither folder is touched, the old copy may be all there is
+ */
 export async function settleRepairStash(dir: string, stash: string): Promise<boolean> {
   if (!(await exists(stash))) return false
-  if (library.readProjectJson(dir)) {
+  const itemId = STASH_NAME.exec(path.basename(stash))?.[1]
+  if (itemId && (await steamIsFetching(itemId))) return false
+  if (!(await findFolderProblem(dir))) {
     await fs.promises.rm(stash, { recursive: true, force: true })
     return false
   }
@@ -85,7 +118,7 @@ export function restoreRepairStashes(): Promise<void> {
       return
     }
     for (const name of names) {
-      const id = /^\.reverify-(\d+)$/.exec(name)?.[1]
+      const id = STASH_NAME.exec(name)?.[1]
       if (!id) continue
       try {
         await settleRepairStash(path.join(root, id), path.join(root, name))

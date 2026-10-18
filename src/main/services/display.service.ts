@@ -31,7 +31,6 @@ import { ensureDependencyInstalled } from './dependency.service'
 import { getConnectedScreens } from '../utils/platform'
 import { t } from '../i18n'
 
-// how long a fresh launch has to survive before it counts as working
 const LAUNCH_CHECK_MS = 20_000
 // automatic relaunches after a runtime crash, at most one per screen in this window
 const RELAUNCH_COOLDOWN_MS = 60_000
@@ -60,6 +59,18 @@ export function expandScreen(screen?: ScreenTarget): ScreenTarget[] {
 
 export function getScreenAssignments(): ScreenAssignment[] {
   return Object.entries(getAssignments()).map(([screen, wallpaperId]) => ({ screen, wallpaperId }))
+}
+
+const busySources = new Map<string, () => string[]>()
+
+export function setBusyWallpaperSource(name: string, source: () => string[]): void {
+  busySources.set(name, source)
+}
+
+export function getWallpapersInUse(): Set<string> {
+  const ids = new Set(getScreenAssignments().map((a) => a.wallpaperId))
+  for (const source of busySources.values()) for (const id of source()) ids.add(id)
+  return ids
 }
 
 /** Live global flags reach running wallpapers without their own */

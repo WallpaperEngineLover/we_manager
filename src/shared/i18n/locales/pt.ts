@@ -223,6 +223,8 @@ export const pt: Messages = {
   'dialog.pickShortcutFolder': 'Escolha uma pasta para abrir',
   'dialog.pickThumbnail': 'Escolha uma miniatura',
   'dialog.pickWorkshopFolder': 'Selecione a pasta do Workshop do Wallpaper Engine',
+  'dialog.storeReset': 'Não foi possível ler {name}, então o app iniciou com os valores padrão para ele. O arquivo danificado foi guardado como {keptAs}.',
+  'dialog.storeResetTitle': 'Um arquivo de configurações foi redefinido',
 
   'display.description': 'Com "Cada tela separada", cada tela tem seu próprio papel de parede e playlist, e Reproduzir pergunta qual tela usar. Trocar para tudo o que estiver tocando agora.',
   'display.detected': 'Detectadas: {screens}',

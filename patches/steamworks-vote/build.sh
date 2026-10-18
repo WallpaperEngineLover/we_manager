@@ -12,6 +12,7 @@ PATCHES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STEAMWORKS_RS="$PROJECTS_DIR/steamworks-rs"
 STEAMWORKSJS="$PROJECTS_DIR/steamworksjs"
 PINNED_REV="fbb79635b06b4feea8261e5ca3e8ea3ef42facf9"
+PINNED_JS_REV="80c5fd7c4958ba90cf87403c3f967b8a6d748473"
 
 echo "==> Rust toolchain"
 if ! command -v cargo >/dev/null 2>&1; then
@@ -31,6 +32,15 @@ echo "==> Cloning steamworks.js (skipped if already present)"
 if [ ! -d "$STEAMWORKSJS" ]; then
   git clone https://github.com/ceifa/steamworks.js "$STEAMWORKSJS"
 fi
+
+# The files this script manages go back to upstream first, so a clone that is patched already can move to the pinned
+# commit. A clone that does not know the commit yet fetches it.
+for managed in src/api/workshop.rs client.d.ts Cargo.toml Cargo.lock; do
+  git -C "$STEAMWORKSJS" ls-files --error-unmatch "$managed" >/dev/null 2>&1 \
+    && git -C "$STEAMWORKSJS" checkout --quiet -- "$managed"
+done
+git -C "$STEAMWORKSJS" cat-file -e "$PINNED_JS_REV^{commit}" 2>/dev/null || git -C "$STEAMWORKSJS" fetch --quiet origin
+git -C "$STEAMWORKSJS" checkout --quiet "$PINNED_JS_REV"
 
 # A clone patched before favorites were added has only the vote half, so anything short of the
 # full patch is reset to upstream first and patched again.

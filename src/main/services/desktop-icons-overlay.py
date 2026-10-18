@@ -212,7 +212,6 @@ def detect_kde_settings():
         'font_italic': False,
     }
 
-    # --- Icon size from Folder View config ---
     try:
         config_path = os.path.expanduser(
             '~/.config/plasma-org.kde.plasma.desktop-appletsrc'
@@ -220,7 +219,6 @@ def detect_kde_settings():
         if os.path.exists(config_path):
             cp = configparser.ConfigParser(strict=False)
             cp.read(config_path)
-            # Find the desktop containment's General section
             for section in cp.sections():
                 if 'General' not in section:
                     continue
@@ -232,7 +230,6 @@ def detect_kde_settings():
     except Exception:
         pass
 
-    # --- System font from kreadconfig6 ---
     try:
         result = subprocess.run(
             ['kreadconfig6', '--file', 'kdeglobals',
@@ -355,7 +352,6 @@ def main():
                     Gtk4LayerShell.set_monitor(window, mon)
                     break
 
-        # Fullscreen
         for edge in (Gtk4LayerShell.Edge.TOP, Gtk4LayerShell.Edge.BOTTOM,
                      Gtk4LayerShell.Edge.LEFT, Gtk4LayerShell.Edge.RIGHT):
             Gtk4LayerShell.set_anchor(window, edge, True)
@@ -440,7 +436,6 @@ def main():
                 col, row = 0, len(kde_positions)
                 kde_positions[filename] = (col, row)
 
-            # Top-left alignment within grid cell (matches KDE Folder View)
             x = panel_left + GRID_MARGIN + col * cell_w
             y = panel_top + GRID_MARGIN + row * cell_h
 

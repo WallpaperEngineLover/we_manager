@@ -46,9 +46,11 @@ import clsx from 'clsx'
 import { openWorkshopPage, openProfilePage, isWorkshopId } from '../../utils/steam'
 import { WE_TYPES, WE_AGE_RATINGS, canonicalResolutionTag, resolutionsFromTags } from '../../constants/weFilters'
 import { formatFileSize } from '../../utils/format'
+import { isRangeKey } from '../../utils/dom'
 import { useDislikedIds, useVoteAction, useVotedIds } from '../../hooks/useVotes'
 import { useFavoriteAction, useFavoriteIds, useItemFavoriteStatus } from '../../hooks/useFavorites'
 import { useLweInstalled } from '../../hooks/queries'
+import { useKeyedCommits } from '../../hooks/useKeyedCommits'
 import ScreenSelect from './ScreenSelect'
 import { getPreviewSrc } from '../../utils/preview'
 import EngineFlagsSection from './sidebar/EngineFlagsSection'
@@ -209,19 +211,17 @@ function EffectRow({
 function PropertyRow({
   property,
   value,
-  busy,
   onCommit
 }: {
   property: LweProperty
   value: string
-  busy: boolean
   onCommit: (value: string) => void
 }) {
   const [draft, setDraft] = useState<number | null>(null)
   const label = property.text || property.name
 
   if (property.type === 'usershortcut') {
-    return <ShortcutRow property={property} value={value} busy={busy} onCommit={onCommit} />
+    return <ShortcutRow property={property} value={value} onCommit={onCommit} />
   }
 
   if (property.type === 'boolean') {
@@ -229,10 +229,9 @@ function PropertyRow({
     return (
       <button
         onClick={() => onCommit(on ? '0' : '1')}
-        disabled={busy}
         title={property.name}
         className={clsx(
-          'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-fg/5 disabled:opacity-40',
+          'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-fg/5',
           on ? 'text-gray-200' : 'text-gray-500'
         )}
       >
@@ -262,12 +261,11 @@ function PropertyRow({
           max={property.max ?? 100}
           step={property.step || 1}
           value={num}
-          disabled={busy}
           onChange={(e) => setDraft(Number(e.target.value))}
           onMouseUp={(e) => { onCommit(e.currentTarget.value); setDraft(null) }}
           onTouchEnd={(e) => { onCommit(e.currentTarget.value); setDraft(null) }}
-          onKeyUp={(e) => { onCommit(e.currentTarget.value); setDraft(null) }}
-          className="w-full accent-accent-500 disabled:opacity-50"
+          onKeyUp={(e) => { if (!isRangeKey(e.key)) return; onCommit(e.currentTarget.value); setDraft(null) }}
+          className="w-full accent-accent-500"
         />
       </div>
     )
@@ -281,9 +279,8 @@ function PropertyRow({
         </span>
         <select
           value={value}
-          disabled={busy}
           onChange={(e) => onCommit(e.target.value)}
-          className="rounded bg-fg/5 px-1.5 py-0.5 text-xs text-gray-300 outline-none disabled:opacity-50"
+          className="rounded bg-fg/5 px-1.5 py-0.5 text-xs text-gray-300 outline-none"
         >
           {property.options?.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -303,13 +300,11 @@ function AudioObjectRow({
   objectName,
   properties,
   multiplier,
-  busy,
   onCommit
 }: {
   objectName: string
   properties: string[]
   multiplier: number
-  busy: boolean
   onCommit: (multiplier: number) => void
 }) {
   const [draft, setDraft] = useState<number | null>(null)
@@ -329,27 +324,23 @@ function AudioObjectRow({
         max={200}
         step={5}
         value={percent}
-        disabled={busy}
         onChange={(e) => setDraft(Number(e.target.value))}
         onMouseUp={(e) => { onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
         onTouchEnd={(e) => { onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
-        onKeyUp={(e) => { onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
-        className="w-full accent-accent-500 disabled:opacity-50"
+        onKeyUp={(e) => { if (!isRangeKey(e.key)) return; onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
+        className="w-full accent-accent-500"
       />
     </div>
   )
 }
 
-// one row per Sound object, e.g. alternate music tracks
 function SoundTrackRow({
   trackName,
   volume,
-  busy,
   onCommit
 }: {
   trackName: string
   volume: number
-  busy: boolean
   onCommit: (volume: number) => void
 }) {
   const [draft, setDraft] = useState<number | null>(null)
@@ -369,12 +360,11 @@ function SoundTrackRow({
         max={1}
         step={0.1}
         value={value}
-        disabled={busy}
         onChange={(e) => setDraft(Number(e.target.value))}
         onMouseUp={(e) => { onCommit(Number(e.currentTarget.value)); setDraft(null) }}
         onTouchEnd={(e) => { onCommit(Number(e.currentTarget.value)); setDraft(null) }}
-        onKeyUp={(e) => { onCommit(Number(e.currentTarget.value)); setDraft(null) }}
-        className="w-full accent-accent-500 disabled:opacity-50"
+        onKeyUp={(e) => { if (!isRangeKey(e.key)) return; onCommit(Number(e.currentTarget.value)); setDraft(null) }}
+        className="w-full accent-accent-500"
       />
     </div>
   )
@@ -442,11 +432,8 @@ export default function DetailSidebar({
   const [togglingEffectId, setTogglingEffectId] = useState<string | null>(null)
   const [togglingFog, setTogglingFog] = useState(false)
   const [propertiesOpen, setPropertiesOpen] = useState(false)
-  const [committingProperty, setCommittingProperty] = useState<string | null>(null)
   const [audioOpen, setAudioOpen] = useState(false)
-  const [committingAudioObjectId, setCommittingAudioObjectId] = useState<string | null>(null)
   const [soundTracksOpen, setSoundTracksOpen] = useState(false)
-  const [committingSoundObjectId, setCommittingSoundObjectId] = useState<string | null>(null)
 
   const { data: item } = useQuery({
     queryKey: ['workshop-detail', id],
@@ -477,7 +464,7 @@ export default function DetailSidebar({
   })
 
   const { data: libraryMeta } = useQuery({
-    queryKey: ['library-item', id],
+    queryKey: ['library', 'item', id],
     queryFn: () => window.electronAPI.library.getOne(id)
   })
   const localPath = libraryMeta?.localPath
@@ -498,7 +485,7 @@ export default function DetailSidebar({
   const isActive = activeScreens.length > 0
 
   const { data: objects = [], isLoading: objectsLoading } = useQuery({
-    queryKey: ['lwe-objects', localPath],
+    queryKey: ['lwe-objects', localPath, libraryMeta?.updatedAt],
     queryFn: () => window.electronAPI.lwe.listObjects(localPath!),
     enabled: !!localPath && lweInstalled,
     staleTime: Infinity,
@@ -506,7 +493,7 @@ export default function DetailSidebar({
   })
 
   const { data: effects = [], isLoading: effectsLoading } = useQuery({
-    queryKey: ['lwe-effects', localPath],
+    queryKey: ['lwe-effects', localPath, libraryMeta?.updatedAt],
     queryFn: () => window.electronAPI.lwe.listEffects(localPath!),
     enabled: !!localPath && lweInstalled,
     staleTime: Infinity,
@@ -518,7 +505,7 @@ export default function DetailSidebar({
   const fogDisabled = fogObjects.length > 0 && fogObjects.every((o) => disabledObjects.includes(o.id))
 
   const { data: allProperties = [], isLoading: propertiesLoading } = useQuery({
-    queryKey: ['lwe-properties', localPath],
+    queryKey: ['lwe-properties', localPath, libraryMeta?.updatedAt],
     queryFn: () => window.electronAPI.lwe.listProperties(localPath!),
     enabled: !!localPath && lweInstalled,
     staleTime: Infinity,
@@ -530,7 +517,7 @@ export default function DetailSidebar({
   const propertyOverrides = libraryMeta?.propertyOverrides ?? {}
 
   const { data: audioObjectProperties = [], isLoading: audioObjectsLoading } = useQuery({
-    queryKey: ['lwe-audio-objects', localPath],
+    queryKey: ['lwe-audio-objects', localPath, libraryMeta?.updatedAt],
     queryFn: () => window.electronAPI.lwe.listAudioObjects(localPath!),
     enabled: !!localPath && lweInstalled,
     staleTime: Infinity,
@@ -548,6 +535,16 @@ export default function DetailSidebar({
   const soundObjects = objects.filter((o) => o.type === 'sound')
   const soundVolume = libraryMeta?.soundVolume ?? {}
 
+  const propertyCommits = useKeyedCommits<string>(id, propertyOverrides, (next) =>
+    persistAndMaybeRelaunch({ propertyOverrides: next })
+  )
+  const audioCommits = useKeyedCommits<number>(id, audioSensitivity, (next) =>
+    persistAndMaybeRelaunch({ audioSensitivity: next })
+  )
+  const soundCommits = useKeyedCommits<number>(id, soundVolume, (next) =>
+    persistAndMaybeRelaunch({ soundVolume: next })
+  )
+
   const { data: videoDuration = null } = useQuery({
     queryKey: ['video-duration', localPath],
     queryFn: () => window.electronAPI.lwe.videoDuration(localPath!, libraryMeta?.file),
@@ -559,7 +556,7 @@ export default function DetailSidebar({
   // pushed live when playing, relaunched if the hotswap fails
   async function persistAndMaybeRelaunch(patch: Partial<WallpaperMeta>) {
     const updated = await window.electronAPI.library.update(id, patch)
-    queryClient.setQueryData(['library-item', id], updated)
+    queryClient.setQueryData(['library', 'item', id], updated)
     queryClient.invalidateQueries({ queryKey: ['library'] })
     if (isActive) {
       // customArgs and effect overrides can't be hotswapped
@@ -597,7 +594,7 @@ export default function DetailSidebar({
   // for settings that don't touch the running engine
   async function persistOnly(patch: Partial<WallpaperMeta>) {
     const updated = await window.electronAPI.library.update(id, patch)
-    queryClient.setQueryData(['library-item', id], updated)
+    queryClient.setQueryData(['library', 'item', id], updated)
     queryClient.invalidateQueries({ queryKey: ['library'] })
   }
 
@@ -678,36 +675,6 @@ export default function DetailSidebar({
       await persistAndMaybeRelaunch({ disabledEffects: [...disabled], enabledEffects: [...enabled] })
     } finally {
       setTogglingEffectId(null)
-    }
-  }
-
-  async function commitProperty(name: string, value: string) {
-    if (committingProperty) return
-    setCommittingProperty(name)
-    try {
-      await persistAndMaybeRelaunch({ propertyOverrides: { ...propertyOverrides, [name]: value } })
-    } finally {
-      setCommittingProperty(null)
-    }
-  }
-
-  async function commitAudioSensitivity(objectId: string, multiplier: number) {
-    if (committingAudioObjectId) return
-    setCommittingAudioObjectId(objectId)
-    try {
-      await persistAndMaybeRelaunch({ audioSensitivity: { ...audioSensitivity, [objectId]: multiplier } })
-    } finally {
-      setCommittingAudioObjectId(null)
-    }
-  }
-
-  async function commitSoundVolume(objectId: string, volume: number) {
-    if (committingSoundObjectId) return
-    setCommittingSoundObjectId(objectId)
-    try {
-      await persistAndMaybeRelaunch({ soundVolume: { ...soundVolume, [objectId]: volume } })
-    } finally {
-      setCommittingSoundObjectId(null)
     }
   }
 
@@ -1120,7 +1087,7 @@ export default function DetailSidebar({
               }}
               onMouseUp={(e) => commitZoom(Number(e.currentTarget.value))}
               onTouchEnd={(e) => commitZoom(Number(e.currentTarget.value))}
-              onKeyUp={(e) => commitZoom(Number(e.currentTarget.value))}
+              onKeyUp={(e) => isRangeKey(e.key) && commitZoom(Number(e.currentTarget.value))}
               className="w-full accent-accent-500 disabled:opacity-50"
             />
           </div>
@@ -1154,7 +1121,7 @@ export default function DetailSidebar({
                 }}
                 onMouseUp={(e) => commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
                 onTouchEnd={(e) => commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
-                onKeyUp={(e) => commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
+                onKeyUp={(e) => isRangeKey(e.key) && commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
                 className="w-full accent-accent-500 disabled:opacity-50"
               />
               <span className="w-8 shrink-0 text-right text-[10px] text-gray-400">
@@ -1177,7 +1144,7 @@ export default function DetailSidebar({
                 }}
                 onMouseUp={(e) => commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
                 onTouchEnd={(e) => commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
-                onKeyUp={(e) => commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
+                onKeyUp={(e) => isRangeKey(e.key) && commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
                 className="w-full accent-accent-500 disabled:opacity-50"
               />
               <span className="w-8 shrink-0 text-right text-[10px] text-gray-400">
@@ -1267,7 +1234,7 @@ export default function DetailSidebar({
               }}
               onMouseUp={(e) => commitSpeed(Number(e.currentTarget.value))}
               onTouchEnd={(e) => commitSpeed(Number(e.currentTarget.value))}
-              onKeyUp={(e) => commitSpeed(Number(e.currentTarget.value))}
+              onKeyUp={(e) => isRangeKey(e.key) && commitSpeed(Number(e.currentTarget.value))}
               title={t('detail.speedHint')}
               className="w-full accent-accent-500 disabled:opacity-50"
             />
@@ -1348,7 +1315,7 @@ export default function DetailSidebar({
               }}
               onMouseUp={(e) => commitVolume(Number(e.currentTarget.value))}
               onTouchEnd={(e) => commitVolume(Number(e.currentTarget.value))}
-              onKeyUp={(e) => commitVolume(Number(e.currentTarget.value))}
+              onKeyUp={(e) => isRangeKey(e.key) && commitVolume(Number(e.currentTarget.value))}
               className="w-full accent-accent-500 disabled:opacity-50"
             />
           </div>
@@ -1515,9 +1482,8 @@ export default function DetailSidebar({
                   <PropertyRow
                     key={prop.name}
                     property={prop}
-                    value={propertyOverrides[prop.name] ?? prop.value}
-                    busy={committingProperty === prop.name}
-                    onCommit={(value) => commitProperty(prop.name, value)}
+                    value={propertyCommits.values[prop.name] ?? prop.value}
+                    onCommit={(value) => propertyCommits.commit(prop.name, value)}
                   />
                 ))}
               </div>
@@ -1548,9 +1514,8 @@ export default function DetailSidebar({
                     key={obj.objectId}
                     objectName={obj.objectName}
                     properties={obj.properties}
-                    multiplier={audioSensitivity[obj.objectId] ?? 1}
-                    busy={committingAudioObjectId === obj.objectId}
-                    onCommit={(multiplier) => commitAudioSensitivity(obj.objectId, multiplier)}
+                    multiplier={audioCommits.values[obj.objectId] ?? 1}
+                    onCommit={(multiplier) => audioCommits.commit(obj.objectId, multiplier)}
                   />
                 ))}
               </div>
@@ -1580,9 +1545,8 @@ export default function DetailSidebar({
                   <SoundTrackRow
                     key={obj.id}
                     trackName={obj.name}
-                    volume={soundVolume[obj.id] ?? 0}
-                    busy={committingSoundObjectId === obj.id}
-                    onCommit={(volume) => commitSoundVolume(obj.id, volume)}
+                    volume={soundCommits.values[obj.id] ?? 0}
+                    onCommit={(level) => soundCommits.commit(obj.id, level)}
                   />
                 ))}
               </div>
@@ -1608,7 +1572,7 @@ export default function DetailSidebar({
               wallpaper={libraryMeta}
               canGenerate={lweInstalled && !!localPath && libraryMeta.type !== 'application'}
               onUpdated={(updated) => {
-                queryClient.setQueryData(['library-item', id], updated)
+                queryClient.setQueryData(['library', 'item', id], updated)
                 queryClient.invalidateQueries({ queryKey: ['library'] })
               }}
             />

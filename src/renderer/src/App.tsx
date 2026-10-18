@@ -79,7 +79,6 @@ export default function App() {
     })
   }, [queryClient])
 
-  // background sync results from main
   useEffect(() => {
     return window.electronAPI.on.votedIdsChanged((ids) => {
       queryClient.setQueryData(['steam-voted-ids'], ids)

@@ -54,12 +54,10 @@ function describe(shortcut: Shortcut, apps: DesktopApplication[]): string {
 export function ShortcutRow({
   property,
   value,
-  busy,
   onCommit
 }: {
   property: LweProperty
   value: string
-  busy: boolean
   onCommit: (value: string) => void
 }) {
   const current = parseShortcut(value)
@@ -103,7 +101,6 @@ export function ShortcutRow({
         </span>
         <button
           onClick={() => setDraft(draft ? null : (current ?? { type: 'application', file: '', arguments: '' }))}
-          disabled={busy}
           title={current ? t('shortcut.change') : t('shortcut.assign')}
           className="rounded p-0.5 text-gray-400 hover:bg-fg/10 hover:text-gray-200 disabled:opacity-40"
         >
@@ -112,7 +109,6 @@ export function ShortcutRow({
         {current && (
           <button
             onClick={() => onCommit('')}
-            disabled={busy}
             title={t('shortcut.remove')}
             className="rounded p-0.5 text-gray-400 hover:bg-fg/10 hover:text-gray-200 disabled:opacity-40"
           >
@@ -211,7 +207,7 @@ export function ShortcutRow({
             </button>
             <button
               onClick={save}
-              disabled={!draft.file.trim() || busy}
+              disabled={!draft.file.trim()}
               className="rounded bg-accent-500/80 px-2 py-0.5 text-white hover:bg-accent-500 disabled:opacity-40"
             >
               {t('common.save')}

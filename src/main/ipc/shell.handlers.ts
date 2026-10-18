@@ -4,6 +4,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { spawn } from 'child_process'
 import { isCommandAvailable } from '../utils/platform'
+import { isSafeExternalUrl } from '../utils/urlPolicy'
 
 export function registerShellHandlers(): void {
   ipcMain.handle(IpcChannels.SHELL_OPEN_WITH_DEFAULT, async (_e, filePath: string) => {
@@ -21,12 +22,13 @@ export function registerShellHandlers(): void {
   })
 
   ipcMain.handle(IpcChannels.SHELL_OPEN_PATH, async (_e, targetPath: string) => {
+    if (typeof targetPath !== 'string' || !targetPath) return { ok: false, error: 'Path not found' }
     const resolved = path.resolve(targetPath)
+    if (!fs.existsSync(resolved)) return { ok: false, error: 'Path not found' }
     const result = await shell.openPath(resolved)
     return { ok: !result, error: result || undefined }
   })
 
-  // Open several folders in one file manager window (tabs) instead of one window per path
   ipcMain.handle(IpcChannels.SHELL_OPEN_PATHS, async (_e, targetPaths: string[]) => {
     const resolved = [...new Set(targetPaths.map((p) => path.resolve(p)))].filter((p) =>
       fs.existsSync(p)
@@ -50,6 +52,8 @@ export function registerShellHandlers(): void {
   })
 
   ipcMain.handle(IpcChannels.SHELL_OPEN_EXTERNAL, async (_e, url: string) => {
+    // web links and steam:// only, the opener would run whatever scheme handler a URL names
+    if (!isSafeExternalUrl(url)) return { ok: false, error: 'This kind of link is not opened' }
     try {
       await shell.openExternal(url)
       return { ok: true }

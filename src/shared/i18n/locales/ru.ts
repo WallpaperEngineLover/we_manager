@@ -251,6 +251,8 @@ export const ru: Messages = {
   'dialog.pickShortcutFolder': 'Выберите папку для открытия',
   'dialog.pickThumbnail': 'Выберите миниатюру',
   'dialog.pickWorkshopFolder': 'Выберите папку Мастерской Wallpaper Engine',
+  'dialog.storeReset': 'Не удалось прочитать {name}, поэтому приложение запустилось с настройками по умолчанию для него. Повреждённый файл сохранён как {keptAs}.',
+  'dialog.storeResetTitle': 'Файл настроек был сброшен',
 
   'display.description': 'В режиме "Каждый экран отдельно" у каждого экрана свои обои и плейлист, а "Воспроизвести" спрашивает, какой экран использовать. Переключение останавливает всё, что сейчас играет.',
   'display.detected': 'Найдены: {screens}',

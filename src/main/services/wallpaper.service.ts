@@ -5,6 +5,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { detectDisplayServer, detectDesktopEnv } from '../utils/platform'
 import { hostCommand, isHostCommandAvailable } from '../utils/flatpak'
+import { fileUri, finderWallpaperArgs, plasmaWallpaperScript } from '../utils/wallpaperScripts'
 import type { ScreenTarget, WallpaperBackend, WallpaperEnvironment, WallpaperMeta } from '@shared/types'
 import { getLweStatus, launchLweAsync, type LweLaunchOptions } from './lwe.service'
 import { ensureDependencyInstalled } from './dependency.service'
@@ -138,27 +139,17 @@ async function applyWithBackend(backend: WallpaperBackend, imagePath: string): P
         'set',
         'org.gnome.desktop.background',
         'picture-uri',
-        `file://${imagePath}`
+        fileUri(imagePath)
       ]))
       break
-    case 'qdbus': {
-      const script = `
-        var allDesktops = desktops();
-        for (var i = 0; i < allDesktops.length; i++) {
-          var d = allDesktops[i];
-          d.wallpaperPlugin = 'org.kde.image';
-          d.currentConfigGroup = ['Wallpaper', 'org.kde.image', 'General'];
-          d.writeConfig('Image', 'file://${imagePath}');
-        }
-      `
+    case 'qdbus':
       await execFileAsync(...hostCommand('qdbus', [
         'org.kde.plasmashell',
         '/PlasmaShell',
         'org.kde.PlasmaShell.evaluateScript',
-        script
+        plasmaWallpaperScript(imagePath)
       ]))
       break
-    }
     case 'windows':
       await applyWindows(imagePath)
       break
@@ -171,8 +162,7 @@ async function applyWithBackend(backend: WallpaperBackend, imagePath: string): P
 }
 
 async function applyMacOS(imagePath: string): Promise<void> {
-  const script = `tell application "Finder" to set desktop picture to POSIX file "${imagePath}"`
-  await execFileAsync('osascript', ['-e', script])
+  await execFileAsync('osascript', finderWallpaperArgs(imagePath))
 }
 
 async function applyWindows(imagePath: string): Promise<void> {

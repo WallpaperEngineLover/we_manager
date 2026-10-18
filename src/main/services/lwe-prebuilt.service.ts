@@ -9,7 +9,7 @@ import type { LweInstallProgress, LwePrebuiltTarget } from '@shared/types'
 import { isCommandAvailable } from '../utils/platform'
 import { getLwePrebuiltDir } from '../utils/paths'
 import { isFlatpak } from '../utils/flatpak'
-import { download, fetchLatestRelease } from '../utils/github'
+import { downloadVerified, fetchLatestRelease } from '../utils/github'
 import { buildCleanBuildEnv, isOstreeSystem, parseOsReleaseIds, readPrebuiltRelease, resetLweDetection } from './lwe.service'
 import { t } from '../i18n'
 
@@ -49,7 +49,7 @@ function readOsRelease(): Record<string, string> {
       const match = /^([A-Z_]+)=(.*)$/.exec(line.trim())
       if (match) fields[match[1]] = match[2].replace(/^["']|["']$/g, '')
     }
-  } catch { /* no os-release */ }
+  } catch { }
   return fields
 }
 
@@ -177,7 +177,6 @@ export async function installLwePrebuilt(win: BrowserWindow): Promise<void> {
     send({ stage: 'downloading', message: t('lwe.lookingUpRelease'), percentage: 2 })
     const release = await fetchLatestRelease(LWE_RELEASE_REPO)
     if (!release) throw new Error(`${LWE_RELEASE_REPO} has no releases yet.`)
-    // fall back to the portable build
     const portableAsset = assetName(isKdeSession() ? 'kde' : 'generic', 'portable')
     const asset = release.assets.find(a => a.name === target.asset) ?? release.assets.find(a => a.name === portableAsset)
     if (!asset) throw new Error(`Release ${release.tag_name} has no ${target.asset}.`)
@@ -191,7 +190,8 @@ export async function installLwePrebuilt(win: BrowserWindow): Promise<void> {
       const sizeMb = Math.round(asset.size / 1024 / 1024)
       send({ stage: 'downloading', message: t('lwe.downloadingRelease', { tag: release.tag_name, size: sizeMb }), percentage: 5 })
       fs.mkdirSync(path.dirname(installDir), { recursive: true })
-      await download(asset.browser_download_url, archive, asset.size, fraction => {
+      // checked against the release's size and sha256 before tar sees it
+      await downloadVerified(asset, archive, fraction => {
         send({
           stage: 'downloading',
           message: t('lwe.downloadingRelease', { tag: release.tag_name, size: sizeMb }),

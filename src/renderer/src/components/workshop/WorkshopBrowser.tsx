@@ -101,7 +101,7 @@ const DEFAULT_STATE: WorkshopFilterState = {
 
 function loadFilters(stored: unknown): WorkshopFilterState {
   const parsed = stored as Partial<WorkshopFilterState>
-  if (parsed._v !== STORAGE_VERSION) return DEFAULT_STATE
+  if (parsed['_v'] !== STORAGE_VERSION) return DEFAULT_STATE
   const state = { ...DEFAULT_STATE, ...parsed }
   if ('resolutions' in parsed) state.resolutions = migrateResolutionSelection(parsed.resolutions)
   return state

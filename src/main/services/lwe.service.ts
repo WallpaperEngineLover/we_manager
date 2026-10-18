@@ -43,6 +43,8 @@ import {
   killHostProcess
 } from '../utils/flatpak'
 import { owningPackage } from '../utils/packages'
+import { isOwnDirectory, lweBuildDir } from '../utils/buildDir'
+import { LWE_PROCESS_PATTERN, isLweCommandLine } from '../utils/engineProcess'
 import {
   getLweRepoUrl,
   getLweRepoBranch,
@@ -99,7 +101,7 @@ function dropPoisonedCmakeCache(cmakeBuild: string): boolean {
 }
 
 const LWE_BINARY = 'linux-wallpaperengine'
-const BUILD_DIR = path.join(os.tmpdir(), 'lwe-build')
+const BUILD_DIR = lweBuildDir()
 
 const LWE_SEARCH_PATHS = [
   path.join(os.homedir(), 'projects', 'private', 'linux-wallpaperengine', 'build', 'output', 'linux-wallpaperengine'),
@@ -123,6 +125,9 @@ async function removeBuildDir(dir: string): Promise<void> {
     const code = (err as NodeJS.ErrnoException).code
     if (code !== 'EACCES' && code !== 'ENOTEMPTY' && code !== 'EPERM') throw err
   }
+  // root only deletes what is ours: files a make install left root-owned inside our folder, not somebody else's
+  // folder or a link
+  if (!isOwnDirectory(dir)) throw new Error(`${dir} is not a folder of yours, not removing it as root.`)
   const elevate = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
   await execFileAsync(elevate, ['rm', '-rf', dir], { timeout: 30_000, encoding: 'utf8' })
 }
@@ -143,35 +148,7 @@ function readLweManifest(): LweInstallManifest | undefined {
 function writeLweManifest(manifest: LweInstallManifest): void {
   try {
     fs.writeFileSync(getLweManifestPath(), JSON.stringify(manifest, null, 2), 'utf8')
-  } catch { /* non-fatal */ }
-}
-
-function parseExtraCmakeArgs(raw: string | null): string[] {
-  if (!raw) return []
-  const args: string[] = []
-  let current = ''
-  let quote: string | null = null
-  let inToken = false
-  for (const ch of raw) {
-    if (quote) {
-      if (ch === quote) quote = null
-      else current += ch
-      continue
-    }
-    if (ch === '"' || ch === "'") {
-      quote = ch
-      inToken = true
-      continue
-    }
-    if (/\s/.test(ch)) {
-      if (inToken) { args.push(current); current = ''; inToken = false }
-      continue
-    }
-    current += ch
-    inToken = true
-  }
-  if (inToken) args.push(current)
-  return args
+  } catch { }
 }
 
 const FLATPAK_LWE_BINARY = '/app/bin/linux-wallpaperengine'
@@ -182,7 +159,7 @@ function findLweBinary(): string | undefined {
     try {
       fs.accessSync(p, fs.constants.X_OK)
       return p
-    } catch { /* keep looking */ }
+    } catch { }
   }
   return whichCommand(LWE_BINARY)
 }
@@ -204,7 +181,7 @@ let ownerCache: { path: string; owner: string | undefined } | undefined
 /** Flatpak, Nix profile or distribution package that owns the binary */
 export function lwePackageOwner(binary: string): string | undefined {
   let real = binary
-  try { real = fs.realpathSync(binary) } catch { /* keep the path */ }
+  try { real = fs.realpathSync(binary) } catch { }
   if (ownerCache?.path === real) return ownerCache.owner
   let owner: string | undefined
   if (isFlatpak() && real.startsWith('/app/')) {
@@ -292,8 +269,8 @@ const DEPS_FEDORA = [
 ]
 
 /** Versioned nodejsNN-devel packages conflict: keep an installed one, else match the newest libnode */
-export function nodeDevelPackage(installedNodePackages: string[]): string | null {
-  const names = installedNodePackages.map((name) => name.trim())
+export function nodeDevelPackage(installed: string[]): string | null {
+  const names = installed.map((name) => name.trim())
   if (names.some((name) => /^nodejs\d*-devel$/.test(name))) return null
 
   let best: { name: string; version: number } | undefined
@@ -304,6 +281,10 @@ export function nodeDevelPackage(installedNodePackages: string[]): string | null
     if (!best || version > best.version) best = { name: `nodejs${match[1]}-devel`, version }
   }
   return best?.name ?? 'nodejs-devel'
+}
+
+function quotedPaths(paths: string[]): string {
+  return paths.map((p) => JSON.stringify(p)).join(' ')
 }
 
 function installedNodePackages(): string[] {
@@ -455,11 +436,12 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     if (!canReuseBuildCache) {
       await removeBuildDir(BUILD_DIR)
     }
+    // private, the install runs this tree's make as root
+    fs.mkdirSync(BUILD_DIR, { recursive: true, mode: 0o700 })
 
     if (isLocalDir) {
       // copy the working tree so uncommitted edits are built
       send({ stage: 'cloning', message: t('lwe.copyingSource', { repo }), percentage: 5 })
-      fs.mkdirSync(BUILD_DIR, { recursive: true })
       if (isCommandAvailable('rsync')) {
         // --no-times: old source mtimes could make make skip a changed file in a reused dir
         await execFileAsync('rsync', [
@@ -490,6 +472,9 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       })
     }
 
+    // rsync -a gave it the source folder's mode
+    fs.chmodSync(BUILD_DIR, 0o700)
+
     const cmakeBuild = path.join(BUILD_DIR, 'build')
     fs.mkdirSync(cmakeBuild, { recursive: true })
     if (dropPoisonedCmakeCache(cmakeBuild)) {
@@ -505,7 +490,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       '-DCMAKE_INSTALL_PREFIX=/usr/local',
       '-DCMAKE_C_FLAGS=-Wno-error',
       '-DCMAKE_CXX_FLAGS=-Wno-error',
-      ...parseExtraCmakeArgs(getLweCmakeArgs())
+      ...parseCustomArgs(getLweCmakeArgs() ?? '')
     ], {
       cwd: cmakeBuild,
       env: buildEnv,
@@ -522,7 +507,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
         timeout: 60_000,
         maxBuffer: 10 * 1024 * 1024,
         encoding: 'utf8'
-      }).catch(() => { /* nothing to clean */ })
+      }).catch(() => { })
     }
 
     send({ stage: 'building', message: t('lwe.compiling'), percentage: 40 })
@@ -544,7 +529,6 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     const pathEnv = process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'
     // install_manifest.txt lets uninstall remove exactly what was installed
     const manifestMarker = '###LWE_INSTALL_MANIFEST###'
-    // hand a local repo's build dir back to the user
     const reclaim = isLocalDir
       ? `chown -R ${process.getuid!()}:${process.getgid!()} ${JSON.stringify(BUILD_DIR)}`
       : `rm -rf ${JSON.stringify(BUILD_DIR)}`
@@ -586,7 +570,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
     if (!isLocalDir) {
       try {
         await removeBuildDir(BUILD_DIR)
-      } catch { /* ignore cleanup errors */ }
+      } catch { }
 
     }
 
@@ -657,7 +641,6 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
     // deepest first, so a dir only prunes once its own contents are gone
     dirsToPrune = [...new Set(manifest.files.map(f => path.dirname(f)))].sort((a, b) => b.length - a.length)
   } else {
-    // no manifest: binary + lib dir only
     const binaryPath = status.path
     let realPath: string
     try {
@@ -677,21 +660,20 @@ export async function uninstallLwe(): Promise<{ ok: boolean; message: string }> 
         if (entries.some(e => e.includes('cef') || e.includes('wallpaper'))) {
           filesToRemove.push(libDir)
         }
-      } catch { /* ignore */ }
+      } catch { }
     }
   }
 
   try {
-    const quoted = (paths: string[]) => paths.map(p => JSON.stringify(p)).join(' ')
     const script = dirsToPrune.length > 0
-      ? `rm -f ${quoted(filesToRemove)}; rmdir --ignore-fail-on-non-empty -p ${quoted(dirsToPrune)} 2>/dev/null; ldconfig`
-      : `rm -f ${quoted(filesToRemove)}; ldconfig`
+      ? `rm -f ${quotedPaths(filesToRemove)}; rmdir --ignore-fail-on-non-empty -p ${quotedPaths(dirsToPrune)} 2>/dev/null; ldconfig`
+      : `rm -f ${quotedPaths(filesToRemove)}; ldconfig`
     await execFileAsync(elevate, ['bash', '-c', script], {
       timeout: 60_000,
       encoding: 'utf8'
     })
 
-    try { fs.rmSync(getLweManifestPath(), { force: true }) } catch { /* ignore */ }
+    try { fs.rmSync(getLweManifestPath(), { force: true }) } catch { }
 
     resetLweDetection()
 
@@ -1130,7 +1112,7 @@ function isLweProcess(pid: number): boolean {
 
   try {
     const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8')
-    return cmdline.includes(LWE_BINARY)
+    return isLweCommandLine(cmdline)
   } catch {
     // /proc unreadable, it is alive at least
     return true
@@ -1149,7 +1131,7 @@ const HOST_ALIVE_TTL_MS = 5000
 
 function rememberHostAlive(hostPid: number, cmdline: string | null | undefined): boolean {
   // undefined: the host couldn't be asked
-  const alive = cmdline === undefined ? (hostAliveCache.get(hostPid)?.alive ?? true) : !!cmdline?.includes(LWE_BINARY)
+  const alive = cmdline === undefined ? (hostAliveCache.get(hostPid)?.alive ?? true) : !!cmdline && isLweCommandLine(cmdline)
   hostAliveCache.set(hostPid, { alive, at: Date.now() })
   return alive
 }
@@ -1227,7 +1209,6 @@ function readInstanceEntries(): InstanceEntry[] {
   try {
     return JSON.parse(fs.readFileSync(getInstancesFilePath(), 'utf8')) as InstanceEntry[]
   } catch {
-    // nothing running
     return []
   }
 }
@@ -1480,7 +1461,9 @@ export function buildHotswapLines(options: HotswapOptions): string[] {
   for (const [id, volume] of Object.entries(options.soundVolume ?? {})) {
     lines.push(`sound-volume=${id}=${volume}`)
   }
-  return lines
+  const whole = lines.filter((line) => !/[\r\n]/.test(line))
+  if (whole.length !== lines.length) console.warn('[LWE] Left out control lines holding a line break')
+  return whole
 }
 
 // engines sharing the control file must read a request before the next overwrites it
@@ -1754,7 +1737,7 @@ export async function listLweObjects(wallpaperPath: string): Promise<LweSceneObj
   } catch (err) {
     const e = err as Error & { stdout?: string; stderr?: string }
     const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
-    throw new Error(`Failed to list wallpaper objects: ${msg}`)
+    throw new Error(`Failed to list wallpaper objects: ${msg}`, { cause: err })
   }
 }
 
@@ -1793,7 +1776,7 @@ export async function listLweEffects(wallpaperPath: string): Promise<LweSceneEff
   } catch (err) {
     const e = err as Error & { stdout?: string; stderr?: string }
     const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
-    throw new Error(`Failed to list wallpaper effects: ${msg}`)
+    throw new Error(`Failed to list wallpaper effects: ${msg}`, { cause: err })
   }
 }
 
@@ -1843,7 +1826,7 @@ export async function listLweAudioObjects(wallpaperPath: string): Promise<LweAud
   } catch (err) {
     const e = err as Error & { stdout?: string; stderr?: string }
     const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
-    throw new Error(`Failed to list audio-reactive objects: ${msg}`)
+    throw new Error(`Failed to list audio-reactive objects: ${msg}`, { cause: err })
   }
 }
 
@@ -1916,7 +1899,7 @@ export async function listLweProperties(wallpaperPath: string): Promise<LwePrope
   } catch (err) {
     const e = err as Error & { stdout?: string; stderr?: string }
     const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
-    throw new Error(`Failed to list wallpaper properties: ${msg}`)
+    throw new Error(`Failed to list wallpaper properties: ${msg}`, { cause: err })
   }
 }
 
@@ -1948,7 +1931,7 @@ async function waitForExit(target: EngineProcess, timeoutMs = 2000): Promise<voi
 
   try {
     signalEngine(target, 'SIGKILL')
-  } catch { /* already dead */ }
+  } catch { }
   await pollUntilGone(target, 500)
 }
 
@@ -1962,7 +1945,7 @@ export async function stopLwe(screen?: ScreenTarget): Promise<void> {
       inst.stopping = true
       try {
         signalEngine(inst, 'SIGTERM')
-      } catch { /* already dead */ }
+      } catch { }
       await waitForExit(inst)
       if (inst.controlFile) fs.rmSync(inst.controlFile, { force: true })
       fs.rmSync(inputFileFor(inst.screen), { force: true })
@@ -1983,8 +1966,9 @@ export async function killAllLweProcesses(): Promise<{ ok: boolean; message: str
   instances.clear()
   persistInstances()
 
-  // the bracket keeps pkill from matching flatpak-spawn's own command line
-  const [file, args] = hostCommand('pkill', ['-9', '-f', '-c', `${LWE_BINARY.slice(0, -1)}[${LWE_BINARY.slice(-1)}]`])
+  // by the program's own name, not by the name showing up anywhere in a command line (an editor on the repo folder,
+  // git, make): the pattern is anchored, so flatpak-spawn's own command line doesn't match either
+  const [file, args] = hostCommand('pkill', ['-9', '-f', '-c', LWE_PROCESS_PATTERN])
   try {
     const { stdout } = await execFileAsync(file, args)
     const count = parseInt(stdout.trim(), 10) || 0
@@ -2001,7 +1985,6 @@ export async function killAllLweProcesses(): Promise<{ ok: boolean; message: str
 
 const SCREENSHOT_TIMEOUT_MS = 45_000
 
-/** Saves one settled frame to `outPath` */
 export async function captureLweScreenshot(
   wallpaperPath: string,
   options: LweLaunchOptions,

@@ -24,7 +24,7 @@ function userExtensionDir(): string {
 export function bundledExtensionDir(enginePath = getLweStatus().path): string | undefined {
   if (!enginePath) return undefined
   let real = enginePath
-  try { real = fs.realpathSync(enginePath) } catch { /* keep the path */ }
+  try { real = fs.realpathSync(enginePath) } catch { }
   const dir = path.join(path.dirname(real), 'gnome-shell-extension', GNOME_EXTENSION_UUID)
   return fs.existsSync(path.join(dir, 'metadata.json')) ? dir : undefined
 }

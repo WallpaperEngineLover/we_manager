@@ -53,7 +53,6 @@ export function listDesktopApplications(): DesktopApplication[] {
         if (entry.Type !== 'Application' || entry.NoDisplay === 'true' || entry.Hidden === 'true' || !entry.Name) continue
         result.push({ name: entry.Name, file: path.join(dir, relative) })
       } catch {
-        // unreadable entries are skipped
       }
     }
   }

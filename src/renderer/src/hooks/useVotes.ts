@@ -67,7 +67,6 @@ export function useVoteAction(onError?: (message: string) => void) {
   return { vote, isLiking: pending === 'like', isDisliking: pending === 'dislike' }
 }
 
-// whole selection, one toast
 
 export function useBatchVote(): (ids: string[], up: boolean) => Promise<void> {
   const { showToast } = useToast()

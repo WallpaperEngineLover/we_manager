@@ -223,6 +223,8 @@ export const de: Messages = {
   'dialog.pickShortcutFolder': 'Zu öffnenden Ordner wählen',
   'dialog.pickThumbnail': 'Vorschaubild wählen',
   'dialog.pickWorkshopFolder': 'Wallpaper Engine Workshop-Ordner auswählen',
+  'dialog.storeReset': '{name} konnte nicht gelesen werden, deshalb startet die App dafür mit den Standardwerten. Die beschädigte Datei wurde als {keptAs} aufbewahrt.',
+  'dialog.storeResetTitle': 'Eine Einstellungsdatei wurde zurückgesetzt',
 
   'display.description': 'Mit "Jeder Bildschirm für sich" bekommt jeder Bildschirm einen eigenen Hintergrund und eine eigene Playlist, und "Abspielen" fragt nach dem Bildschirm. Ein Wechsel stoppt alles, was gerade läuft.',
   'display.detected': 'Erkannt: {screens}',

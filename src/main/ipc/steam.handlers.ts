@@ -8,6 +8,7 @@ import * as steam from '../services/steam.service'
 import * as library from '../services/library.service'
 import * as backup from '../services/backup.service'
 import * as verify from '../services/workshop-verify.service'
+import { isWallpaperEngineItem } from '../services/workshop.service'
 import { getWorkshopPath } from '../utils/paths'
 import { setDependencyInstaller } from '../services/dependency.service'
 
@@ -116,6 +117,9 @@ async function startRepair(win: BrowserWindow, itemId: string): Promise<{ done: 
   if (entry?.verifyProblem === 'missingDependency' && entry.localPath) {
     const dependency = verify.presetDependency(library.readProjectJson(entry.localPath) ?? {})
     if (dependency) {
+      if (!(await isWallpaperEngineItem(dependency))) {
+        throw new Error(`Dependency ${dependency} is not a Wallpaper Engine workshop item, not subscribing to it`)
+      }
       await subscribeAndDownload(win, dependency)
       library.updateWallpaper(itemId, { verifyProblem: undefined })
       notifyLibrary()
@@ -192,7 +196,7 @@ async function startRepair(win: BrowserWindow, itemId: string): Promise<{ done: 
 
 // async so a hung mount doesn't block the main process
 async function removeLocalFiles(dir: string): Promise<void> {
-  try { await fs.promises.rm(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+  try { await fs.promises.rm(dir, { recursive: true, force: true }) } catch { }
 }
 
 export function registerSteamHandlers(win: BrowserWindow): void {

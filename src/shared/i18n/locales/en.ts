@@ -221,6 +221,8 @@ export const en = {
   'dialog.pickShortcutFolder': 'Choose a folder to open',
   'dialog.pickThumbnail': 'Choose a thumbnail',
   'dialog.pickWorkshopFolder': 'Select Wallpaper Engine Workshop folder',
+  'dialog.storeReset': '{name} could not be read, so the app started with defaults for it. The damaged file was kept as {keptAs}.',
+  'dialog.storeResetTitle': 'A settings file was reset',
 
   'display.description': 'With each screen on its own, every screen gets its own wallpaper and playlist, and Play asks which screen to use. Switching stops whatever is playing now.',
   'display.detected': 'Detected: {screens}',

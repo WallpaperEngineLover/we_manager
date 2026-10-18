@@ -251,6 +251,8 @@ export const pl: Messages = {
   'dialog.pickShortcutFolder': 'Wybierz folder do otwarcia',
   'dialog.pickThumbnail': 'Wybierz miniaturę',
   'dialog.pickWorkshopFolder': 'Wybierz folder Warsztatu Wallpaper Engine',
+  'dialog.storeReset': 'Nie udało się odczytać pliku {name}, więc aplikacja uruchomiła się z wartościami domyślnymi dla niego. Uszkodzony plik zachowano jako {keptAs}.',
+  'dialog.storeResetTitle': 'Plik ustawień został zresetowany',
 
   'display.description': 'Przy "Każdy ekran osobno" każdy ekran ma własną tapetę i playlistę, a Odtwórz pyta, którego ekranu użyć. Przełączenie zatrzymuje wszystko, co jest teraz odtwarzane.',
   'display.detected': 'Wykryto: {screens}',

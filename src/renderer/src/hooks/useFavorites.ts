@@ -70,7 +70,6 @@ export function useFavoriteAction(onError?: (message: string) => void) {
   return { setFavorite, isPending: pending }
 }
 
-// whole selection, one toast
 export function useBatchFavorite(): (ids: string[], add: boolean) => Promise<void> {
   const { showToast } = useToast()
   const recordFavorites = useRecordFavorites()

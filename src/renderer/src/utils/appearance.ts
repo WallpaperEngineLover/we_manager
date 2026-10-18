@@ -24,7 +24,6 @@ export function applyAppearance(appearance: Appearance, translucent: boolean): v
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify({ appearance, translucent }))
   } catch {
-    // storage unavailable
   }
 }
 
@@ -34,7 +33,6 @@ export function applyCachedAppearance(): void {
     const cached = JSON.parse(localStorage.getItem(CACHE_KEY) ?? 'null')
     if (cached) applyAppearance(normalizeAppearance(cached.appearance), cached.translucent === true)
   } catch {
-    // nothing cached
   }
 }
 

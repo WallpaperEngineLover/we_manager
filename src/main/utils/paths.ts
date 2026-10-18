@@ -49,7 +49,6 @@ export function getDefaultWorkshopPath(): string {
     ]
     return candidates.find((p) => fs.existsSync(p)) ?? candidates[0]
   }
-  // macOS
   return path.join(
     home,
     'Library',

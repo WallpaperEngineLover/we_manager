@@ -7,6 +7,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   steamworks-vote:
     runs-on: ubuntu-latest
@@ -53,6 +56,10 @@ jobs:
 
       - run: npm ci
 
+      - name: Say that the patched steamworks.js is missing
+        if: ${{ needs.steamworks-vote.result != 'success' }}
+        run: echo "::warning::The patched steamworks.js build ended with ${{ needs.steamworks-vote.result }}, this app falls back to unconfirmed votes and favorites"
+
       - uses: actions/download-artifact@v8
         if: ${{ needs.steamworks-vote.result == 'success' }}
         with:
@@ -75,8 +82,9 @@ jobs:
             dist/*.deb
           if-no-files-found: error
 
-  # the engine's portable tarball for the Flatpak: from the newest release that has one, else the newest artifact of the
-  # engine's CMake workflow (a release only gets the tarball at the end of that run)
+  # the engine's portable tarball for the Flatpak. A tag build only takes a released engine: the newest release that has
+  # the tarball, or the one named in the ENGINE_TAG repository variable. Other builds may also take the newest artifact
+  # of the engine's CMake workflow (a release only gets the tarball at the end of that run)
   engine-portable:
     runs-on: ubuntu-latest
     outputs:
@@ -88,25 +96,37 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ENGINE: WallpaperEngineLover/linux-wallpaperengine-kde
           ASSET: linux-wallpaperengine-kde-portable-x86_64.tar.gz
+          ENGINE_TAG: ${{ vars.ENGINE_TAG }}
+          RELEASE_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
           mkdir -p engine
-          tag=$(gh api "repos/$ENGINE/releases?per_page=30" \
-            --jq "[.[] | select(any(.assets[]; .name == \"$ASSET\"))][0].tag_name // empty")
+          tag="$ENGINE_TAG"
+          if [ -z "$tag" ]; then
+            tag=$(gh api "repos/$ENGINE/releases?per_page=30" \
+              --jq "[.[] | select(any(.assets[]; .name == \"$ASSET\"))][0].tag_name // empty")
+          fi
           if [ -n "$tag" ]; then
             echo "using release $tag"
             gh release download "$tag" -R "$ENGINE" -p "$ASSET" -D engine
-          else
+            digest=$(gh api "repos/$ENGINE/releases/tags/$tag" --jq ".assets[] | select(.name == \"$ASSET\") | .digest // empty")
+            case "$digest" in
+              sha256:*) echo "${digest#sha256:}  engine/$ASSET" | sha256sum -c - ;;
+              *) echo "::warning::GitHub gave no sha256 for $ASSET of $tag, it was not checked" ;;
+            esac
+            echo "Flatpak engine: release $tag" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$RELEASE_BUILD" != "true" ]; then
             # the newest unexpired artifact, also from a run that failed later on or is still going
             run=$(gh api "repos/$ENGINE/actions/artifacts?name=linux-wallpaperengine-kde-portable&per_page=10" \
               --jq '[.artifacts[] | select(.expired | not)][0].workflow_run.id // empty')
             if [ -n "$run" ] && gh run download "$run" -R "$ENGINE" -n linux-wallpaperengine-kde-portable -D engine; then
               echo "using the artifact of CMake run $run"
+              echo "Flatpak engine: artifact of CMake run $run" >> "$GITHUB_STEP_SUMMARY"
             fi
           fi
           if [ -f "engine/$ASSET" ]; then
             echo "found=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::no portable linux-wallpaperengine-kde build in a release or a CMake run artifact, skipping the Flatpak"
+            echo "::warning::no released portable linux-wallpaperengine-kde build, skipping the Flatpak"
             echo "found=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -141,7 +161,7 @@ jobs:
       - name: Collect sources
         run: cp "$RUNNER_TEMP"/we-manager/*.deb packaging/flatpak/we-manager.deb
 
-      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6
         with:
           bundle: we-manager.flatpak
           manifest-path: packaging/flatpak/io.github.WallpaperEngineLover.we_manager.yml
@@ -179,8 +199,14 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
+          STEAMWORKS_RESULT: ${{ needs.steamworks-vote.result }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
+          notes=()
+          if [ "$STEAMWORKS_RESULT" != "success" ]; then
+            echo "::warning::The patched steamworks.js build ended with $STEAMWORKS_RESULT, this release has unconfirmed votes and favorites"
+            notes=(--notes "> **Built without the patched steamworks.js** (its build ended with \`$STEAMWORKS_RESULT\`): likes, dislikes and favorites are not confirmed by Steam in this release.")
+          fi
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes "${notes[@]}" \
             release/*.AppImage release/*.deb $(ls release/steamworks.js-*.tgz release/*.flatpak 2>/dev/null)
 
   aur:

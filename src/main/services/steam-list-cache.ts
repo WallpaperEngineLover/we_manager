@@ -1,4 +1,5 @@
-import Store from 'electron-store'
+import type Store from 'electron-store'
+import { openStore } from '../utils/safeStore'
 import { app } from 'electron'
 
 // a Steam Workshop list (liked, favorited) cached on disk, refreshed by a background crawl
@@ -57,7 +58,7 @@ export class SteamListCache {
     storeName: string,
     private source: ListSource
   ) {
-    this.store = new Store<ListCacheStore>({
+    this.store = openStore<ListCacheStore>({
       name: storeName,
       defaults: { accountId: null, up: [], missing: [], lastFullSync: 0, pending: {} }
     })

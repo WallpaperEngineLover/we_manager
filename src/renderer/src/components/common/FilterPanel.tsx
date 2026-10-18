@@ -58,7 +58,6 @@ export function CheckItem({
   )
 }
 
-// children of a CheckItem
 export function CheckGroup({ children }: { children: ReactNode }) {
   return <div className="ml-[6px] pl-2.5">{children}</div>
 }

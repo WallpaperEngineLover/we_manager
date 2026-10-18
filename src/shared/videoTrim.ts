@@ -57,12 +57,12 @@ export function normalizeVideoSegments(segments: VideoSegment[], duration?: numb
   return merged
 }
 
-function seconds(value: number): string {
+function wholeSeconds(value: number): string {
   return String(Math.round(value * 1000) / 1000)
 }
 
 export function formatVideoSegments(segments: VideoSegment[]): string {
-  return segments.map((s) => `${seconds(s.start)}-${s.end === undefined ? '' : seconds(s.end)}`).join(',')
+  return segments.map((s) => `${wholeSeconds(s.start)}-${s.end === undefined ? '' : wholeSeconds(s.end)}`).join(',')
 }
 
 export function trimmedVideoLength(duration: number, segments: VideoSegment[]): number {

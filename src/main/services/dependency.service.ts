@@ -66,7 +66,7 @@ export async function ensureDependencyInstalled(
     try {
       await installer(dependencyId)
     } catch (err) {
-      throw new Error(t('dependency.subscribeFailed', { id: dependencyId, error: (err as Error).message }))
+      throw new Error(t('dependency.subscribeFailed', { id: dependencyId, error: (err as Error).message }), { cause: err })
     }
     throw new Error(t('dependency.downloading', { id: dependencyId, title }))
   }

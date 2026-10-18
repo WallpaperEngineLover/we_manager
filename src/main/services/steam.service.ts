@@ -117,6 +117,7 @@ function send(proc: UtilityProcess, method: string, args: unknown[]): Promise<un
     const timer = setTimeout(() => {
       pendingRequests.delete(id)
       reject(new Error(`Steam ${method} timed out`))
+      if (host === proc) stopHost()
     }, REQUEST_TIMEOUT_MS)
     pendingRequests.set(id, {
       resolve: (v) => {
@@ -176,9 +177,19 @@ function startHost(): Promise<void> {
   )
 }
 
-async function steamCall<T>(method: string, ...args: unknown[]): Promise<T> {
+function assertSteamUsable(): void {
   if (!windowActive) throw new Error('Steam is only used while the window is open')
   if (!isSteamRunning()) throw new Error('Steam not running')
+}
+
+export async function whenHostReady(): Promise<void> {
+  assertSteamUsable()
+  if (!hostReady) hostReady = startHost()
+  await hostReady
+}
+
+async function steamCall<T>(method: string, ...args: unknown[]): Promise<T> {
+  assertSteamUsable()
   inFlight++
   try {
     if (!hostReady) hostReady = startHost()
@@ -437,7 +448,7 @@ export function voteOnItemAndConfirm(itemId: bigint, voteUp: boolean): Promise<b
         up: voteUp,
         message: `${voteUp ? 'Like' : 'Dislike'} failed after ${WRITE_ATTEMPTS} attempts: ${msg}`
       })
-      throw new Error(`Could not reach Steam to ${voteUp ? 'like' : 'dislike'} this wallpaper: ${msg}`)
+      throw new Error(`Could not reach Steam to ${voteUp ? 'like' : 'dislike'} this wallpaper: ${msg}`, { cause: err })
     }
     setVoteFailure(idStr, null)
     likedList.record(idStr, voteUp)
@@ -546,7 +557,7 @@ export function setFavorite(itemId: bigint, add: boolean): Promise<boolean> {
         message: `${add ? 'Adding to' : 'Removing from'} favorites failed after ${WRITE_ATTEMPTS} attempts: ${msg}`
       })
       favoriteStatusChanged()
-      throw new Error(`Could not reach Steam to ${add ? 'favorite' : 'unfavorite'} this wallpaper: ${msg}`)
+      throw new Error(`Could not reach Steam to ${add ? 'favorite' : 'unfavorite'} this wallpaper: ${msg}`, { cause: err })
     }
     failedFavorites.delete(idStr)
     favoriteList.record(idStr, add)
@@ -618,11 +629,15 @@ export async function getInstallInfo(itemId: bigint): Promise<{ folder: string; 
 
 // steamworks.js only knows the player and friends, read the public profile XML
 const authorInfoCache = new Map<string, WorkshopAuthorInfo | null>()
+const PROFILE_FETCH_TIMEOUT_MS = 15_000
 
 export async function getAuthorInfo(steamId: string): Promise<WorkshopAuthorInfo | null> {
   if (authorInfoCache.has(steamId)) return authorInfoCache.get(steamId) ?? null
   try {
-    const res = await fetch(`https://steamcommunity.com/profiles/${steamId}?xml=1`)
+    const res = await fetch(`https://steamcommunity.com/profiles/${steamId}?xml=1`, {
+      signal: AbortSignal.timeout(PROFILE_FETCH_TIMEOUT_MS)
+    })
+    if (!res.ok) return null
     const xml = await res.text()
     const name = xml.match(/<steamID><!\[CDATA\[([\s\S]*?)\]\]><\/steamID>/)?.[1]
     const avatarUrl = xml.match(/<avatarFull><!\[CDATA\[([\s\S]*?)\]\]><\/avatarFull>/)?.[1]
@@ -630,7 +645,6 @@ export async function getAuthorInfo(steamId: string): Promise<WorkshopAuthorInfo
     authorInfoCache.set(steamId, info)
     return info
   } catch {
-    authorInfoCache.set(steamId, null)
     return null
   }
 }

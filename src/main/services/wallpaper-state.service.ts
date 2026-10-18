@@ -1,4 +1,4 @@
-import Store from 'electron-store'
+import { openStore } from '../utils/safeStore'
 import type { ScreenTarget } from '@shared/types'
 
 interface StoreSchema {
@@ -7,7 +7,7 @@ interface StoreSchema {
   assignments?: Record<ScreenTarget, string>
 }
 
-const store = new Store<StoreSchema>()
+const store = openStore<StoreSchema>()
 
 export function getAssignments(): Record<ScreenTarget, string> {
   const assignments = store.get('assignments')

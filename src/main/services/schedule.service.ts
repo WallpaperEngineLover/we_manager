@@ -1,4 +1,4 @@
-import Store from 'electron-store'
+import { openStore } from '../utils/safeStore'
 import { nativeTheme, type BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import { IpcChannels } from '@shared/ipc-channels'
@@ -6,7 +6,7 @@ import type { ScheduleRule } from '@shared/types'
 import { dueTimeRules } from '@shared/schedule'
 import { getWallpaper, updateWallpaper } from './library.service'
 import { getPlaylist } from './playlist.service'
-import { expandScreen, showWallpaper, stopDisplay } from './display.service'
+import { expandScreen, setBusyWallpaperSource, showWallpaper, stopDisplay } from './display.service'
 import { startPlaylist, stopPlaylist } from './playlist-player.service'
 
 interface ScheduleStore {
@@ -15,7 +15,7 @@ interface ScheduleStore {
   lastTick: number | null
 }
 
-const store = new Store<ScheduleStore>({
+const store = openStore<ScheduleStore>({
   name: 'schedule',
   defaults: { rules: [], lastTick: null }
 })
@@ -27,6 +27,7 @@ const MAX_CATCH_UP_MS = 7 * 24 * 60 * 60 * 1000
 let win: BrowserWindow | null = null
 let timer: ReturnType<typeof setInterval> | null = null
 let lastDark: boolean | null = null
+const runningWallpapers = new Map<string, number>()
 
 export function getScheduleRules(): ScheduleRule[] {
   return store.get('rules')
@@ -54,7 +55,14 @@ export async function runRule(rule: ScheduleRule): Promise<void> {
     const wallpaper = getWallpaper(action.wallpaperId)
     if (!wallpaper) throw new Error('The scheduled wallpaper is no longer in the library')
     for (const s of expandScreen(screen)) stopPlaylist(s)
-    await showWallpaper(wallpaper, screen, { dependencyPrompt: 'once' })
+    runningWallpapers.set(wallpaper.id, (runningWallpapers.get(wallpaper.id) ?? 0) + 1)
+    try {
+      await showWallpaper(wallpaper, screen, { dependencyPrompt: 'once' })
+    } finally {
+      const left = (runningWallpapers.get(wallpaper.id) ?? 1) - 1
+      if (left > 0) runningWallpapers.set(wallpaper.id, left)
+      else runningWallpapers.delete(wallpaper.id)
+    }
     updateWallpaper(wallpaper.id, { appliedCount: (wallpaper.appliedCount ?? 0) + 1, lastAppliedAt: Date.now() })
   } else if (action.type === 'playlist') {
     if (!getPlaylist(action.playlistId)) throw new Error('The scheduled playlist no longer exists')
@@ -95,6 +103,7 @@ function onThemeChanged(): void {
 /** Call after the playlist player resumed, so a rule that came due while closed wins over it */
 export function initSchedule(window: BrowserWindow): void {
   win = window
+  setBusyWallpaperSource('schedule', () => [...runningWallpapers.keys()])
   lastDark = nativeTheme.shouldUseDarkColors
   nativeTheme.on('updated', onThemeChanged)
   tick()

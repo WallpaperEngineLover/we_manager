@@ -1,4 +1,4 @@
-import Store from 'electron-store'
+import { openStore } from '../utils/safeStore'
 import * as fs from 'fs'
 import * as path from 'path'
 import { app } from 'electron'
@@ -42,11 +42,9 @@ interface AppConfig {
   recommendedWebFpsEnabled: boolean
   audioScreen: string | null
   ambientVolume: number | null
-  /** --audio-sensitivity default */
   defaultAudioSensitivity: number
   /** --render-debug no-puppet-animation */
   disablePuppetAnimation: boolean
-  /** --disable-animations */
   disableAnimations: boolean
   steamIdentity: SteamIdentity
   /** steamId64s hidden from browsing */
@@ -64,7 +62,7 @@ interface AppConfig {
   dismissedUpdates: Partial<Record<UpdateTarget, string>>
 }
 
-const store = new Store<AppConfig>({
+const store = openStore<AppConfig>({
   name: 'config',
   defaults: {
     workshopPath: null,
@@ -386,7 +384,6 @@ export function getWeConfigPath(): string {
   return path.join(app.getPath('userData'), 'we-config.json')
 }
 
-/** Copies a WE config.json with workshop paths pointed at ours */
 export function importWEConfigFile(sourcePath: string): string {
   const workshopPath = getConfiguredWorkshopPath()
   if (!workshopPath) throw new Error('Workshop path must be configured before importing')

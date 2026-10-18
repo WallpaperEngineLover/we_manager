@@ -7,6 +7,7 @@ import { IpcChannels } from '@shared/ipc-channels'
 import type { BackupProgressEvent, WallpaperMeta } from '@shared/types'
 import { getConfiguredBackupPath } from './config.service'
 import * as library from './library.service'
+import { containedPath } from '../utils/contained'
 import { normalizeType, normalizeRating, type ProjectJson } from './library.service'
 
 export function getBackupDir(id: string): string {
@@ -52,7 +53,8 @@ async function readProjectJson(dir: string): Promise<ProjectJson | null> {
 
 // project.json names come from Windows, where "Preview.JPG" finds preview.jpg
 async function findFileIgnoringCase(dir: string, rel: string): Promise<string | undefined> {
-  const exact = path.join(dir, rel)
+  const exact = containedPath(dir, rel)
+  if (!exact) return undefined
   if (await exists(exact)) return exact
   const parent = path.dirname(exact)
   const name = path.basename(exact).toLowerCase()
@@ -207,7 +209,6 @@ export async function backupMatchesSource(sourcePath: string, backupDir: string)
   return true
 }
 
-// fsync destDir, drop it from the page cache and re-hash every file against the source
 export async function verifyOnDisk(sourcePath: string, destDir: string): Promise<boolean> {
   try {
     for (const file of await walkFiles(destDir)) await fsyncPath(path.join(destDir, file.relPath))
@@ -221,6 +222,68 @@ export async function verifyOnDisk(sourcePath: string, destDir: string): Promise
 
 export async function syncDir(dir: string): Promise<void> {
   await fsyncPath(dir)
+}
+
+function swapPaths(destDir: string): { stagingDir: string; oldDir: string; verifiedMark: string } {
+  const root = path.dirname(destDir)
+  const name = path.basename(destDir)
+  return {
+    stagingDir: path.join(root, `.${name}.partial`),
+    oldDir: path.join(root, `.${name}.old`),
+    verifiedMark: path.join(root, `.${name}.verified`)
+  }
+}
+
+const SWAP_SUFFIX = /^\.(.+)\.(partial|old|verified)$/
+
+const activeCopies = new Set<string>()
+
+export async function recoverInterruptedCopy(destDir: string): Promise<void> {
+  if (activeCopies.has(path.resolve(destDir))) return
+  await recoverSwap(destDir)
+}
+
+function removeTree(p: string): Promise<void> {
+  return fs.promises.rm(p, { recursive: true, force: true })
+}
+
+async function recoverSwap(destDir: string): Promise<void> {
+  const { stagingDir, oldDir, verifiedMark } = swapPaths(destDir)
+  const [hasDest, hasOld, hasStaging, isVerified] = await Promise.all([
+    exists(destDir),
+    exists(oldDir),
+    exists(stagingDir),
+    exists(verifiedMark)
+  ])
+  if (!hasOld && !hasStaging && !isVerified) return
+
+  if (!hasDest && isVerified && hasStaging) {
+    await fs.promises.rename(stagingDir, destDir)
+    console.warn(`[Backup] Finished an interrupted copy of ${destDir}`)
+  } else if (!hasDest && hasOld) {
+    await fs.promises.rename(oldDir, destDir)
+    console.warn(`[Backup] Restored ${destDir} from the copy an interrupted update had set aside`)
+  }
+  await fsyncPath(path.dirname(destDir)).catch(() => {})
+  await Promise.all([removeTree(oldDir), removeTree(stagingDir), removeTree(verifiedMark)])
+}
+
+export async function recoverInterruptedCopies(root: string): Promise<void> {
+  let names: Set<string>
+  try {
+    names = new Set((await fs.promises.readdir(root)).flatMap((entry) => SWAP_SUFFIX.exec(entry)?.[1] ?? []))
+  } catch {
+    return
+  }
+  for (const name of names) {
+    await recoverInterruptedCopy(path.join(root, name)).catch((err) =>
+      console.error(`[Backup] Could not recover ${name} in ${root}:`, err)
+    )
+  }
+}
+
+export async function recoverInterruptedCopiesIn(roots: string[]): Promise<void> {
+  for (const root of new Set(roots)) await recoverInterruptedCopies(root)
 }
 
 export async function backupWallpaper(
@@ -243,8 +306,25 @@ export async function copyWallpaperFolder(
   win: BrowserWindow,
   action: BackupProgressEvent['action']
 ): Promise<string> {
+  const key = path.resolve(destDir)
+  if (activeCopies.has(key)) throw new Error(`${destDir} is already being written`)
+  activeCopies.add(key)
+  try {
+    return await stageAndSwap(id, sourcePath, destDir, win, action)
+  } finally {
+    activeCopies.delete(key)
+  }
+}
+
+async function stageAndSwap(
+  id: string,
+  sourcePath: string,
+  destDir: string,
+  win: BrowserWindow,
+  action: BackupProgressEvent['action']
+): Promise<string> {
   const destRoot = path.dirname(destDir)
-  const name = path.basename(destDir)
+  const { stagingDir, oldDir, verifiedMark } = swapPaths(destDir)
 
   const files = await walkFiles(sourcePath)
   if (!files.some((f) => f.relPath === 'project.json')) {
@@ -253,9 +333,7 @@ export async function copyWallpaperFolder(
   const bytesTotal = files.reduce((sum, f) => sum + f.size, 0)
 
   await fs.promises.mkdir(destRoot, { recursive: true })
-  const stagingDir = path.join(destRoot, `.${name}.partial`)
-  const oldDir = path.join(destRoot, `.${name}.old`)
-  await fs.promises.rm(stagingDir, { recursive: true, force: true })
+  await recoverSwap(destDir)
   await fs.promises.mkdir(stagingDir)
 
   let bytesDone = 0
@@ -317,14 +395,21 @@ export async function copyWallpaperFolder(
       })
     }
 
-    await fs.promises.rm(oldDir, { recursive: true, force: true })
+    await fs.promises.writeFile(verifiedMark, '')
+    await fsyncPath(verifiedMark)
+    await fsyncPath(destRoot)
     const hadOld = await exists(destDir)
     if (hadOld) await fs.promises.rename(destDir, oldDir)
-    await fs.promises.rename(stagingDir, destDir)
+    try {
+      await fs.promises.rename(stagingDir, destDir)
+    } catch (err) {
+      if (hadOld) await fs.promises.rename(oldDir, destDir)
+      throw err
+    }
     await fsyncPath(destRoot)
-    if (hadOld) await fs.promises.rm(oldDir, { recursive: true, force: true })
+    await Promise.all([removeTree(oldDir), removeTree(verifiedMark)])
   } catch (err) {
-    await fs.promises.rm(stagingDir, { recursive: true, force: true }).catch(() => {})
+    await Promise.all([removeTree(stagingDir), removeTree(verifiedMark)].map((removal) => removal.catch(() => {})))
     sendProgress(win, {
       itemId: id,
       action,
@@ -383,7 +468,7 @@ async function buildBackupMeta(id: string, localPath: string, existing?: Wallpap
     type: normalizeType(pj?.type),
     contentRating: normalizeRating(pj?.contentrating),
     description: pj?.description ?? existing?.description,
-    previewLocal: pj?.preview ? path.join(localPath, pj.preview) : undefined,
+    previewLocal: containedPath(localPath, pj?.preview),
     localPath,
     file: pj?.file,
     fileSize: files.reduce((sum, f) => sum + f.size, 0),
@@ -464,6 +549,8 @@ export async function scanBackupFolder(): Promise<{
     result.previewsFixed = patches.length
     return result
   }
+
+  await recoverInterruptedCopies(backupPath)
 
   const folderIds = (await fs.promises.readdir(backupPath, { withFileTypes: true }))
     // dot folders are staging copies of an in-progress backup

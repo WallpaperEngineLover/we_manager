@@ -37,9 +37,11 @@ only has the older vote-only patch.
   `#[napi]` annotations automatically. Kept here for reference/as a fallback.
 
 All three were generated against and verified (`git apply --check`) to apply cleanly to:
-- `ceifa/steamworks.js` at its current `main` (the version this project's `package.json` pins,
-  `0.4.0`, predates these files slightly - a couple of unrelated functions were added upstream
-  since - but the patch targets are unaffected).
+- `ceifa/steamworks.js` at commit `80c5fd7c4958ba90cf87403c3f967b8a6d748473`, the one `build.sh` checks
+  out (the version this project's `package.json` pins, `0.4.0`, predates these files slightly - a
+  couple of unrelated functions were added upstream since - but the patch targets are unaffected).
+  To move to a newer upstream commit, change `PINNED_JS_REV` in `build.sh` once the patches apply
+  and the addon builds there.
 - `Noxime/steamworks-rs` at the exact commit `steamworks.js`'s own `Cargo.toml` pins
   (`fbb79635b06b4feea8261e5ca3e8ea3ef42facf9`).
 
@@ -55,6 +57,7 @@ clicked against a real Steam account yet.
 cd ~/projects/private
 git clone https://github.com/Noxime/steamworks-rs
 git clone https://github.com/ceifa/steamworks.js steamworksjs
+cd steamworksjs && git checkout 80c5fd7c4958ba90cf87403c3f967b8a6d748473 && cd ..
 cd steamworks-rs && git checkout fbb79635b06b4feea8261e5ca3e8ea3ef42facf9 && cd ..
 
 # 2. Apply the patches

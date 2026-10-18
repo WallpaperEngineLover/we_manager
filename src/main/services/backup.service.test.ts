@@ -43,6 +43,12 @@ function writeFiles(dir: string, files: Record<string, string>): void {
   }
 }
 
+const dest = (): string => path.join(backupRoot, '123')
+const partial = (): string => path.join(backupRoot, '.123.partial')
+const old = (): string => path.join(backupRoot, '.123.old')
+const mark = (): string => path.join(backupRoot, '.123.verified')
+const read = (dir: string): string => fs.readFileSync(path.join(dir, 'project.json'), 'utf8')
+
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wem-backup-'))
   backupRoot = path.join(tmp, 'backups')
@@ -84,6 +90,114 @@ describe('backupWallpaper', () => {
     await backup.backupWallpaper('123', source, win)
     expect(await backup.backupMatchesSource(source, dir)).toBe(true)
     expect(fs.readdirSync(backupRoot)).toEqual(['123'])
+  })
+})
+
+describe('interrupted copies', () => {
+  beforeEach(() => fs.mkdirSync(backupRoot, { recursive: true }))
+
+  it('finishes the swap when it died between the two renames after verifying', async () => {
+    writeFiles(old(), { 'project.json': 'previous' })
+    writeFiles(partial(), { 'project.json': 'new' })
+    fs.writeFileSync(mark(), '')
+    await backup.recoverInterruptedCopy(dest())
+    expect(read(dest())).toBe('new')
+    expect(fs.readdirSync(backupRoot)).toEqual(['123'])
+  })
+
+  it('puts the previous backup back when the new copy was never verified', async () => {
+    writeFiles(old(), { 'project.json': 'previous' })
+    writeFiles(partial(), { 'project.json': 'half' })
+    await backup.recoverInterruptedCopy(dest())
+    expect(read(dest())).toBe('previous')
+    expect(fs.readdirSync(backupRoot)).toEqual(['123'])
+  })
+
+  it('puts the previous backup back when nothing else is left', async () => {
+    writeFiles(old(), { 'project.json': 'previous' })
+    await backup.recoverInterruptedCopy(dest())
+    expect(read(dest())).toBe('previous')
+    expect(fs.readdirSync(backupRoot)).toEqual(['123'])
+  })
+
+  it('drops the leftovers of a finished swap and of a copy that died midway', async () => {
+    writeFiles(dest(), { 'project.json': 'current' })
+    writeFiles(old(), { 'project.json': 'previous' })
+    writeFiles(partial(), { 'project.json': 'half' })
+    fs.writeFileSync(mark(), '')
+    await backup.recoverInterruptedCopy(dest())
+    expect(read(dest())).toBe('current')
+    expect(fs.readdirSync(backupRoot)).toEqual(['123'])
+  })
+
+  it('does not promote an unverified first copy', async () => {
+    writeFiles(partial(), { 'project.json': 'half' })
+    await backup.recoverInterruptedCopy(dest())
+    expect(fs.readdirSync(backupRoot)).toEqual([])
+  })
+
+  it('leaves other folders alone', async () => {
+    writeFiles(path.join(backupRoot, '.mine.old'), { 'project.json': 'x' })
+    writeFiles(path.join(backupRoot, '.other'), { 'project.json': 'y' })
+    writeFiles(dest(), { 'project.json': 'current' })
+    await backup.recoverInterruptedCopies(backupRoot)
+    expect(read(dest())).toBe('current')
+    expect(fs.existsSync(path.join(backupRoot, '.other'))).toBe(true)
+    expect(fs.existsSync(path.join(backupRoot, 'mine'))).toBe(true)
+  })
+
+  it('relinks a backup the scan would have lost to the hidden folder', async () => {
+    writeFiles(old(), { 'project.json': '{}', 'a.pkg': 'p' })
+    writeFiles(partial(), { 'project.json': '{}' })
+    wallpapers.set('123', { ...base, id: '123', source: 'workshop', localPath: source, backedUp: true, backupDir: dest() })
+    const result = await backup.scanBackupFolder()
+    expect(result.unlinked).toBe(0)
+    expect(wallpapers.get('123')?.backedUp).toBe(true)
+    expect(fs.existsSync(path.join(dest(), 'a.pkg'))).toBe(true)
+  })
+
+  it('does not touch the staging folder of a copy that is running', async () => {
+    const spy = vi.spyOn(fs.promises, 'rename')
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const copyFile = fs.promises.copyFile
+    vi.spyOn(fs.promises, 'copyFile').mockImplementation(async (...args) => {
+      await gate
+      return copyFile(...args)
+    })
+    const running = backup.backupWallpaper('123', source, win)
+    await vi.waitFor(() => expect(fs.existsSync(partial())).toBe(true))
+    await backup.scanBackupFolder()
+    expect(fs.existsSync(partial())).toBe(true)
+    await expect(backup.backupWallpaper('123', source, win)).rejects.toThrow(/already being written/)
+    release()
+    await running
+    expect(read(dest())).toBe('{}')
+    expect(fs.readdirSync(backupRoot)).toEqual(['123'])
+    spy.mockRestore()
+    vi.restoreAllMocks()
+  })
+
+  it('puts the previous backup back when the final rename fails', async () => {
+    const first = await backup.backupWallpaper('123', source, win)
+    fs.writeFileSync(path.join(first, 'marker.txt'), 'previous backup')
+    const rename = fs.promises.rename
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+      if (String(to) === dest() && String(from) === partial()) throw new Error('disk gone')
+      return rename(from, to)
+    })
+    await expect(backup.backupWallpaper('123', source, win)).rejects.toThrow('disk gone')
+    vi.restoreAllMocks()
+    expect(fs.readFileSync(path.join(dest(), 'marker.txt'), 'utf8')).toBe('previous backup')
+    expect(fs.readdirSync(backupRoot)).toEqual(['123'])
+  })
+
+  it('recovers a crashed state before the next copy starts', async () => {
+    writeFiles(old(), { 'project.json': 'previous', 'marker.txt': 'previous backup' })
+    writeFiles(partial(), { 'project.json': 'half' })
+    await backup.backupWallpaper('123', source, win)
+    expect(fs.readdirSync(backupRoot)).toEqual(['123'])
+    expect(await backup.backupMatchesSource(source, dest())).toBe(true)
   })
 })
 
@@ -190,6 +304,15 @@ describe('scanBackupFolder', () => {
     wallpapers.set('123', { ...base, id: '123', source: 'local', localPath: path.dirname(gone), previewLocal: gone })
     expect((await backup.scanBackupFolder()).previewsFixed).toBe(0)
     expect(wallpapers.get('123')?.previewLocal).toBe(gone)
+  })
+
+  it('does not take a preview that names a file outside the folder', async () => {
+    writeFiles(path.join(tmp, 'outside'), { 'secret.png': 'png' })
+    writeFiles(source, { 'project.json': '{"preview":"../../outside/secret.png"}' })
+    const meta = { ...base, id: '123', source: 'workshop' as const, localPath: source }
+    expect(await backup.previewInBackup(meta, source)).toBeUndefined()
+    writeFiles(source, { 'preview.png': 'png' })
+    expect(await backup.previewInBackup(meta, source)).toBe(path.join(source, 'preview.png'))
   })
 
   it('moves the preview into the backup folder', async () => {
