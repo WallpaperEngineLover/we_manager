@@ -206,6 +206,8 @@ export interface EngineFlags {
   idlePause?: IdlePause
   /** --window sized like the first screen instead of --screen-root, global only */
   windowed?: boolean
+  /** --window --window-background: that window acts as the desktop background, global only */
+  windowBackground?: boolean
   /** --layer background; key kept for stored configs */
   kdeBackgroundLayer?: boolean
 }
@@ -461,7 +463,7 @@ export interface LweStatus {
   managedBy?: string
 }
 
-export type LinuxDistro = 'fedora' | 'arch' | 'debian' | 'unknown'
+export type LinuxDistro = 'fedora' | 'arch' | 'debian' | 'suse' | 'unknown'
 
 /** Which prebuilt release archive fits this machine, or why none does */
 export interface LwePrebuiltTarget {

@@ -12,8 +12,11 @@ type ChoiceFlag =
   | 'hrtf'
   | 'batteryFps'
   | 'idlePause'
-// kdeBackgroundLayer and windowed are global only
-type BooleanFlag = Exclude<keyof EngineFlags, 'fullscreenPause' | 'kdeBackgroundLayer' | 'windowed' | ChoiceFlag>
+// kdeBackgroundLayer, windowed and windowBackground are global only
+type BooleanFlag = Exclude<
+  keyof EngineFlags,
+  'fullscreenPause' | 'kdeBackgroundLayer' | 'windowed' | 'windowBackground' | ChoiceFlag
+>
 
 export const BOOLEAN_FLAGS: { key: BooleanFlag; label: MessageKey; hint?: MessageKey }[] = [
   { key: 'disableParticles', label: 'flags.disableParticles.label', hint: 'flags.disableParticles.hint' },

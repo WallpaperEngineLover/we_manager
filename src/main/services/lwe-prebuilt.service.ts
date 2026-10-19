@@ -32,7 +32,7 @@ const PORTABLE_GLIBC = '2.35'
 
 // Fedora installs missing ones by soname instead, so Nobara's ffmpeg isn't swapped for ffmpeg-free
 const RUNTIME_DEPS_UBUNTU = [
-  'libglew2.2', 'libsdl2-2.0-0', 'libx11-6', 'libxrandr2',
+  'libglew2.2', 'libglu1-mesa', 'libglut3.12', 'libsdl2-2.0-0', 'libx11-6', 'libxrandr2',
   'libavcodec60', 'libavformat60', 'libavutil58', 'libswresample4', 'libswscale7',
   'libdbus-1-3', 'libfreetype6', 'libglfw3', 'libharfbuzz0b', 'liblz4-1', 'libmpv2', 'libpulse0',
   'libwayland-client0', 'libwayland-cursor0', 'libwayland-egl1', 'libegl1', 'libgl1',

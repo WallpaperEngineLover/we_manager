@@ -19,6 +19,7 @@ const DISTRO_LABELS: Record<LinuxDistro, string> = {
   fedora: 'Fedora / Nobara / RHEL',
   arch: 'Arch / Manjaro / EndeavourOS',
   debian: 'Debian / Ubuntu / Mint / Pop!_OS',
+  suse: 'openSUSE / SUSE',
   unknown: 'Unknown'
 }
 

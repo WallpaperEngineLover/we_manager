@@ -98,10 +98,25 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
         ))}
         <div>
           <label className="flex cursor-pointer items-center gap-3">
-            <Toggle on={!!flags.windowed} onClick={() => saveFlags({ ...flags, windowed: !flags.windowed })} />
+            <Toggle
+              on={!!flags.windowed && !flags.windowBackground}
+              onClick={() =>
+                saveFlags({ ...flags, windowed: !(flags.windowed && !flags.windowBackground), windowBackground: false })
+              }
+            />
             <span className="text-sm text-gray-300">{t('perf.windowed')}</span>
           </label>
           <p className="ml-12 mt-1 text-xs text-gray-600">{t('perf.windowedHint')}</p>
+        </div>
+        <div>
+          <label className="flex cursor-pointer items-center gap-3">
+            <Toggle
+              on={!!flags.windowBackground}
+              onClick={() => saveFlags({ ...flags, windowed: false, windowBackground: !flags.windowBackground })}
+            />
+            <span className="text-sm text-gray-300">{t('perf.windowBackground')}</span>
+          </label>
+          <p className="ml-12 mt-1 text-xs text-gray-600">{t('perf.windowBackgroundHint')}</p>
         </div>
         {(desktopEnv === 'kde' || wlroots) && (
           <div>

@@ -236,6 +236,7 @@ export function detectDistro(): LinuxDistro {
     if (['fedora', 'nobara', 'rhel', 'centos'].includes(id)) return 'fedora'
     if (['arch', 'manjaro', 'endeavouros'].includes(id)) return 'arch'
     if (['debian', 'ubuntu', 'linuxmint', 'pop'].includes(id)) return 'debian'
+    if (['suse', 'opensuse', 'opensuse-tumbleweed', 'opensuse-leap', 'opensuse-slowroll', 'sles'].includes(id)) return 'suse'
   }
   return 'unknown'
 }
@@ -299,6 +300,40 @@ function installedNodePackages(): string[] {
   }
 }
 
+// SDL2 comes from sdl2-compat, GLFW is libglfw-devel on Leap and glfw-devel on Tumbleweed and nodejs-devel is whichever
+// Node.js is the default (V8 for scene scripts), all capabilities. FFmpeg's devel packages are ffmpeg-<N>-lib*-devel, see suseFfmpegDevel
+const DEPS_SUSE = [
+  'git', 'gcc', 'gcc-c++', 'cmake', 'pkgconf-pkg-config', 'make',
+  'libXrandr-devel', 'libXinerama-devel', 'libXcursor-devel', 'libXi-devel',
+  'Mesa-libGL-devel', 'glew-devel', 'freeglut-devel', 'pkgconfig(sdl2)',
+  'liblz4-devel',
+  'libXxf86vm-devel', 'glm-devel', 'pkgconfig(glfw3)',
+  'mpv-devel', 'libpulse-devel', 'fftw3-devel', 'freetype2-devel', 'harfbuzz-devel', 'dbus-1-devel',
+  'wayland-devel', 'wayland-protocols-devel', 'Mesa-libEGL-devel',
+  'gmp-devel', 'patchelf', 'nodejs-devel'
+]
+
+/**
+ * Tumbleweed carries several FFmpeg versions side by side. The engine has to link the one libmpv uses, two FFmpeg
+ * ABIs in one process resolve each other's symbols. Needs mpv-devel installed (it pulls libmpv2); null if unreadable.
+ */
+export function suseFfmpegDevel(): string[] | null {
+  try {
+    const requires = execFileSync('rpm', ['-q', '--requires', 'libmpv2'], { encoding: 'utf8', timeout: 10_000 })
+    const soname = /libavcodec\.so\.\d+/.exec(requires)?.[0]
+    if (!soname) return null
+    const version = execFileSync('rpm', ['-q', '--qf', '%{VERSION}\n', '--whatprovides', `${soname}()(64bit)`], {
+      encoding: 'utf8',
+      timeout: 10_000
+    }).split('\n')[0]
+    const major = /^(\d+)\./.exec(version)?.[1]
+    if (!major) return null
+    return ['avcodec', 'avformat', 'avutil', 'swscale', 'swresample'].map((lib) => `ffmpeg-${major}-lib${lib}-devel`)
+  } catch {
+    return null
+  }
+}
+
 // Arch only has libnode in the AUR, see installLweDeps
 const DEPS_ARCH = [
   'git', 'base-devel', 'cmake', 'pkg-config',
@@ -355,6 +390,12 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
       const nodeDevel = nodeDevelPackage(installedNodePackages())
       packages = nodeDevel ? [...DEPS_FEDORA, nodeDevel] : DEPS_FEDORA
       break
+    case 'suse':
+      pkgManager = 'zypper'
+      // --force-resolution: the minimal images ship busybox-diffutils, which conflicts with what -devel packages pull in
+      installArgs = ['--non-interactive', 'install', '--no-recommends', '--force-resolution']
+      packages = DEPS_SUSE
+      break
     case 'arch':
       pkgManager = 'pacman'
       installArgs = ['-S', '--noconfirm', '--needed']
@@ -363,6 +404,16 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
   }
 
   const elevate = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
+
+  if (distro === 'suse') {
+    try {
+      await execFileAsync(elevate, [pkgManager, ...installArgs, 'mpv-devel'], { timeout: 600_000 })
+    } catch (err) {
+      send({ stage: 'error', message: t('lwe.depsFailed', { error: (err as Error).message }), percentage: 0 })
+      return
+    }
+    packages = [...packages, ...(suseFfmpegDevel() ?? ['pkgconfig(libavcodec)', 'pkgconfig(libavformat)', 'pkgconfig(libavutil)', 'pkgconfig(libswscale)', 'pkgconfig(libswresample)'])]
+  }
 
   send({
     stage: 'installing-deps',
@@ -374,13 +425,16 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
     await execFileAsync(elevate, [pkgManager, ...installArgs, ...packages], {
       timeout: 600_000
     })
-    // libnode is AUR only, left to the user
+    // libnode is AUR only on Arch, left to the user; openSUSE Leap's Node.js packages have no shared library at all
     const libnodeMissing = distro === 'arch' && !fs.existsSync('/usr/lib/libnode.so')
+    const suseNoV8 = distro === 'suse' && !fs.readdirSync('/usr/lib64').some((name) => name.startsWith('libnode.so'))
     send({
       stage: 'done',
       message: libnodeMissing
         ? t('lwe.depsInstalledNoV8')
-        : t('lwe.depsInstalled'),
+        : suseNoV8
+          ? t('lwe.depsInstalledNoV8Suse')
+          : t('lwe.depsInstalled'),
       percentage: 100
     })
   } catch (err) {
@@ -923,11 +977,14 @@ export function buildLweArgs(
   // before any --screen-root, so they apply to every screen
   if (supportsFlag('--image-filter')) args.push(...imageAdjustmentArgs(options.imageAdjustments))
 
-  const windowGeometry = capture ? capture.window : options.engineFlags?.windowed ? windowedGeometry(options.screen) : null
+  const wantsWindow = !!(options.engineFlags?.windowed || options.engineFlags?.windowBackground)
+  const windowGeometry = capture ? capture.window : wantsWindow ? windowedGeometry(options.screen) : null
   if (windowGeometry) {
     args.push('--window', windowGeometry)
     // without it the engine's window is a normal one on top of everything
-    if (!capture && supportsFlag('--window-background')) args.push('--window-background')
+    if (!capture && options.engineFlags?.windowBackground && supportsFlag('--window-background')) {
+      args.push('--window-background')
+    }
   } else if (options.split && options.screen && options.screen !== ALL_SCREENS) {
     // every option after a --screen-slot belongs to that slot
     for (const slot of options.split.slots) {

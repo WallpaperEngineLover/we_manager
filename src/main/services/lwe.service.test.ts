@@ -51,6 +51,15 @@ describe('buildLweArgs', () => {
     expect(buildLweArgs('/w/a', { screen: 'DP-1' })).toContain('--screen-root')
   })
 
+  it('keeps a plain window normal and only the background option makes it the desktop', () => {
+    const plain = buildLweArgs('/w/a', { screen: 'DP-1', engineFlags: { windowed: true } })
+    expect(plain).not.toContain('--window-background')
+
+    const background = buildLweArgs('/w/a', { screen: 'DP-1', engineFlags: { windowBackground: true } })
+    expect(background).toContain('--window')
+    expect(background).not.toContain('--screen-root')
+  })
+
   it('gives every slot of a split screen its own settings', () => {
     const args = buildLweArgs('/w/a', {
       screen: 'DP-1',
@@ -214,6 +223,13 @@ describe('parseOsReleaseIds', () => {
 
   it('splits several parents and ignores VARIANT_ID', () => {
     expect(parseOsReleaseIds('ID=pop\nID_LIKE="ubuntu debian"\nVARIANT_ID=x')).toEqual(['pop', 'ubuntu', 'debian'])
+  })
+})
+
+describe('parseOsReleaseIds on openSUSE', () => {
+  it('reads Tumbleweed ID and ID_LIKE', () => {
+    const tumbleweed = 'NAME="openSUSE Tumbleweed"\nID="opensuse-tumbleweed"\nID_LIKE="opensuse suse"\n'
+    expect(parseOsReleaseIds(tumbleweed)).toEqual(['opensuse-tumbleweed', 'opensuse', 'suse'])
   })
 })
 
