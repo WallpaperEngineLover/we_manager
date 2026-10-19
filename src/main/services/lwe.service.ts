@@ -984,6 +984,9 @@ export function buildLweArgs(
     // without it the engine's window is a normal one on top of everything
     if (!capture && options.engineFlags?.windowBackground && supportsFlag('--window-background')) {
       args.push('--window-background')
+    } else if (!capture && supportsFlag('--window-normal')) {
+      // otherwise the window has no frame and stays above every other window
+      args.push('--window-normal')
     }
   } else if (options.split && options.screen && options.screen !== ALL_SCREENS) {
     // every option after a --screen-slot belongs to that slot
