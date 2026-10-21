@@ -10,7 +10,7 @@ import { isCommandAvailable } from '../utils/platform'
 import { getLwePrebuiltDir } from '../utils/paths'
 import { isFlatpak } from '../utils/flatpak'
 import { downloadVerified, fetchLatestRelease } from '../utils/github'
-import { buildCleanBuildEnv, isOstreeSystem, parseOsReleaseIds, readPrebuiltRelease, resetLweDetection } from './lwe.service'
+import { buildCleanBuildEnv, isOstreeSystem, pacmanHasSyncDatabases, parseOsReleaseIds, readPrebuiltRelease, resetLweDetection } from './lwe.service'
 import { t } from '../i18n'
 
 const execFileAsync = promisify(execFile)
@@ -38,9 +38,66 @@ const RUNTIME_DEPS_UBUNTU = [
   'libwayland-client0', 'libwayland-cursor0', 'libwayland-egl1', 'libegl1', 'libgl1',
   'libnss3', 'libatk1.0-0t64', 'libatk-bridge2.0-0t64', 'libcups2t64', 'libxcomposite1', 'libxdamage1',
   'libgbm1', 'libxkbcommon0', 'libasound2t64', 'libpango-1.0-0', 'libcairo2',
+  'libvulkan1', 'libxi6', 'libxxf86vm1', 'libxinerama1', 'libxcursor1', 'libxrender1', 'libxext6', 'libxfixes3',
   // V8 for scene scripts
   'libnode109'
 ]
+
+// the portable build leaves the desktop stack to the system (lib/SYSTEM_LIBS), pacman and apt can't install by soname
+const RUNTIME_DEPS_ARCH = [
+  'nss', 'nspr', 'atk', 'at-spi2-core', 'libcups', 'avahi', 'pango', 'cairo', 'gdk-pixbuf2', 'glib2', 'dbus',
+  'libdrm', 'mesa', 'libglvnd', 'vulkan-icd-loader', 'wayland', 'libxkbcommon', 'alsa-lib', 'libpulse',
+  'libx11', 'libxcomposite', 'libxdamage', 'libxext', 'libxfixes', 'libxi', 'libxinerama', 'libxrandr',
+  'libxrender', 'libxcursor', 'libxxf86vm', 'libxcb', 'libffi', 'libthai', 'pixman', 'systemd-libs', 'util-linux-libs'
+]
+
+// each entry lists the names across Debian and its derivatives, the first one the archive knows is installed (t64 renames)
+const RUNTIME_DEPS_DEBIAN: string[][] = [
+  ['libnss3'], ['libnspr4'], ['libatk1.0-0t64', 'libatk1.0-0'], ['libatk-bridge2.0-0t64', 'libatk-bridge2.0-0'],
+  ['libatspi2.0-0t64', 'libatspi2.0-0'], ['libcups2t64', 'libcups2'], ['libavahi-client3'], ['libavahi-common3'],
+  ['libpango-1.0-0'], ['libpangocairo-1.0-0'], ['libcairo2'], ['libgdk-pixbuf-2.0-0', 'libgdk-pixbuf2.0-0'],
+  ['libglib2.0-0t64', 'libglib2.0-0'], ['libdbus-1-3'], ['libdrm2'], ['libgbm1'], ['libegl1'], ['libgl1'],
+  ['libvulkan1'], ['libwayland-client0'], ['libwayland-cursor0'], ['libwayland-egl1'], ['libxkbcommon0'],
+  ['libasound2t64', 'libasound2'], ['libpulse0'], ['libx11-6'], ['libxcomposite1'], ['libxdamage1'],
+  ['libxext6'], ['libxfixes3'], ['libxi6'], ['libxinerama1'], ['libxrandr2'], ['libxrender1'], ['libxcursor1'],
+  ['libxxf86vm1'], ['libxcb1'], ['libthai0']
+]
+
+/** pacman -T prints the requirements nothing installed satisfies and exits with 127 */
+async function absentPacmanPackages(packages: string[]): Promise<string[]> {
+  try {
+    const { stdout } = await execFileAsync('pacman', ['-T', ...packages], { maxBuffer: 1024 * 1024 })
+    return stdout.split('\n').map(line => line.trim()).filter(Boolean)
+  } catch (error) {
+    const stdout = (error as { stdout?: string }).stdout
+    if (typeof stdout !== 'string') throw error
+    return stdout.split('\n').map(line => line.trim()).filter(Boolean)
+  }
+}
+
+async function debianPackageInstalled(name: string): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync('dpkg-query', ['-W', '-f=${Status}', name])
+    return stdout.includes('install ok installed')
+  } catch {
+    return false
+  }
+}
+
+async function absentDebianPackages(entries: string[][]): Promise<string[]> {
+  const absent: string[] = []
+  for (const names of entries) {
+    if ((await Promise.all(names.map(debianPackageInstalled))).some(Boolean)) continue
+    for (const name of names) {
+      try {
+        await execFileAsync('apt-cache', ['show', '--no-all-versions', name], { maxBuffer: 5 * 1024 * 1024 })
+        absent.push(name)
+        break
+      } catch { }
+    }
+  }
+  return absent
+}
 
 function readOsRelease(): Record<string, string> {
   const fields: Record<string, string> = {}
@@ -146,13 +203,29 @@ async function installMissingLibraries(distro: PrebuiltDistro, missing: string[]
   const elevate = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
   let command: string[]
   if (distro === 'ubuntu-24.04') {
-    command = ['apt-get', 'install', '-y', ...RUNTIME_DEPS_UBUNTU]
+    const absent = await absentDebianPackages(RUNTIME_DEPS_UBUNTU.map(name => [name]))
+    if (absent.length === 0) {
+      throw new Error(`These system libraries are missing: ${missing.join(', ')}. Install the packages providing them with your package manager.`)
+    }
+    command = ['apt-get', 'install', '-y', ...absent]
   } else if (ids.includes('fedora') && isCommandAvailable('dnf')) {
     command = ['dnf', 'install', '-y', ...bySoname]
   } else if ((ids.includes('suse') || ids.includes('opensuse')) && isCommandAvailable('zypper')) {
     command = ['zypper', '--non-interactive', 'install', ...bySoname]
+  } else if (ids.includes('arch') && isCommandAvailable('pacman')) {
+    // only what is absent: asking for installed ones would pull newer versions of core packages (a partial upgrade)
+    const absent = await absentPacmanPackages(RUNTIME_DEPS_ARCH)
+    if (absent.length === 0) {
+      throw new Error(`These system libraries are missing: ${missing.join(', ')}. Install the packages providing them with your package manager.`)
+    }
+    command = ['pacman', pacmanHasSyncDatabases() ? '-S' : '-Sy', '--noconfirm', '--needed', ...absent]
+  } else if (ids.includes('debian') && isCommandAvailable('apt-get')) {
+    const absent = await absentDebianPackages(RUNTIME_DEPS_DEBIAN)
+    if (absent.length === 0) {
+      throw new Error(`These system libraries are missing: ${missing.join(', ')}. Install the packages providing them with your package manager.`)
+    }
+    command = ['apt-get', 'install', '-y', ...absent]
   } else {
-    // apt and pacman can't install by soname without a file index
     throw new Error(`These system libraries are missing: ${missing.join(', ')}. Install the packages providing them with your package manager.`)
   }
   await execFileAsync(elevate, command, { timeout: 600_000, maxBuffer: 10 * 1024 * 1024 })

@@ -23,6 +23,7 @@ const {
   buildLweArgs,
   lwePackageOwner,
   nodeDevelPackage,
+  parsePacmanRepos,
   parseCustomArgs,
   parseOsReleaseIds
 } = await import('./lwe.service')
@@ -240,5 +241,12 @@ describe('lwePackageOwner', () => {
 
   it('owns nothing in a folder of ours', () => {
     expect(lwePackageOwner('/tmp/not-installed-by-anything/linux-wallpaperengine')).toBeUndefined()
+  })
+})
+
+describe('parsePacmanRepos', () => {
+  it('lists the repositories and leaves [options] out', () => {
+    const conf = '[options]\nHoldPkg = pacman\n\n[core]\nInclude = /etc/pacman.d/mirrorlist\n  [extra]  \n#[testing]\n[garuda]\nServer = x\n'
+    expect(parsePacmanRepos(conf)).toEqual(['core', 'extra', 'garuda'])
   })
 })

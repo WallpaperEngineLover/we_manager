@@ -339,6 +339,13 @@ export default function WorkshopBrowser({
     dataAttr: 'data-workshop-id',
     onOpenDetail: setDetailId
   })
+
+  const firstPage = useRef(page)
+  useEffect(() => {
+    if (firstPage.current === page) return
+    firstPage.current = page
+    containerProps.ref.current?.scrollTo({ top: 0 })
+  }, [page, containerProps.ref])
   const selectionSize = selection.size > 0 ? downloadSize([...selection]) : null
 
   function openCtxMenu(e: React.MouseEvent, itemId: string) {

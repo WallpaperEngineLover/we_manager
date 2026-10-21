@@ -392,6 +392,13 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     onOpenDetail: setDetailId
   })
 
+  const firstPage = useRef(page)
+  useEffect(() => {
+    if (firstPage.current === page) return
+    firstPage.current = page
+    containerProps.ref.current?.scrollTo({ top: 0 })
+  }, [page, containerProps.ref])
+
   const resolutionCounts = useMemo(() => {
     const counts = new Map<string, number>()
     for (const w of allWallpapers) {

@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import { execSync } from 'child_process'
 import { parseDesktopEnv, type DesktopEnvironment } from '@shared/desktop'
 import { hostShell } from './flatpak'
@@ -135,7 +137,8 @@ export function getConnectedScreens(): string[] {
         hostShell("gdbus call --session --dest org.gnome.Mutter.DisplayConfig --object-path /org/gnome/Mutter/DisplayConfig --method org.gnome.Mutter.DisplayConfig.GetCurrentState 2>/dev/null"),
         { encoding: 'utf8', timeout: 5000 }
       )
-      const screens = [...output.matchAll(/connector:\s*'([^']+)'/gi)].map(m => m[1])
+      // gdbus prints the monitors as ('connector', 'vendor', 'product', 'serial') tuples
+      const screens = [...new Set([...output.matchAll(/\(\('([^']+)',\s*'[^']*',\s*'[^']*',\s*'[^']*'\)/g)].map(m => m[1]))]
       if (screens.length > 0) return screens
     } catch { }
   }
@@ -215,15 +218,26 @@ const commandCache = new Map<string, boolean>()
 
 export function isCommandAvailable(cmd: string): boolean {
   if (commandCache.has(cmd)) return commandCache.get(cmd)!
-  try {
-    const checker = process.platform === 'win32' ? `where ${cmd}` : `which ${cmd}`
-    execSync(checker, { stdio: 'ignore' })
-    commandCache.set(cmd, true)
-    return true
-  } catch {
-    commandCache.set(cmd, false)
-    return false
+  let found = false
+  if (process.platform === 'win32') {
+    try {
+      execSync(`where ${cmd}`, { stdio: 'ignore' })
+      found = true
+    } catch { }
+  } else {
+    // a PATH search of our own: minimal systems (openSUSE) ship without which(1)
+    const dirs = [...(process.env.PATH ?? '').split(':'), '/usr/local/sbin', '/usr/sbin', '/sbin'].filter(Boolean)
+    found = dirs.some((dir) => {
+      try {
+        fs.accessSync(path.join(dir, cmd), fs.constants.X_OK)
+        return true
+      } catch {
+        return false
+      }
+    })
   }
+  commandCache.set(cmd, found)
+  return found
 }
 
 export function invalidateCommandCache(cmd: string): void {

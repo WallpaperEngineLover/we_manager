@@ -398,7 +398,8 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
       break
     case 'arch':
       pkgManager = 'pacman'
-      installArgs = ['-S', '--noconfirm', '--needed']
+      // a fresh install has no sync databases and every package would be "target not found"
+      installArgs = pacmanHasSyncDatabases() ? ['-S', '--noconfirm', '--needed'] : ['-Sy', '--noconfirm', '--needed']
       packages = DEPS_ARCH
       break
   }
@@ -443,6 +444,30 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
       message: t('lwe.depsFailed', { error: (err as Error).message }),
       percentage: 0
     })
+  }
+}
+
+/** the repositories of pacman.conf's [sections] (no [options]), Include lines are not followed */
+export function parsePacmanRepos(conf: string): string[] {
+  return conf.split('\n')
+    .map(line => /^\[([^\]]+)\]\s*$/.exec(line.trim())?.[1])
+    .filter((name): name is string => name !== undefined && name !== 'options')
+}
+
+/** true when every configured repository has its database, one missing (Garuda ships a stale chaotic-aur one) breaks `-S` */
+export function pacmanHasSyncDatabases(): boolean {
+  try {
+    const present = new Set(fs.readdirSync('/var/lib/pacman/sync'))
+    let repos: string[] = []
+    try {
+      repos = execFileSync('pacman-conf', ['--repo-list'], { encoding: 'utf8' }).split('\n').map(name => name.trim()).filter(Boolean)
+    } catch {
+      repos = parsePacmanRepos(fs.readFileSync('/etc/pacman.conf', 'utf8'))
+    }
+    if (repos.length === 0) return [...present].some((name) => name.endsWith('.db'))
+    return repos.every((repo) => present.has(`${repo}.db`))
+  } catch {
+    return false
   }
 }
 

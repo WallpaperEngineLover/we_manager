@@ -24,7 +24,19 @@ export function isAutostartSupported(): boolean {
 /** The AppImage rather than its mount, `flatpak run` for a Flatpak */
 function launchCommand(): string[] {
   if (isFlatpak() && process.env.FLATPAK_ID) return ['flatpak', 'run', process.env.FLATPAK_ID]
-  return [process.env.APPIMAGE ?? app.getPath('exe')]
+  const exe = process.env.APPIMAGE ?? app.getPath('exe')
+  return needsNoSandbox(exe) ? [exe, '--no-sandbox'] : [exe]
+}
+
+/** Only the .deb's chrome-sandbox is setuid root, the others abort at login where unprivileged user namespaces are restricted */
+function needsNoSandbox(exe: string): boolean {
+  if (process.env.APPIMAGE) return true
+  try {
+    const st = fs.statSync(path.join(path.dirname(exe), 'chrome-sandbox'))
+    return !(st.uid === 0 && (st.mode & 0o4000) !== 0)
+  } catch {
+    return true
+  }
 }
 
 /** Quoted per the desktop entry spec when needed, a literal % is %% (field codes) */
