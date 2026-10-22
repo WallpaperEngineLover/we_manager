@@ -424,6 +424,12 @@ export const pl: Messages = {
   'folders.scanning': 'Skanowanie...',
   'folders.title': 'Dodatkowe foldery biblioteki',
 
+  'graphics.install': 'Zainstaluj sterownik',
+  'graphics.installing': 'Instalowanie...',
+  'graphics.installed': 'Zainstalowano. Uruchom WE Manager ponownie, aby go używać.',
+  'graphics.installFailed': 'Instalacja nie powiodła się: {error}. Uruchom poniższe polecenie ręcznie albo użyj AppImage lub pakietu.',
+  'graphics.software': 'Silnik tapet rysuje na procesorze ({renderer}), więc tapety działają wolno i mocno obciążają CPU. Sprawdź konfigurację sterownika grafiki.',
+  'graphics.flatpakNvidia': 'Ten Flatpak nie ma sterownika graficznego NVIDIA dla twojej karty, więc tapety są rysowane na procesorze i działają wolno. Zainstaluj rozszerzenie NVIDIA dla Flatpaka pasujące do wersji sterownika albo użyj AppImage lub pakietu.',
   'gnome.active': 'Rozszerzenie GNOME Shell jest aktywne',
   'gnome.allAtOnce': 'Wszystko naraz',
   'gnome.byHand': 'Albo ręcznie w terminalu, a potem wyloguj się i zaloguj ponownie, aby GNOME Shell je wczytał:',

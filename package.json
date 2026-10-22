@@ -1,6 +1,6 @@
 {
   "name": "we-manager",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "type": "module",
   "description": "Wallpaper Engine workshop manager",
   "desktopName": "we-manager.desktop",

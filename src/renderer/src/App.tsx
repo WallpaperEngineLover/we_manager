@@ -10,6 +10,7 @@ import SetupScreen from './components/setup/SetupScreen'
 import StatusBar from './components/layout/StatusBar'
 import GnomeExtensionNotice from './components/layout/GnomeExtensionNotice'
 import UpdateNotice from './components/updates/UpdateNotice'
+import GraphicsNotice from './components/layout/GraphicsNotice'
 import UpdatePrompt from './components/updates/UpdatePrompt'
 import { useToast } from './components/common/Toast'
 import { screenLabel } from './utils/screens'
@@ -157,6 +158,7 @@ export default function App() {
     <ErrorBoundary>
       <div key={language} className="flex h-full flex-col bg-app text-gray-100">
         <GnomeExtensionNotice />
+        <GraphicsNotice />
         <UpdateNotice />
         <div className="flex flex-1 overflow-hidden">
           <Sidebar activeView={activeView} onNavigate={setActiveView} />

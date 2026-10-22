@@ -382,6 +382,12 @@ export const tr: Messages = {
   'folders.scanning': 'Taranıyor...',
   'folders.title': 'Ek kitaplık klasörleri',
 
+  'graphics.install': 'Sürücüyü kur',
+  'graphics.installing': 'Kuruluyor...',
+  'graphics.installed': 'Kuruldu. Kullanmak için WE Manager\'ı yeniden başlatın.',
+  'graphics.installFailed': 'Kurulum başarısız: {error}. Aşağıdaki komutu elle çalıştırın ya da AppImage veya bir paket kullanın.',
+  'graphics.software': 'Duvar kağıdı motoru CPU üzerinde çiziyor ({renderer}); bu yüzden duvar kağıtları yavaş çalışır ve CPU\'yu çok kullanır. Grafik sürücü kurulumunuzu kontrol edin.',
+  'graphics.flatpakNvidia': 'Bu Flatpak\'te ekran kartınız için NVIDIA grafik sürücüsü yok; bu yüzden duvar kağıtları CPU ile çiziliyor ve yavaş çalışıyor. Sürücü sürümünüzle eşleşen NVIDIA Flatpak uzantısını kurun ya da bunun yerine AppImage veya bir paket kullanın.',
   'gnome.active': 'GNOME Shell uzantısı etkin',
   'gnome.allAtOnce': 'Hepsi bir arada',
   'gnome.byHand': 'Ya da bir terminalde elle yapın, ardından GNOME Shell\'in yüklemesi için bir kez oturumu kapatıp yeniden açın:',

@@ -1175,6 +1175,7 @@ const exitListeners = new Set<(info: LweExitInfo) => void>()
 const LOG_LINES_KEPT = 60
 const HISTORY_LINES_KEPT = 5000
 let diagnosticStats = false
+let engineRenderer: string | undefined
 // a crash this soon after a launch or hotswap is blamed on it
 const CRASH_WINDOW_MS = 20_000
 const CRASH_SIGNALS = new Set(['SIGSEGV', 'SIGABRT', 'SIGBUS', 'SIGFPE', 'SIGILL', 'SIGTRAP'])
@@ -1438,6 +1439,11 @@ export function getRunningInstances(): RunningInstance[] {
 /** Engines started while this is on print per-frame timings (LWE_FRAME_STATS), which costs some speed */
 export function setDiagnosticStats(on: boolean): void {
   diagnosticStats = on
+}
+
+/** The GL renderer the last engine reported, undefined before one did or for engines that don't say */
+export function getEngineRenderer(): string | undefined {
+  return engineRenderer
 }
 
 export interface EngineHistory {
@@ -1776,6 +1782,8 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
       console.log(`[LWE ${stream}]`, msg)
       inst.log.push(...msg.split('\n'))
       if (inst.log.length > LOG_LINES_KEPT) inst.log.splice(0, inst.log.length - LOG_LINES_KEPT)
+      const renderer = /OpenGL renderer: (.+)/.exec(msg)
+      if (renderer) engineRenderer = renderer[1]
       inst.history.push(...msg.split('\n'))
       if (inst.history.length > HISTORY_LINES_KEPT) inst.history.splice(0, inst.history.length - HISTORY_LINES_KEPT)
     }

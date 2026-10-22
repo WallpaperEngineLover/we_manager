@@ -361,6 +361,12 @@ export const zhCN: Messages = {
   'folders.scanning': '正在扫描...',
   'folders.title': '额外的库文件夹',
 
+  'graphics.install': '安装驱动',
+  'graphics.installing': '正在安装...',
+  'graphics.installed': '已安装。重启 WE Manager 后生效。',
+  'graphics.installFailed': '安装失败：{error}。请手动运行下面的命令，或改用 AppImage 或软件包。',
+  'graphics.software': '壁纸引擎正在使用 CPU 绘制（{renderer}），壁纸会很卡并占用大量 CPU。请检查显卡驱动配置。',
+  'graphics.flatpakNvidia': '此 Flatpak 没有适用于你的 GPU 的 NVIDIA 显卡驱动，壁纸由 CPU 绘制，运行缓慢。请安装与你的驱动版本匹配的 NVIDIA Flatpak 扩展，或改用 AppImage 或软件包。',
   'gnome.active': 'GNOME Shell 扩展已启用',
   'gnome.allAtOnce': '一次全部执行',
   'gnome.byHand': '或者在终端中手动执行，然后注销并重新登录一次，让 GNOME Shell 加载它:',

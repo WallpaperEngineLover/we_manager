@@ -361,6 +361,12 @@ export const ja: Messages = {
   'folders.scanning': 'スキャン中...',
   'folders.title': '追加のライブラリフォルダー',
 
+  'graphics.install': 'ドライバーをインストール',
+  'graphics.installing': 'インストール中...',
+  'graphics.installed': 'インストールしました。使うには WE Manager を再起動してください。',
+  'graphics.installFailed': 'インストールに失敗しました: {error}。下のコマンドを手動で実行するか、AppImage またはパッケージ版を使ってください。',
+  'graphics.software': '壁紙エンジンが CPU で描画しています ({renderer})。壁紙が遅くなり、CPU を多く使います。グラフィックドライバーの設定を確認してください。',
+  'graphics.flatpakNvidia': 'この Flatpak には、お使いの GPU 用の NVIDIA グラフィックドライバーがないため、壁紙は CPU で描画され遅くなります。ドライバーのバージョンに合う NVIDIA Flatpak 拡張機能をインストールするか、AppImage またはパッケージ版を使ってください。',
   'gnome.active': 'GNOME Shell 拡張機能は有効です',
   'gnome.allAtOnce': 'まとめて実行',
   'gnome.byHand': 'またはターミナルで手動で実行し、GNOME Shell に読み込ませるため一度ログアウトしてログインし直してください:',

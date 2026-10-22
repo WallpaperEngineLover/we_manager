@@ -380,6 +380,12 @@ export const en = {
   'folders.scanning': 'Scanning...',
   'folders.title': 'Extra library folders',
 
+  'graphics.install': 'Install driver',
+  'graphics.installing': 'Installing...',
+  'graphics.installed': 'Installed. Restart WE Manager to use it.',
+  'graphics.installFailed': 'Installation failed: {error}. Run the command below by hand, or use the AppImage or a package instead.',
+  'graphics.software': 'The wallpaper engine is drawing on the CPU ({renderer}), so wallpapers are slow and use a lot of CPU. Check your graphics driver setup.',
+  'graphics.flatpakNvidia': 'This Flatpak has no NVIDIA graphics driver for your GPU, so wallpapers are drawn on the CPU and run slowly. Install the NVIDIA Flatpak extension that matches your driver version, or use the AppImage or a package instead.',
   'gnome.active': 'The GNOME Shell extension is active',
   'gnome.allAtOnce': 'All at once',
   'gnome.byHand': 'Or by hand in a terminal, then log out and back in once so GNOME Shell loads it:',

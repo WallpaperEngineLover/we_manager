@@ -164,6 +164,8 @@ export const IpcChannels = {
   UPDATES_RESTART: 'updates:restart',
 
   DIAGNOSTICS_COLLECT: 'diagnostics:collect',
+  GRAPHICS_WARNING: 'graphics:warning',
+  GRAPHICS_INSTALL_NVIDIA: 'graphics:install-nvidia',
 
   // Events pushed from main to renderer
   EVENT_DOWNLOAD_PROGRESS: 'event:download-progress',

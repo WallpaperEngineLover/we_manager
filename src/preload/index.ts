@@ -49,6 +49,7 @@ import type {
   FavoriteStatus,
   UpdateChecks,
   UpdateStatus,
+  GraphicsWarning,
   UpdateTarget
 } from '../shared/types'
 import type { VideoSegment } from '../shared/videoTrim'
@@ -445,6 +446,12 @@ const api = {
       ipcRenderer.invoke(IpcChannels.UPDATES_DISMISS, target, version),
     installApp: (): Promise<UpdateStatus> => ipcRenderer.invoke(IpcChannels.UPDATES_INSTALL_APP),
     restart: (): Promise<void> => ipcRenderer.invoke(IpcChannels.UPDATES_RESTART)
+  },
+
+  graphics: {
+    warning: (): Promise<GraphicsWarning | null> => ipcRenderer.invoke(IpcChannels.GRAPHICS_WARNING),
+    installNvidia: (): Promise<{ ok: boolean; message: string }> =>
+      ipcRenderer.invoke(IpcChannels.GRAPHICS_INSTALL_NVIDIA)
   },
 
   diagnostics: {

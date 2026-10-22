@@ -361,6 +361,12 @@ export const ko: Messages = {
   'folders.scanning': '검사 중...',
   'folders.title': '추가 라이브러리 폴더',
 
+  'graphics.install': '드라이버 설치',
+  'graphics.installing': '설치 중...',
+  'graphics.installed': '설치했습니다. 적용하려면 WE Manager를 다시 시작하세요.',
+  'graphics.installFailed': '설치 실패: {error}. 아래 명령을 직접 실행하거나 AppImage 또는 패키지 버전을 사용하세요.',
+  'graphics.software': '배경화면 엔진이 CPU로 그리고 있어({renderer}) 배경화면이 느리고 CPU를 많이 사용합니다. 그래픽 드라이버 설정을 확인하세요.',
+  'graphics.flatpakNvidia': '이 Flatpak에는 사용 중인 GPU용 NVIDIA 그래픽 드라이버가 없어 배경화면이 CPU로 그려지며 느립니다. 드라이버 버전에 맞는 NVIDIA Flatpak 확장을 설치하거나 AppImage 또는 패키지 버전을 사용하세요.',
   'gnome.active': 'GNOME Shell 확장이 활성화되어 있습니다',
   'gnome.allAtOnce': '한 번에 모두',
   'gnome.byHand': '또는 터미널에서 직접 실행한 뒤, GNOME Shell이 불러오도록 한 번 로그아웃했다가 다시 로그인하세요:',

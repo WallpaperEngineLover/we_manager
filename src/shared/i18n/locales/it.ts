@@ -382,6 +382,12 @@ export const it: Messages = {
   'folders.scanning': 'Scansione...',
   'folders.title': 'Cartelle di libreria aggiuntive',
 
+  'graphics.install': 'Installa il driver',
+  'graphics.installing': 'Installazione...',
+  'graphics.installed': 'Installato. Riavvia WE Manager per usarlo.',
+  'graphics.installFailed': 'Installazione non riuscita: {error}. Esegui a mano il comando qui sotto, oppure usa l\'AppImage o un pacchetto.',
+  'graphics.software': 'Il motore degli sfondi sta disegnando con la CPU ({renderer}), quindi gli sfondi sono lenti e usano molta CPU. Controlla la configurazione del driver grafico.',
+  'graphics.flatpakNvidia': 'Questo Flatpak non ha un driver grafico NVIDIA per la tua GPU, quindi gli sfondi vengono disegnati dalla CPU e sono lenti. Installa l\'estensione Flatpak NVIDIA che corrisponde alla versione del tuo driver, oppure usa l\'AppImage o un pacchetto.',
   'gnome.active': 'L\'estensione di GNOME Shell è attiva',
   'gnome.allAtOnce': 'Tutto insieme',
   'gnome.byHand': 'Oppure a mano in un terminale, poi esci e rientra una volta perché GNOME Shell la carichi:',

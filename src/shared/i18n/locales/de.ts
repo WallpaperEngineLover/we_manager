@@ -382,6 +382,12 @@ export const de: Messages = {
   'folders.scanning': 'Lese ein...',
   'folders.title': 'Zusätzliche Bibliotheksordner',
 
+  'graphics.install': 'Treiber installieren',
+  'graphics.installing': 'Installiere...',
+  'graphics.installed': 'Installiert. Starte WE Manager neu, um ihn zu verwenden.',
+  'graphics.installFailed': 'Installation fehlgeschlagen: {error}. Führe den Befehl unten von Hand aus oder nutze stattdessen das AppImage oder ein Paket.',
+  'graphics.software': 'Die Wallpaper-Engine zeichnet auf der CPU ({renderer}), daher sind Wallpaper langsam und belasten die CPU stark. Prüfe die Einrichtung deines Grafiktreibers.',
+  'graphics.flatpakNvidia': 'Diesem Flatpak fehlt ein NVIDIA-Grafiktreiber für deine GPU, daher werden Wallpaper auf der CPU gezeichnet und laufen langsam. Installiere die NVIDIA-Flatpak-Erweiterung passend zu deiner Treiberversion oder nutze stattdessen das AppImage oder ein Paket.',
   'gnome.active': 'Die GNOME-Shell-Erweiterung ist aktiv',
   'gnome.allAtOnce': 'Alles auf einmal',
   'gnome.byHand': 'Oder von Hand im Terminal, danach einmal ab- und wieder anmelden, damit GNOME Shell sie lädt:',

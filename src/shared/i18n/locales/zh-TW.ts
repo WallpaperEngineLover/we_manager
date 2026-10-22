@@ -361,6 +361,12 @@ export const zhTW: Messages = {
   'folders.scanning': '正在掃描...',
   'folders.title': '額外的媒體庫資料夾',
 
+  'graphics.install': '安裝驅動程式',
+  'graphics.installing': '安裝中...',
+  'graphics.installed': '已安裝。重新啟動 WE Manager 後生效。',
+  'graphics.installFailed': '安裝失敗：{error}。請手動執行下方指令，或改用 AppImage 或套件。',
+  'graphics.software': '桌布引擎正在使用 CPU 繪製（{renderer}），桌布會很卡並佔用大量 CPU。請檢查顯示卡驅動程式設定。',
+  'graphics.flatpakNvidia': '此 Flatpak 沒有適用於你的 GPU 的 NVIDIA 顯示驅動程式，桌布由 CPU 繪製，執行緩慢。請安裝與你的驅動程式版本相符的 NVIDIA Flatpak 擴充功能，或改用 AppImage 或套件。',
   'gnome.active': 'GNOME Shell 擴充功能已啟用',
   'gnome.allAtOnce': '一次全部執行',
   'gnome.byHand': '或在終端機中手動執行，然後登出再登入一次，讓 GNOME Shell 載入它:',

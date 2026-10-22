@@ -382,6 +382,12 @@ export const pt: Messages = {
   'folders.scanning': 'Escaneando...',
   'folders.title': 'Pastas extras da biblioteca',
 
+  'graphics.install': 'Instalar driver',
+  'graphics.installing': 'Instalando...',
+  'graphics.installed': 'Instalado. Reinicie o WE Manager para usá-lo.',
+  'graphics.installFailed': 'Falha na instalação: {error}. Execute o comando abaixo manualmente ou use o AppImage ou um pacote.',
+  'graphics.software': 'O motor de papéis de parede está desenhando na CPU ({renderer}), por isso os papéis de parede ficam lentos e usam muita CPU. Verifique a configuração do driver gráfico.',
+  'graphics.flatpakNvidia': 'Este Flatpak não tem um driver gráfico NVIDIA para a sua GPU, então os papéis de parede são desenhados na CPU e ficam lentos. Instale a extensão NVIDIA do Flatpak que corresponde à versão do seu driver, ou use o AppImage ou um pacote.',
   'gnome.active': 'A extensão do GNOME Shell está ativa',
   'gnome.allAtOnce': 'Tudo de uma vez',
   'gnome.byHand': 'Ou manualmente num terminal, depois saia e entre de novo uma vez para o GNOME Shell carregá-la:',

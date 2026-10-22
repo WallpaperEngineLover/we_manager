@@ -382,6 +382,12 @@ export const fr: Messages = {
   'folders.scanning': 'Analyse...',
   'folders.title': 'Dossiers de bibliothèque supplémentaires',
 
+  'graphics.install': 'Installer le pilote',
+  'graphics.installing': 'Installation...',
+  'graphics.installed': 'Installé. Redémarrez WE Manager pour l\'utiliser.',
+  'graphics.installFailed': 'Échec de l\'installation : {error}. Exécutez la commande ci-dessous à la main, ou utilisez l\'AppImage ou un paquet.',
+  'graphics.software': 'Le moteur de fonds d\'écran dessine sur le processeur ({renderer}), les fonds sont donc lents et sollicitent beaucoup le CPU. Vérifiez la configuration de votre pilote graphique.',
+  'graphics.flatpakNvidia': 'Ce Flatpak n\'a pas de pilote graphique NVIDIA pour votre GPU, les fonds d\'écran sont donc dessinés par le processeur et sont lents. Installez l\'extension Flatpak NVIDIA correspondant à la version de votre pilote, ou utilisez l\'AppImage ou un paquet.',
   'gnome.active': 'L\'extension GNOME Shell est active',
   'gnome.allAtOnce': 'Tout d\'un coup',
   'gnome.byHand': 'Ou à la main dans un terminal, puis déconnectez-vous et reconnectez-vous une fois pour que GNOME Shell la charge :',

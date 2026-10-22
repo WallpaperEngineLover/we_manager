@@ -581,3 +581,12 @@ export interface PlaylistPlaybackState {
   isPlaying: boolean
   order: string[]
 }
+
+/** Why wallpapers would be drawn on the CPU, shown as a notice */
+export interface GraphicsWarning {
+  kind: 'software' | 'flatpak-nvidia'
+  /** the renderer the engine reported */
+  renderer?: string
+  /** flatpak-nvidia: the NVIDIA GL extension for the host's driver, when the version could be read */
+  extension?: string
+}
