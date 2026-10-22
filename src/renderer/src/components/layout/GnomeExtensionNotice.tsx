@@ -27,7 +27,7 @@ export default function GnomeExtensionNotice() {
   if (!status || !status.needed || status.state === 'active' || status.state === 'not-needed') return null
 
   const canInstall = status.bundled && (status.state === 'not-installed' || status.state === 'disabled'
-    || status.state === 'error')
+    || status.state === 'error' || status.state === 'outdated')
   const commands = canInstall ? status.flatpakCommands : undefined
 
   const recheck = async (): Promise<void> => {
@@ -61,7 +61,7 @@ export default function GnomeExtensionNotice() {
           disabled={busy}
           className="rounded bg-accent-600 px-3 py-1 text-xs font-medium text-white hover:bg-accent-500 disabled:opacity-50"
         >
-          {busy ? t('gnome.installing') : status.state === 'not-installed' ? t('gnome.install') : t('gnome.reinstall')}
+          {busy ? t('gnome.installing') : status.state === 'not-installed' ? t('gnome.install') : status.state === 'outdated' ? t('gnome.update') : t('gnome.reinstall')}
         </button>
       )}
       {commands && (

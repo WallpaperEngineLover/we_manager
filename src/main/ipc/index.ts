@@ -13,6 +13,7 @@ import { registerBackupHandlers } from './backup.handlers'
 import { registerPlaylistHandlers } from './playlist.handlers'
 import { registerScheduleHandlers } from './schedule.handlers'
 import { registerUpdateHandlers } from './update.handlers'
+import { registerDiagnosticsHandlers } from './diagnostics.handlers'
 
 export function registerAllHandlers(win: BrowserWindow): void {
   registerSteamHandlers(win)
@@ -29,4 +30,5 @@ export function registerAllHandlers(win: BrowserWindow): void {
   registerPlaylistHandlers()
   registerScheduleHandlers()
   registerUpdateHandlers()
+  registerDiagnosticsHandlers(win)
 }

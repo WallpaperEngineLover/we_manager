@@ -46,10 +46,10 @@ voting. Without Steam the app still works as a local library manager.
 - **Playlists** per screen: a time per wallpaper or play videos to the end, shuffle or sort, favorites only, volume per
   item.
 - **Schedules** switch wallpapers by time of day or by the system's dark and light theme.
-- Tray menu with next wallpaper, and performance presets (battery saver, full quality).
+- Tray menu with next wallpaper.
 
 **Settings**
-- Performance: FPS limits (also on battery), pause when another window is fullscreen, maximized or focused, pause on
+- Performance: built-in presets (Battery saver, Full quality, Never pause, Steam Deck) and your own, FPS limits (also on battery), pause when another window is fullscreen, maximized or focused, pause on
   battery or when idle, background layer, SSAA and MSAA, post processing, shadows, HDR output, hardware decoding.
 - Audio: automute, silent mode, volume, audio processing and HRTF.
 - Startup and tray, update notices for the app and the engine, library folders, backups, the desktop icons overlay.

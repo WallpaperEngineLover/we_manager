@@ -108,6 +108,7 @@ export async function installGnomeExtension(): Promise<{ ok: boolean; message: s
       status: await getGnomeExtensionStatus()
     }
   }
+  const wasOutdated = (await getGnomeExtensionStatus()).state === 'outdated'
   const target = userExtensionDir()
   const staging = `${target}.new`
   await fs.promises.rm(staging, { recursive: true, force: true })
@@ -123,7 +124,7 @@ export async function installGnomeExtension(): Promise<{ ok: boolean; message: s
   if (!enabled.ok) await addToEnabledExtensions()
 
   const status = await getGnomeExtensionStatus()
-  const message = status.state === 'active'
+  const message = status.state === 'active' && !wasOutdated
     ? t('gnome.active')
     : t('gnome.installedRelogin')
   return { ok: true, message, status }

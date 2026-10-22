@@ -22,8 +22,7 @@ export function registerLweHandlers(win: BrowserWindow): void {
   })
 
   ipcMain.handle(IpcChannels.LWE_INSTALL_DEPS, async () => {
-    await installLweDeps(win)
-    return { ok: true }
+    return { ok: await installLweDeps(win) }
   })
 
   ipcMain.handle(IpcChannels.LWE_INSTALL, async () => {

@@ -10,22 +10,75 @@
   <project_license>MIT AND GPL-3.0-only</project_license>
   <description>
     <p>
-      WE Manager browses the Steam Workshop of Wallpaper Engine, keeps a library of your wallpapers with folders,
-      tags and playlists, and plays them on your desktop with linux-wallpaperengine, which comes with it.
+      WE Manager is the control panel for Wallpaper Engine wallpapers on Linux. It browses the Steam Workshop,
+      keeps a library of what you have with folders, tags and playlists, and plays it on your desktop with
+      linux-wallpaperengine, which comes with the app.
     </p>
+    <p>Features:</p>
+    <ul>
+      <li>Scene, video and web wallpapers, one per screen or one for all of them</li>
+      <li>Workshop search with filters, subscribing, liking and favorites</li>
+      <li>A local library with folders, tags, filters for HDR and spatial audio, backups and extra library folders</li>
+      <li>Playlists with timers, and schedules by time of day or by light and dark theme</li>
+      <li>Wallpaper properties, layer and effect switches, scaling, image filters, volume and frame rate limits</li>
+      <li>Updates for itself and for the engine, and autostart at login</li>
+    </ul>
     <p>
-      Scene, video and web wallpapers run per screen on KDE Plasma, wlroots compositors and X11. Wallpaper Engine
-      has to be in your Steam library for its assets and the Workshop.
+      The wallpapers are drawn on KDE Plasma, wlroots compositors such as Hyprland, sway and niri, GNOME with the
+      extension that is installed from the app, COSMIC and X11 desktops. Wallpaper Engine has to be in your Steam
+      library for its assets and for the Workshop. Workshop items are made by other people and can be rated for
+      mature audiences, the library has an age rating filter.
     </p>
   </description>
+  <screenshots>
+    <screenshot type="default">
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/WallpaperEngineLover/we_manager/main/packaging/flatpak/screenshots/library.png</image>
+      <caption>The library with folders, filters and the wallpapers on disk</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/WallpaperEngineLover/we_manager/main/packaging/flatpak/screenshots/settings.png</image>
+      <caption>Appearance settings with themes and accent colors</caption>
+    </screenshot>
+  </screenshots>
+  <branding>
+    <color type="primary" scheme_preference="light">#a6b2ff</color>
+    <color type="primary" scheme_preference="dark">#4f39f6</color>
+  </branding>
   <launchable type="desktop-id">io.github.WallpaperEngineLover.we_manager.desktop</launchable>
   <url type="homepage">https://github.com/WallpaperEngineLover/we_manager</url>
+  <url type="vcs-browser">https://github.com/WallpaperEngineLover/we_manager</url>
   <url type="bugtracker">https://github.com/WallpaperEngineLover/we_manager/issues</url>
   <categories>
     <category>Utility</category>
+    <category>Settings</category>
   </categories>
-  <content_rating type="oars-1.1" />
+  <keywords>
+    <keyword>wallpaper</keyword>
+    <keyword>Wallpaper Engine</keyword>
+    <keyword>Steam</keyword>
+    <keyword>Workshop</keyword>
+    <keyword>live wallpaper</keyword>
+    <keyword>background</keyword>
+  </keywords>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <!-- the Workshop is other people's content, mature items included (the app filters by the Workshop's age rating) -->
+  <content_rating type="oars-1.1">
+    <content_attribute id="violence-cartoon">mild</content_attribute>
+    <content_attribute id="violence-fantasy">mild</content_attribute>
+    <content_attribute id="violence-realistic">mild</content_attribute>
+    <content_attribute id="sex-nudity">moderate</content_attribute>
+    <content_attribute id="sex-themes">moderate</content_attribute>
+    <content_attribute id="language-profanity">mild</content_attribute>
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
   <releases>
+    <release version="0.9.3" date="2026-10-21" />
     <release version="0.8.1" date="2026-10-09" />
   </releases>
 </component>

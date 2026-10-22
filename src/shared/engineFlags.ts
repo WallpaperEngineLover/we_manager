@@ -36,6 +36,23 @@ export const BUILT_IN_PRESETS: EngineFlagPreset[] = [
     }
   },
   {
+    id: 'builtin-steam-deck',
+    name: 'Steam Deck',
+    builtIn: true,
+    fps: 30,
+    flags: {
+      noAudioProcessing: true,
+      fullscreenPause: 'default',
+      postProcessing: 'enabled',
+      volumetrics: 'low',
+      shadows: 'low',
+      msaa: 'none',
+      ssaa: 'none',
+      batteryFps: '15',
+      idlePause: '5'
+    }
+  },
+  {
     id: 'builtin-always-on',
     name: 'Never pause',
     builtIn: true,
@@ -70,6 +87,7 @@ export function engineFlagArgs(flags: EngineFlags): string[] {
   if (flags.msaa && flags.msaa !== 'none') args.push('--msaa', flags.msaa)
   if (flags.ssaa && flags.ssaa !== 'none') args.push('--ssaa', flags.ssaa)
   if (flags.hwdec && flags.hwdec !== 'auto') args.push('--hwdec', flags.hwdec)
+  if (flags.webFrames && flags.webFrames !== 'auto') args.push('--web-frames', flags.webFrames)
   if (flags.hrtf && flags.hrtf !== 'auto') args.push('--hrtf', flags.hrtf)
   if (flags.batteryFps === 'pause') args.push('--pause-on-battery')
   else if (flags.batteryFps && flags.batteryFps !== 'off') args.push('--fps-battery', flags.batteryFps)

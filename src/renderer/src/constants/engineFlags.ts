@@ -9,6 +9,7 @@ type ChoiceFlag =
   | 'msaa'
   | 'ssaa'
   | 'hwdec'
+  | 'webFrames'
   | 'hrtf'
   | 'batteryFps'
   | 'idlePause'
@@ -135,6 +136,18 @@ export const CHOICE_FLAGS: {
     ]
   },
   {
+    key: 'webFrames',
+    label: 'flags.webFrames.label',
+    hint: 'flags.webFrames.hint',
+    note: 'flags.webFrames.note',
+    fallback: 'auto',
+    options: [
+      { value: 'auto', label: 'flags.opt.auto' },
+      { value: 'dmabuf', label: 'flags.opt.webFramesDmabuf' },
+      { value: 'shm', label: 'flags.opt.webFramesShm' }
+    ]
+  },
+  {
     key: 'hrtf',
     label: 'flags.hrtf.label',
     hint: 'flags.hrtf.hint',
@@ -184,7 +197,8 @@ export function optionLabel(label: string): string {
 
 const BUILT_IN_PRESET_NAMES: Record<string, MessageKey> = {
   'builtin-battery': 'presets.battery',
-  'builtin-quality': 'presets.quality'
+  'builtin-quality': 'presets.quality',
+  'builtin-steam-deck': 'presets.steamDeck'
 }
 
 export function presetName(preset: EngineFlagPreset): string {

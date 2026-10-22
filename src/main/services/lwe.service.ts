@@ -344,14 +344,14 @@ const DEPS_ARCH = [
   'gmp', 'patchelf'
 ]
 
-export async function installLweDeps(win: BrowserWindow): Promise<void> {
+export async function installLweDeps(win: BrowserWindow): Promise<boolean> {
   const send = (progress: LweInstallProgress) => {
     win.webContents.send(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, progress)
   }
 
   if (isFlatpak()) {
     send({ stage: 'error', message: t('lwe.flatpakManaged'), percentage: 0 })
-    return
+    return false
   }
 
   const distro = detectDistro()
@@ -361,7 +361,7 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
       message: t('lwe.noDistroDeps'),
       percentage: 0
     })
-    return
+    return false
   }
 
   if (isOstreeSystem()) {
@@ -370,7 +370,7 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
       message: t('lwe.imageBasedSystem'),
       percentage: 0
     })
-    return
+    return false
   }
 
   let pkgManager: string
@@ -411,7 +411,7 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
       await execFileAsync(elevate, [pkgManager, ...installArgs, 'mpv-devel'], { timeout: 600_000 })
     } catch (err) {
       send({ stage: 'error', message: t('lwe.depsFailed', { error: (err as Error).message }), percentage: 0 })
-      return
+      return false
     }
     packages = [...packages, ...(suseFfmpegDevel() ?? ['pkgconfig(libavcodec)', 'pkgconfig(libavformat)', 'pkgconfig(libavutil)', 'pkgconfig(libswscale)', 'pkgconfig(libswresample)'])]
   }
@@ -438,12 +438,14 @@ export async function installLweDeps(win: BrowserWindow): Promise<void> {
           : t('lwe.depsInstalled'),
       percentage: 100
     })
+    return true
   } catch (err) {
     send({
       stage: 'error',
       message: t('lwe.depsFailed', { error: (err as Error).message }),
       percentage: 0
     })
+    return false
   }
 }
 
@@ -847,6 +849,8 @@ function buildLweEnvVars(): string[] {
 
   vars.push(`XDG_RUNTIME_DIR=${getXdgRuntimeDir()}`)
 
+  if (diagnosticStats) vars.push('LWE_FRAME_STATS=1')
+
   return vars
 }
 
@@ -1144,6 +1148,8 @@ interface LweInstance {
   swappedAt: number | null
   stopping: boolean
   log: string[]
+  /** everything the engine printed since the launch, up to HISTORY_LINES_KEPT */
+  history: string[]
   /** null: the engine reads the shared control file */
   controlFile: string | null
   /** Flatpak: the run whose sandbox the engine lives in, and its host pid */
@@ -1167,6 +1173,8 @@ let adoptedPoll: ReturnType<typeof setInterval> | null = null
 const exitListeners = new Set<(info: LweExitInfo) => void>()
 
 const LOG_LINES_KEPT = 60
+const HISTORY_LINES_KEPT = 5000
+let diagnosticStats = false
 // a crash this soon after a launch or hotswap is blamed on it
 const CRASH_WINDOW_MS = 20_000
 const CRASH_SIGNALS = new Set(['SIGSEGV', 'SIGABRT', 'SIGBUS', 'SIGFPE', 'SIGILL', 'SIGTRAP'])
@@ -1282,6 +1290,7 @@ function adopt(
     swappedAt: null,
     stopping: false,
     log: [],
+    history: [],
     controlFile,
     sandbox,
     hostPid
@@ -1423,6 +1432,30 @@ export function getRunningInstances(): RunningInstance[] {
     pid,
     startedAt,
     swappedAt
+  }))
+}
+
+/** Engines started while this is on print per-frame timings (LWE_FRAME_STATS), which costs some speed */
+export function setDiagnosticStats(on: boolean): void {
+  diagnosticStats = on
+}
+
+export interface EngineHistory {
+  screen: ScreenTarget
+  wallpaperPath: string
+  pid: number
+  startedAt: number
+  lines: string[]
+}
+
+/** What the live engines printed since they started, adopted ones have no output */
+export function getEngineHistory(): EngineHistory[] {
+  return liveInstances().map(({ screen, wallpaperPath, pid, startedAt, history }) => ({
+    screen,
+    wallpaperPath,
+    pid,
+    startedAt,
+    lines: [...history]
   }))
 }
 
@@ -1720,6 +1753,7 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
       swappedAt: null,
       stopping: false,
       log: [],
+      history: [],
       controlFile,
       sandbox: flatpakInstanceId() ?? null,
       hostPid: null
@@ -1742,6 +1776,8 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
       console.log(`[LWE ${stream}]`, msg)
       inst.log.push(...msg.split('\n'))
       if (inst.log.length > LOG_LINES_KEPT) inst.log.splice(0, inst.log.length - LOG_LINES_KEPT)
+      inst.history.push(...msg.split('\n'))
+      if (inst.history.length > HISTORY_LINES_KEPT) inst.history.splice(0, inst.history.length - HISTORY_LINES_KEPT)
     }
     child.stdout?.on('data', collect('stdout'))
     child.stderr?.on('data', collect('stderr'))

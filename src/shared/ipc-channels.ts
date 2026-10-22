@@ -163,6 +163,8 @@ export const IpcChannels = {
   UPDATES_INSTALL_APP: 'updates:install-app',
   UPDATES_RESTART: 'updates:restart',
 
+  DIAGNOSTICS_COLLECT: 'diagnostics:collect',
+
   // Events pushed from main to renderer
   EVENT_DOWNLOAD_PROGRESS: 'event:download-progress',
   EVENT_WALLPAPER_IMPORTED: 'event:wallpaper-imported',

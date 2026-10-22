@@ -171,6 +171,9 @@ export type SsaaQuality = 'none' | 'x2' | 'x3' | 'x4'
 
 export type HwdecBackend = 'auto' | 'no' | 'vaapi' | 'vaapi-copy' | 'nvdec' | 'nvdec-copy' | 'vulkan'
 
+/** How web wallpapers hand their frames to the engine: shared GPU buffers or a copy through memory */
+export type WebFramesMode = 'auto' | 'shm' | 'dmabuf'
+
 /** auto = while the default output is headphones */
 export type HrtfMode = 'auto' | 'on' | 'off'
 
@@ -199,6 +202,8 @@ export interface EngineFlags {
   msaa?: MsaaQuality
   ssaa?: SsaaQuality
   hwdec?: HwdecBackend
+  /** --web-frames, applies when the web wallpaper starts */
+  webFrames?: WebFramesMode
   hrtf?: HrtfMode
   /** --fps-battery / --pause-on-battery */
   batteryFps?: BatteryFps

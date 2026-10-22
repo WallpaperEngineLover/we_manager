@@ -447,6 +447,11 @@ const api = {
     restart: (): Promise<void> => ipcRenderer.invoke(IpcChannels.UPDATES_RESTART)
   },
 
+  diagnostics: {
+    collect: (): Promise<{ status: 'saved'; path: string } | { status: 'cancelled' | 'no-engine' }> =>
+      ipcRenderer.invoke(IpcChannels.DIAGNOSTICS_COLLECT)
+  },
+
   gnomeExtension: {
     status: (): Promise<GnomeExtensionStatus> => ipcRenderer.invoke(IpcChannels.GNOME_EXTENSION_STATUS),
     install: (): Promise<{ ok: boolean; message: string; status: GnomeExtensionStatus }> =>

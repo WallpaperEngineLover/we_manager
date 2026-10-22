@@ -16,7 +16,8 @@ import { checkEarlierRunEngines, killAllLweProcesses, getLweStatus } from './ser
 import { initDisplay } from './services/display.service'
 import { initSchedule } from './services/schedule.service'
 import { initUpdates } from './services/update.service'
-import { hasStatusNotifierHost } from './utils/platform'
+import { detectDesktopEnv, hasStatusNotifierHost } from './utils/platform'
+import { needsSoftwareCompositing, readGpuVendors } from './utils/gpuWorkaround'
 import { takeResetStores } from './utils/safeStore'
 import { t } from './i18n'
 import { getExtraLibraryRoots, getPreviewCachePath, getThumbnailsPath, getWorkshopPath } from './utils/paths'
@@ -26,6 +27,9 @@ import appIcon from '../../resources/icon.png?asset'
 
 const startMinimized = process.argv.includes('--minimized')
 prepareAppearance()
+if (needsSoftwareCompositing(detectDesktopEnv(), process.env.WAYLAND_DISPLAY, readGpuVendors())) {
+  app.commandLine.appendSwitch('disable-gpu-compositing')
+}
 
 // fetch() for GIF still frames in PreviewImage.tsx
 protocol.registerSchemesAsPrivileged([{ scheme: 'wallpaper', privileges: { supportFetchAPI: true, corsEnabled: true } }])

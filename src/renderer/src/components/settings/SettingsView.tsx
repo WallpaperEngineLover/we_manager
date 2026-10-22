@@ -12,6 +12,7 @@ import AppearanceSettings from './AppearanceSettings'
 import LibraryFoldersSettings from './LibraryFoldersSettings'
 import ScheduleSettings from './ScheduleSettings'
 import UpdateSettings from './UpdateSettings'
+import DiagnosticsSettings from './DiagnosticsSettings'
 import CopyField from '../common/CopyField'
 import { t } from '../../i18n'
 
@@ -945,6 +946,8 @@ export default function SettingsView() {
         </div>
 
         <UpdateSettings />
+
+        <DiagnosticsSettings />
 
         <div>
           <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
