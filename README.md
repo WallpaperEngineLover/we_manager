@@ -3,8 +3,7 @@
 A Wallpaper Engine manager for Linux. It browses the Steam Workshop, keeps a local library of your wallpapers
 with folders, tags and playlists, and plays them on the desktop with
 [linux-wallpaperengine-kde](https://github.com/WallpaperEngineLover/linux-wallpaperengine-kde), the engine this
-app is built around (it also works with the upstream
-[linux-wallpaperengine](https://github.com/Almamu/linux-wallpaperengine), without the newer features).
+app is built around.
 
 Steam has to be running with Wallpaper Engine (app id 431960) in the library for Workshop browsing, subscribing and
 voting. Without Steam the app still works as a local library manager.
@@ -66,7 +65,7 @@ voting. Without Steam the app still works as a local library manager.
 
 - **AppImage / .deb** from the [releases](https://github.com/WallpaperEngineLover/we_manager/releases). The .deb
   updates itself through apt after asking for your password, the AppImage replaces its own file.
-- **Flatpak**: the `.flatpak` bundle on the releases page comes with linux-wallpaperengine inside, for
+- **Flatpak**: the `.flatpak` bundle on the releases page comes with linux-wallpaperengine-kde inside, for
   Bazzite, Silverblue/Kinoite, SteamOS and any other distribution:
   `flatpak install --user we-manager.flatpak` (needs Flathub for the runtime). To build it yourself:
   `packaging/flatpak/fetch-sources.sh`, then
@@ -90,7 +89,7 @@ npm run lint
 
 ## Notes
 
-- Settings downloads a prebuilt linux-wallpaperengine from the
+- Settings downloads a prebuilt linux-wallpaperengine-kde from the
   [linux-wallpaperengine-kde releases](https://github.com/WallpaperEngineLover/linux-wallpaperengine-kde/releases)
   into `~/.local/share/linux-wallpaperengine-kde`: the Ubuntu 24.04 or Fedora 44
   build there, the portable build on every other distribution with glibc 2.35 or
