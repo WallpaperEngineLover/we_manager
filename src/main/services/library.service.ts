@@ -121,6 +121,19 @@ export function updateWallpaper(id: string, patch: Partial<WallpaperMeta>): void
   upsertWallpaper({ ...current, ...patch, updatedAt: current.updatedAt })
 }
 
+export function resetAllCompat(): number {
+  const wallpapers = store.get('wallpapers')
+  let reset = 0
+  for (const wallpaper of Object.values(wallpapers)) {
+    const compat = wallpaper.compat
+    if (!compat || (!compat.freshLaunch && !compat.hotswapCrash && !compat.runtimeCrashes && !compat.lastCrash)) continue
+    wallpaper.compat = compat.note ? { note: compat.note } : undefined
+    reset++
+  }
+  if (reset > 0) store.set('wallpapers', wallpapers)
+  return reset
+}
+
 export function deleteWallpaper(id: string): void {
   const wallpapers = store.get('wallpapers')
   const thumbnail = wallpapers[id]?.customPreview

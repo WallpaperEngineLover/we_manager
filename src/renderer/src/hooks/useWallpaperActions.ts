@@ -41,12 +41,27 @@ export function useRepairFiles(): (ids: string[], onStatus: (text: string) => vo
   return async (ids, onStatus) => {
     onStatus(t('verify.starting', { count: ids.length }))
     queryClient.invalidateQueries({ queryKey: ['library'] })
+    let latest: { done: number; total: number } | null = null
+    const off = window.electronAPI.on.repairProgress(({ done, total }) => {
+      latest = { done, total }
+      if (done >= total) {
+        off()
+        onStatus(t('verify.repairFinished', { done, total }))
+      } else {
+        onStatus(t('verify.repairProgress', { done, total }))
+      }
+    })
     try {
       const result = await window.electronAPI.steam.repair(ids)
-      let summary = t('verify.repairing', { count: result.started })
+      if (result.started === 0) off()
+      const progress = latest as { done: number; total: number } | null
+      let summary = progress
+        ? t(progress.done >= progress.total ? 'verify.repairFinished' : 'verify.repairProgress', { done: progress.done, total: progress.total })
+        : t('verify.repairing', { count: result.started })
       if (result.failed > 0) summary += ', ' + t('common.failedCount', { count: result.failed })
       return summary
     } catch (err) {
+      off()
       return (err as Error).message
     } finally {
       queryClient.invalidateQueries({ queryKey: ['library'] })

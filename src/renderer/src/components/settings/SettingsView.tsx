@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import Toggle from '../common/Toggle'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull, Film, Globe, Shield, Bug } from 'lucide-react'
-import type { LweStatus, LwePrebuiltTarget, LweInstallProgress, LinuxDistro, SteamIdentity } from '../../../../shared/types'
+import type { LweStatus, LwePrebuiltTarget, LweInstallProgress, LinuxDistro, SteamIdentity, DesktopIconsStatus } from '../../../../shared/types'
 import PerformanceSettings from './PerformanceSettings'
 import DisplaySettings from './DisplaySettings'
 import SplitScreenSettings from './SplitScreenSettings'
@@ -13,8 +13,9 @@ import LibraryFoldersSettings from './LibraryFoldersSettings'
 import ScheduleSettings from './ScheduleSettings'
 import UpdateSettings from './UpdateSettings'
 import DiagnosticsSettings from './DiagnosticsSettings'
+import SettingsTabs, { loadSettingsTab, saveSettingsTab, type SettingsTab } from './SettingsTabs'
 import CopyField from '../common/CopyField'
-import { t } from '../../i18n'
+import { t, translatedOr } from '../../i18n'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
   fedora: 'Fedora / Nobara / RHEL',
@@ -62,6 +63,8 @@ export default function SettingsView() {
   const [killMsg, setKillMsg] = useState<string | null>(null)
 
   const [desktopIconsEnabled, setDesktopIconsEnabled] = useState(false)
+  const [desktopIconsStatus, setDesktopIconsStatus] = useState<DesktopIconsStatus | null>(null)
+  const [desktopIconsInstall, setDesktopIconsInstall] = useState<{ busy: boolean; error?: string }>({ busy: false })
 
   const [backupPath, setBackupPath] = useState('')
   const [backupSaved, setBackupSaved] = useState(false)
@@ -116,6 +119,7 @@ export default function SettingsView() {
     window.electronAPI.lwe.detectDistro().then(setDistro)
     window.electronAPI.lwe.prebuiltTarget().then(setPrebuiltTarget)
     window.electronAPI.desktopIcons.getEnabled().then(setDesktopIconsEnabled)
+    window.electronAPI.desktopIcons.getStatus().then(setDesktopIconsStatus)
     window.electronAPI.playlist.getAll().then((all) => setPlaylists(all.map((p) => ({ id: p.id, title: p.title }))))
     window.electronAPI.lwe.listScreens().then(setScreens)
   }, [])
@@ -267,6 +271,17 @@ export default function SettingsView() {
     const newVal = !desktopIconsEnabled
     setDesktopIconsEnabled(newVal)
     await window.electronAPI.desktopIcons.setEnabled(newVal)
+    setDesktopIconsStatus(await window.electronAPI.desktopIcons.getStatus())
+    // a missing module only shows once the overlay process has run
+    setTimeout(() => window.electronAPI.desktopIcons.getStatus().then(setDesktopIconsStatus), 3000)
+  }
+
+  async function handleDesktopIconsInstall() {
+    setDesktopIconsInstall({ busy: true })
+    const result = await window.electronAPI.desktopIcons.installDeps()
+    setDesktopIconsInstall({ busy: false, error: result.ok ? undefined : result.error })
+    setDesktopIconsStatus(await window.electronAPI.desktopIcons.getStatus())
+    setTimeout(() => window.electronAPI.desktopIcons.getStatus().then(setDesktopIconsStatus), 3000)
   }
 
   async function handleBrowseBackup() {
@@ -366,704 +381,764 @@ export default function SettingsView() {
     await window.electronAPI.config.setAutostart(enabled, minimized, playlistId)
   }
 
+  const [tab, setTab] = useState<SettingsTab>(loadSettingsTab)
+
+  function changeTab(next: SettingsTab) {
+    setTab(next)
+    saveSettingsTab(next)
+  }
+
   const isBusy = lweInstalling || depsInstalling || uninstalling
 
   return (
-    <div className="p-6 overflow-y-auto h-full">
-      <h2 className="text-lg font-semibold text-gray-100">{t('nav.settings')}</h2>
+    <div className="flex h-full flex-col md:flex-row">
+      <SettingsTabs active={tab} onChange={changeTab} />
 
-      <div className="mt-6 max-w-lg space-y-8">
-        <AppearanceSettings />
+      <div className="flex-1 overflow-y-auto p-6">
+        <h2 className="mb-6 text-lg font-semibold text-gray-100 md:hidden">{t('nav.settings')}</h2>
 
-        <div>
-          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            {t('setup.workshopFolder')}
-          </label>
-          <p className="mt-1 text-xs text-gray-600">
-            {t('settings.workshopPathHint')}
-          </p>
-          <div className="mt-2 flex gap-2">
-            <input
-              type="text"
-              value={workshopPath}
-              onChange={(e) => {
-                setWorkshopPath(e.target.value)
-                setSaved(false)
-              }}
-              className="flex-1 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
-            />
-            <button
-              onClick={handleBrowse}
-              className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
-            >
-              <FolderOpen size={16} />
-              {t('common.browse')}
-            </button>
+        {tab === 'appearance' && (
+          <div className="max-w-lg space-y-8">
+            <AppearanceSettings />
+
+            <CardBorderSettings />
+
+            <CardBadgeSettings />
           </div>
-          <button
-            onClick={handleSave}
-            disabled={!workshopPath}
-            className="mt-3 flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
-          >
-            <Save size={14} />
-            {saved ? t('common.saved') : t('common.save')}
-          </button>
-        </div>
+        )}
 
-        <LibraryFoldersSettings />
-
-        <div>
-          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            {t('settings.backupFolder')}
-          </label>
-          <p className="mt-1 text-xs text-gray-600">
-            {t('settings.backupFolderHint')}
-          </p>
-          <div className="mt-2 flex gap-2">
-            <input
-              type="text"
-              value={backupPath}
-              onChange={(e) => {
-                setBackupPath(e.target.value)
-                setBackupSaved(false)
-              }}
-              placeholder={t('settings.notConfigured')}
-              className="flex-1 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
-            />
-            <button
-              onClick={handleBrowseBackup}
-              className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
-            >
-              <FolderOpen size={16} />
-              {t('common.browse')}
-            </button>
-          </div>
-          <button
-            onClick={handleSaveBackup}
-            disabled={!backupPath}
-            className="mt-3 flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
-          >
-            <Save size={14} />
-            {backupSaved ? t('common.saved') : t('common.save')}
-          </button>
-
-          <label className="mt-4 flex items-center gap-3 cursor-pointer">
-            <Toggle on={autoUnsubscribeAfterBackup} onClick={handleAutoUnsubscribeToggle} />
-            <span className="flex items-center gap-2 text-sm text-gray-300">
-              <Archive size={16} />
-              {t('settings.autoUnsubscribe')}
-            </span>
-          </label>
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            {t('settings.weOptions')}
-          </label>
-          <p className="mt-1 text-xs text-gray-600">
-            {t('settings.weOptionsHint')}
-          </p>
-          <div className="mt-3 space-y-3">
+        {tab === 'library' && (
+          <div className="max-w-lg space-y-8">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">{t('settings.defaultFps')}</label>
-              <p className="text-xs text-gray-600 mb-2">
-                {t('settings.defaultFpsHint')}
-              </p>
-              <div className="flex gap-2 items-center">
-                <input
-                  type="number"
-                  min={1}
-                  max={360}
-                  placeholder={t('settings.unlimited')}
-                  value={defaultFps}
-                  onChange={(e) => { setDefaultFps(e.target.value); setFpsSaved(false) }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSaveDefaultFps()}
-                  className="w-28 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
-                />
-                <button
-                  onClick={handleSaveDefaultFps}
-                  className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
-                >
-                  <Save size={14} />
-                  {fpsSaved ? t('common.saved') : t('common.save')}
-                </button>
-              </div>
-            </div>
-            <div>
-              <label className="mt-1 flex items-center gap-3 cursor-pointer">
-                <Toggle on={recommendedFpsEnabled} onClick={handleRecommendedFpsToggle} />
-                <span className="flex items-center gap-2 text-sm text-gray-300">
-                  <Film size={16} />
-                  {t('settings.recommendedVideo')}
-                </span>
+              <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+                {t('setup.workshopFolder')}
               </label>
-              <p className="mt-2 text-xs text-gray-600">
-                {t('settings.recommendedVideoHint')}
+              <p className="mt-1 text-xs text-gray-600">
+                {t('settings.workshopPathHint')}
               </p>
-            </div>
-            <div>
-              <label className="mt-1 flex items-center gap-3 cursor-pointer">
-                <Toggle on={recommendedWebFpsEnabled} onClick={handleRecommendedWebFpsToggle} />
-                <span className="flex items-center gap-2 text-sm text-gray-300">
-                  <Globe size={16} />
-                  {t('settings.recommendedWeb')}
-                </span>
-              </label>
-              <p className="mt-2 text-xs text-gray-600">
-                {t('settings.recommendedWebHint')}
-              </p>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">{t('settings.resetFps')}</label>
-              <p className="text-xs text-gray-600 mb-2">
-                {t('settings.resetFpsHint')}
-              </p>
-              {resetFpsConfirm ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">{t('settings.areYouSure')}</span>
-                  <button
-                    onClick={handleResetFpsOverrides}
-                    className="rounded-lg bg-red-600/80 px-3 py-1.5 text-xs text-white hover:bg-red-600"
-                  >
-                    {t('settings.resetAllConfirm')}
-                  </button>
-                  <button
-                    onClick={() => setResetFpsConfirm(false)}
-                    className="rounded-lg bg-fg/5 px-3 py-1.5 text-xs text-gray-400 hover:bg-fg/10"
-                  >
-                    {t('common.cancel')}
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={handleResetFpsOverrides}
-                  className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
-                >
-                  <RotateCcw size={14} />
-                  {t('settings.resetAllFps')}
-                </button>
-              )}
-              {resetFpsMsg && (
-                <p className="mt-2 text-xs text-gray-400">{resetFpsMsg}</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <DisplaySettings screens={screens} />
-
-        <SplitScreenSettings />
-
-        <CardBorderSettings />
-
-        <CardBadgeSettings />
-
-        <ScheduleSettings />
-
-        <div>
-          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            {t('settings.audio')}
-          </label>
-          <p className="mt-1 text-xs text-gray-600">
-            {t('settings.audioHint')}
-          </p>
-          <div className="mt-3 space-y-4">
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">{t('settings.audioScreen')}</label>
-              <p className="text-xs text-gray-600 mb-2">
-                {t('settings.audioScreenHint')}
-              </p>
-              <div className="flex items-center gap-2">
-                <select
-                  value={audioScreen ?? ''}
-                  onChange={(e) => handleAudioScreenChange(e.target.value || null)}
-                  className="w-56 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
-                >
-                  <option value="">{t('settings.allScreensDefault')}</option>
-                  {screens.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={handleRefreshScreens}
-                  disabled={screensRefreshing}
-                  className="rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 outline-none hover:bg-fg/10 disabled:opacity-50"
-                  title={t('settings.redetectHint')}
-                >
-                  {screensRefreshing ? '...' : t('settings.redetect')}
-                </button>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">{t('settings.ambientVolume')}</label>
-              <p className="text-xs text-gray-600 mb-2">
-                {t('settings.ambientVolumeHint')}
-              </p>
-              <div className="flex gap-2 items-center">
-                <input
-                  type="number"
-                  min={0}
-                  max={128}
-                  placeholder={t('settings.ambientPlaceholder')}
-                  value={ambientVolume}
-                  onChange={(e) => { setAmbientVolume(e.target.value); setAmbientVolumeSaved(false) }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSaveAmbientVolume()}
-                  className="w-44 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
-                />
-                <button
-                  onClick={handleSaveAmbientVolume}
-                  className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
-                >
-                  <Save size={14} />
-                  {ambientVolumeSaved ? t('common.saved') : t('common.save')}
-                </button>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">{t('settings.audioSensitivity')}</label>
-              <p className="text-xs text-gray-600 mb-2">
-                {t('settings.audioSensitivityHint')}
-              </p>
-              <div className="flex gap-2 items-center">
-                <input
-                  type="number"
-                  min={0}
-                  max={200}
-                  value={defaultAudioSensitivity}
-                  onChange={(e) => { setDefaultAudioSensitivity(e.target.value); setDefaultAudioSensitivitySaved(false) }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSaveDefaultAudioSensitivity()}
-                  className="w-44 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
-                />
-                <span className="text-sm text-gray-500">%</span>
-                <button
-                  onClick={handleSaveDefaultAudioSensitivity}
-                  className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
-                >
-                  <Save size={14} />
-                  {defaultAudioSensitivitySaved ? t('common.saved') : t('common.save')}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            {t('settings.weConfig')}
-          </label>
-          <p className="mt-1 text-xs text-gray-600">
-            {t('settings.weConfigHint')}
-          </p>
-          <button
-            onClick={handleImportConfig}
-            className="mt-3 flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
-          >
-            <Upload size={14} />
-            {t('settings.importConfig')}
-          </button>
-          {importStatus && (
-            <p className="mt-2 text-xs text-gray-400">{importStatus}</p>
-          )}
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            linux-wallpaperengine
-          </label>
-          <p className="mt-1 text-xs text-gray-600">
-            {t('settings.lweHint')}
-          </p>
-
-          {lweStatus === null ? (
-            <p className="mt-3 text-xs text-gray-500">{t('settings.checking')}</p>
-          ) : (
-            <div className="mt-3 space-y-3">
-              {lweStatus.installed ? (
-                <>
-                  <div className="flex items-center gap-2 text-sm text-green-400">
-                    <CheckCircle size={16} />
-                    {t('settings.installed')}{lweStatus.version ? ` (${lweStatus.version})` : ''}
-                  </div>
-                  {lweStatus.path && (
-                    <p className="text-xs text-gray-500">{t('settings.path')} {lweStatus.path}</p>
-                  )}
-                  {lweStatus.managedBy && !engineManaged && (
-                    <p className="text-xs text-gray-500">{t('settings.installedBy')} {lweStatus.managedBy}</p>
-                  )}
-                </>
-              ) : (
-                <div className="flex items-center gap-2 text-sm text-yellow-400">
-                  <XCircle size={16} />
-                  {t('settings.notInstalled')}
-                </div>
-              )}
-
-              {prebuiltTarget?.supported ? (
-                <p className="text-xs text-gray-500">{t('settings.prebuiltBuild')} {prebuiltTarget.label}</p>
-              ) : prebuiltTarget && (
-                <p className={`text-xs ${engineManaged ? 'text-gray-500' : 'text-yellow-500/80'}`}>{prebuiltTarget.reason}</p>
-              )}
-
-              <div className="flex flex-wrap gap-2">
-                {prebuiltTarget?.supported && (
-                  <button
-                    onClick={handleInstallPrebuilt}
-                    disabled={isBusy}
-                    className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
-                  >
-                    {lweInstalling ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <Download size={14} />
-                    )}
-                    {lweInstalling
-                      ? t('gnome.installing')
-                      : !lweStatus.installed
-                        ? t('lwe.downloadInstall')
-                        : lweStatus.version
-                          ? t('lwe.update')
-                          : t('lwe.switchPrebuilt')}
-                  </button>
-                )}
-                {lweStatus.installed && !engineManaged && !lweStatus.managedBy && (
-                  <button
-                    onClick={handleUninstallLwe}
-                    disabled={isBusy}
-                    className="flex items-center gap-2 rounded-lg bg-red-600/20 px-4 py-2 text-sm text-red-400 hover:bg-red-600/30 disabled:opacity-50"
-                  >
-                    {uninstalling ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={14} />
-                    )}
-                    {uninstalling ? t('lwe.uninstalling') : t('lwe.uninstall')}
-                  </button>
-                )}
-              </div>
-              {prebuiltTarget?.supported && !lweStatus.installed && (
-                <p className="text-xs text-gray-600">
-                  {t('settings.prebuiltHint')}
-                </p>
-              )}
-              {uninstallMsg && (
-                <p className="text-xs text-gray-400">{uninstallMsg}</p>
-              )}
-            </div>
-          )}
-
-          {!engineManaged && (
-            <button
-              onClick={() => setShowSourceBuild(!sourceBuildVisible)}
-              className="mt-4 text-xs text-gray-400 hover:text-gray-200"
-            >
-              {sourceBuildVisible ? '▾' : '▸'} {t('lwe.buildFromSource')}
-            </button>
-          )}
-
-          {sourceBuildVisible && (
-            <div className="mt-2 space-y-2 rounded-lg bg-fg/[0.02] p-3">
-              <label className="block text-xs text-gray-400">{t('settings.sourceRepo')}</label>
-              <p className="text-xs text-gray-600">
-                {t('settings.sourceRepoHint')}
-              </p>
-              <input
-                type="text"
-                value={lweRepoUrl}
-                onChange={(e) => { setLweRepoUrl(e.target.value); setRepoSaved(false) }}
-                placeholder={defaultLweRepo}
-                className="w-full rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
-              />
-              <div className="flex gap-2 items-center">
+              <div className="mt-2 flex gap-2">
                 <input
                   type="text"
-                  value={lweRepoBranch}
-                  onChange={(e) => { setLweRepoBranch(e.target.value); setRepoSaved(false) }}
-                  placeholder={t('settings.branchPlaceholder')}
-                  className="w-44 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
+                  value={workshopPath}
+                  onChange={(e) => {
+                    setWorkshopPath(e.target.value)
+                    setSaved(false)
+                  }}
+                  className="flex-1 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                 />
                 <button
-                  onClick={handleSaveRepo}
-                  className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
+                  onClick={handleBrowse}
+                  className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
                 >
-                  <Save size={14} />
-                  {repoSaved ? t('common.saved') : t('common.save')}
+                  <FolderOpen size={16} />
+                  {t('common.browse')}
                 </button>
               </div>
-              <label className="block text-xs text-gray-400">{t('settings.cmakeArgs')}</label>
-              <p className="text-xs text-gray-600">
-                {t('settings.cmakeArgsHint')}
-              </p>
-              <input
-                type="text"
-                value={lweCmakeArgs}
-                onChange={(e) => { setLweCmakeArgs(e.target.value); setRepoSaved(false) }}
-                placeholder="-DDISABLE_KDE_FEATURES=ON"
-                className="w-full rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500 font-mono"
-              />
-
-              {distro && distro !== 'unknown' && (
-                <p className="text-xs text-gray-500">
-                  {t('settings.detected')} {DISTRO_LABELS[distro]}
-                </p>
-              )}
-
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button
-                  onClick={handleInstallDeps}
-                  disabled={isBusy || !distro || distro === 'unknown'}
-                  title={
-                    !distro || distro === 'unknown'
-                      ? t('lwe.noDistro')
-                      : undefined
-                  }
-                  className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
-                >
-                  {depsInstalling ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Package size={14} />
-                  )}
-                  {depsInstalling ? t('lwe.installingDeps') : t('lwe.installDeps')}
-                </button>
-
-                <button
-                  onClick={handleInstallLwe}
-                  disabled={isBusy}
-                  className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
-                >
-                  {lweInstalling ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Download size={14} />
-                  )}
-                  {lweInstalling ? t('lwe.building') : lweStatus?.installed ? t('lwe.rebuild') : t('lwe.build')}
-                </button>
-              </div>
-
-              <p className="text-xs text-gray-600">
-                {t('settings.buildHint')}
-              </p>
-
-              {distro === 'unknown' && (
-                <p className="text-xs text-yellow-500/80">
-                  {t('settings.unknownDistro')}
-                </p>
-              )}
+              <button
+                onClick={handleSave}
+                disabled={!workshopPath}
+                className="mt-3 flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+              >
+                <Save size={14} />
+                {saved ? t('common.saved') : t('common.save')}
+              </button>
             </div>
-          )}
 
-          {lweProgress && (
-            <div className="mt-3 space-y-2">
-              <div className="flex items-center gap-2">
-                {lweProgress.stage === 'error' ? (
-                  <XCircle size={14} className="text-red-400 shrink-0" />
-                ) : lweProgress.stage === 'done' ? (
-                  <CheckCircle size={14} className="text-green-400 shrink-0" />
-                ) : (
-                  <Loader2 size={14} className="animate-spin text-accent-400 shrink-0" />
-                )}
-                <p className="text-xs text-gray-300 whitespace-pre-wrap break-all">{lweProgress.message}</p>
+            <LibraryFoldersSettings />
+
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+                {t('settings.backupFolder')}
+              </label>
+              <p className="mt-1 text-xs text-gray-600">
+                {t('settings.backupFolderHint')}
+              </p>
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  value={backupPath}
+                  onChange={(e) => {
+                    setBackupPath(e.target.value)
+                    setBackupSaved(false)
+                  }}
+                  placeholder={t('settings.notConfigured')}
+                  className="flex-1 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
+                />
+                <button
+                  onClick={handleBrowseBackup}
+                  className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
+                >
+                  <FolderOpen size={16} />
+                  {t('common.browse')}
+                </button>
               </div>
-              {lweProgress.stage !== 'error' && lweProgress.stage !== 'done' && (
-                <div className="h-1.5 w-full rounded-full bg-fg/5">
-                  <div
-                    className="h-full rounded-full bg-accent-500 transition-all duration-300"
-                    style={{ width: `${lweProgress.percentage}%` }}
-                  />
+              <button
+                onClick={handleSaveBackup}
+                disabled={!backupPath}
+                className="mt-3 flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+              >
+                <Save size={14} />
+                {backupSaved ? t('common.saved') : t('common.save')}
+              </button>
+
+              <label className="mt-4 flex items-center gap-3 cursor-pointer">
+                <Toggle on={autoUnsubscribeAfterBackup} onClick={handleAutoUnsubscribeToggle} />
+                <span className="flex items-center gap-2 text-sm text-gray-300">
+                  <Archive size={16} />
+                  {t('settings.autoUnsubscribe')}
+                </span>
+              </label>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+                {t('settings.steam')}
+              </label>
+              <p className="mt-1 text-xs text-gray-600">
+                {t('settings.steamHint')}
+              </p>
+
+              <div className="mt-3 flex rounded-lg overflow-hidden text-sm w-fit">
+                <button
+                  onClick={() => handleSteamIdentityChange('wallpaper-engine')}
+                  className={`flex items-center gap-2 px-3 py-2 transition-colors ${
+                    steamIdentity === 'wallpaper-engine'
+                      ? 'bg-accent-600 text-white'
+                      : 'bg-fg/5 text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  <Shield size={14} />
+                  {t('settings.steamWe')}
+                </button>
+                <button
+                  onClick={() => handleSteamIdentityChange('standalone')}
+                  className={`flex items-center gap-2 px-3 py-2 transition-colors ${
+                    steamIdentity === 'standalone'
+                      ? 'bg-accent-600 text-white'
+                      : 'bg-fg/5 text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  <Shield size={14} />
+                  {t('settings.steamOwn')}
+                </button>
+              </div>
+              {steamIdentitySaved && (
+                <p className="mt-2 text-xs text-green-400">{t('settings.steamSaved')}</p>
+              )}
+              <p className="mt-2 text-xs text-gray-600">
+                {steamIdentity === 'wallpaper-engine' ? (
+                  <>
+                    {t('settings.steamWeHint')}
+                  </>
+                ) : (
+                  <>
+                    {t('settings.steamOwnHint')}
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {tab === 'engine' && (
+          <div className="max-w-lg space-y-8">
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+                linux-wallpaperengine
+              </label>
+              <p className="mt-1 text-xs text-gray-600">
+                {t('settings.lweHint')}
+              </p>
+
+              {lweStatus === null ? (
+                <p className="mt-3 text-xs text-gray-500">{t('settings.checking')}</p>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {lweStatus.installed ? (
+                    <>
+                      <div className="flex items-center gap-2 text-sm text-green-400">
+                        <CheckCircle size={16} />
+                        {t('settings.installed')}{lweStatus.version ? ` (${lweStatus.version})` : ''}
+                      </div>
+                      {lweStatus.path && (
+                        <p className="text-xs text-gray-500">{t('settings.path')} {lweStatus.path}</p>
+                      )}
+                      {lweStatus.managedBy && !engineManaged && (
+                        <p className="text-xs text-gray-500">{t('settings.installedBy')} {lweStatus.managedBy}</p>
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-2 text-sm text-yellow-400">
+                      <XCircle size={16} />
+                      {t('settings.notInstalled')}
+                    </div>
+                  )}
+
+                  {prebuiltTarget?.supported ? (
+                    <p className="text-xs text-gray-500">{t('settings.prebuiltBuild')} {prebuiltTarget.label}</p>
+                  ) : prebuiltTarget && (
+                    <p className={`text-xs ${engineManaged ? 'text-gray-500' : 'text-yellow-500/80'}`}>{prebuiltTarget.reason}</p>
+                  )}
+
+                  <div className="flex flex-wrap gap-2">
+                    {prebuiltTarget?.supported && (
+                      <button
+                        onClick={handleInstallPrebuilt}
+                        disabled={isBusy}
+                        className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+                      >
+                        {lweInstalling ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Download size={14} />
+                        )}
+                        {lweInstalling
+                          ? t('gnome.installing')
+                          : !lweStatus.installed
+                            ? t('lwe.downloadInstall')
+                            : lweStatus.version
+                              ? t('lwe.update')
+                              : t('lwe.switchPrebuilt')}
+                      </button>
+                    )}
+                    {lweStatus.installed && !engineManaged && !lweStatus.managedBy && (
+                      <button
+                        onClick={handleUninstallLwe}
+                        disabled={isBusy}
+                        className="flex items-center gap-2 rounded-lg bg-red-600/20 px-4 py-2 text-sm text-red-400 hover:bg-red-600/30 disabled:opacity-50"
+                      >
+                        {uninstalling ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Trash2 size={14} />
+                        )}
+                        {uninstalling ? t('lwe.uninstalling') : t('lwe.uninstall')}
+                      </button>
+                    )}
+                  </div>
+                  {prebuiltTarget?.supported && !lweStatus.installed && (
+                    <p className="text-xs text-gray-600">
+                      {t('settings.prebuiltHint')}
+                    </p>
+                  )}
+                  {uninstallMsg && (
+                    <p className="text-xs text-gray-400">{uninstallMsg}</p>
+                  )}
                 </div>
               )}
-            </div>
-          )}
 
-          <div className="mt-4">
-            <button
-              onClick={handleKillAllLwe}
-              disabled={killingLwe}
-              className="flex items-center gap-2 rounded-lg bg-red-600/20 px-4 py-2 text-sm text-red-400 hover:bg-red-600/30 disabled:opacity-50"
-            >
-              {killingLwe ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Skull size={14} />
+              {!engineManaged && (
+                <button
+                  onClick={() => setShowSourceBuild(!sourceBuildVisible)}
+                  className="mt-4 text-xs text-gray-400 hover:text-gray-200"
+                >
+                  {sourceBuildVisible ? '▾' : '▸'} {t('lwe.buildFromSource')}
+                </button>
               )}
-              {killingLwe ? t('lwe.killing') : t('lwe.killAll')}
-            </button>
-            <p className="mt-1 text-xs text-gray-600">
-              {t('settings.killAllHint')}
-            </p>
-            {killMsg && (
-              <p className="mt-2 text-xs text-gray-400">{killMsg}</p>
-            )}
 
-            <label className="mt-3 flex items-center gap-3 cursor-pointer">
-              <Toggle on={killLweOnQuit} onClick={handleKillLweOnQuitToggle} />
-              <span className="flex items-center gap-2 text-sm text-gray-300">
-                <Skull size={16} />
-                {t('settings.killOnQuit')}
-              </span>
-            </label>
-          </div>
-        </div>
+              {sourceBuildVisible && (
+                <div className="mt-2 space-y-2 rounded-lg bg-fg/[0.02] p-3">
+                  <label className="block text-xs text-gray-400">{t('settings.sourceRepo')}</label>
+                  <p className="text-xs text-gray-600">
+                    {t('settings.sourceRepoHint')}
+                  </p>
+                  <input
+                    type="text"
+                    value={lweRepoUrl}
+                    onChange={(e) => { setLweRepoUrl(e.target.value); setRepoSaved(false) }}
+                    placeholder={defaultLweRepo}
+                    className="w-full rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
+                  />
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="text"
+                      value={lweRepoBranch}
+                      onChange={(e) => { setLweRepoBranch(e.target.value); setRepoSaved(false) }}
+                      placeholder={t('settings.branchPlaceholder')}
+                      className="w-44 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
+                    />
+                    <button
+                      onClick={handleSaveRepo}
+                      className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
+                    >
+                      <Save size={14} />
+                      {repoSaved ? t('common.saved') : t('common.save')}
+                    </button>
+                  </div>
+                  <label className="block text-xs text-gray-400">{t('settings.cmakeArgs')}</label>
+                  <p className="text-xs text-gray-600">
+                    {t('settings.cmakeArgsHint')}
+                  </p>
+                  <input
+                    type="text"
+                    value={lweCmakeArgs}
+                    onChange={(e) => { setLweCmakeArgs(e.target.value); setRepoSaved(false) }}
+                    placeholder="-DDISABLE_KDE_FEATURES=ON"
+                    className="w-full rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500 font-mono"
+                  />
 
-        <PerformanceSettings
-          defaultFps={defaultFps ? Number(defaultFps) : null}
-          onDefaultFpsChanged={(fps) => setDefaultFps(fps != null ? String(fps) : '')}
-        />
+                  {distro && distro !== 'unknown' && (
+                    <p className="text-xs text-gray-500">
+                      {t('settings.detected')} {DISTRO_LABELS[distro]}
+                    </p>
+                  )}
 
-        <div>
-          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            {t('settings.troubleshooting')}
-          </label>
-          <p className="mt-1 text-xs text-gray-600">
-            {t('settings.puppetHint')}
-          </p>
-          <label className="mt-3 flex items-center gap-3 cursor-pointer">
-            <Toggle on={disablePuppetAnimation} onClick={handleDisablePuppetAnimationToggle} />
-            <span className="flex items-center gap-2 text-sm text-gray-300">
-              <Bug size={16} />
-              {t('settings.puppet')}
-            </span>
-          </label>
-        </div>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      onClick={handleInstallDeps}
+                      disabled={isBusy || !distro || distro === 'unknown'}
+                      title={
+                        !distro || distro === 'unknown'
+                          ? t('lwe.noDistro')
+                          : undefined
+                      }
+                      className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
+                    >
+                      {depsInstalling ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Package size={14} />
+                      )}
+                      {depsInstalling ? t('lwe.installingDeps') : t('lwe.installDeps')}
+                    </button>
 
-        <div>
-          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            {t('settings.desktopIcons')}
-          </label>
-          <p className="mt-1 text-xs text-gray-600">
-            {t('settings.desktopIconsHint')}
-          </p>
-          <label className="mt-3 flex items-center gap-3 cursor-pointer">
-            <Toggle on={desktopIconsEnabled} onClick={handleDesktopIconsToggle} />
-            <span className="flex items-center gap-2 text-sm text-gray-300">
-              <Monitor size={16} />
-              {desktopIconsEnabled ? t('settings.desktopIconsOn') : t('settings.desktopIconsOff')}
-            </span>
-          </label>
-        </div>
+                    <button
+                      onClick={handleInstallLwe}
+                      disabled={isBusy}
+                      className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
+                    >
+                      {lweInstalling ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Download size={14} />
+                      )}
+                      {lweInstalling ? t('lwe.building') : lweStatus?.installed ? t('lwe.rebuild') : t('lwe.build')}
+                    </button>
+                  </div>
 
-        <UpdateSettings />
+                  <p className="text-xs text-gray-600">
+                    {t('settings.buildHint')}
+                  </p>
 
-        <DiagnosticsSettings />
+                  {distro === 'unknown' && (
+                    <p className="text-xs text-yellow-500/80">
+                      {t('settings.unknownDistro')}
+                    </p>
+                  )}
+                </div>
+              )}
 
-        <div>
-          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            {t('settings.trayStartup')}
-          </label>
-          <p className="mt-1 text-xs text-gray-600">
-            {t('settings.trayStartupHint')}
-          </p>
+              {lweProgress && (
+                <div className="mt-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    {lweProgress.stage === 'error' ? (
+                      <XCircle size={14} className="text-red-400 shrink-0" />
+                    ) : lweProgress.stage === 'done' ? (
+                      <CheckCircle size={14} className="text-green-400 shrink-0" />
+                    ) : (
+                      <Loader2 size={14} className="animate-spin text-accent-400 shrink-0" />
+                    )}
+                    <p className="text-xs text-gray-300 whitespace-pre-wrap break-all">{lweProgress.message}</p>
+                  </div>
+                  {lweProgress.stage !== 'error' && lweProgress.stage !== 'done' && (
+                    <div className="h-1.5 w-full rounded-full bg-fg/5">
+                      <div
+                        className="h-full rounded-full bg-accent-500 transition-all duration-300"
+                        style={{ width: `${lweProgress.percentage}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
-          <label className="mt-3 flex items-center gap-3 cursor-pointer">
-            <Toggle on={trayEnabled} onClick={handleTrayToggle} />
-            <span className="flex items-center gap-2 text-sm text-gray-300">
-              <LayoutGrid size={16} />
-              {t('settings.trayEnable')}
-            </span>
-          </label>
-
-          <div className="mt-4 space-y-3">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <Toggle on={autostartEnabled} onClick={() => autostartSupported && saveAutostart({ enabled: !autostartEnabled })} disabled={!autostartSupported} />
-              <span className="flex items-center gap-2 text-sm text-gray-300">
-                <Power size={16} />
-                {t('settings.autostart')}
-              </span>
-            </label>
-            {!autostartSupported && (
-              <p className="text-xs text-yellow-500/80">
-                {t('settings.autostartDev')}
-              </p>
-            )}
-            {autostartCompositorLine && (
-              <div className="space-y-1.5">
-                <p className="text-xs text-gray-500">
-                  {t('settings.autostartCompositor')}
+              <div className="mt-4">
+                <button
+                  onClick={handleKillAllLwe}
+                  disabled={killingLwe}
+                  className="flex items-center gap-2 rounded-lg bg-red-600/20 px-4 py-2 text-sm text-red-400 hover:bg-red-600/30 disabled:opacity-50"
+                >
+                  {killingLwe ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Skull size={14} />
+                  )}
+                  {killingLwe ? t('lwe.killing') : t('lwe.killAll')}
+                </button>
+                <p className="mt-1 text-xs text-gray-600">
+                  {t('settings.killAllHint')}
                 </p>
-                <CopyField text={autostartCompositorLine} />
+                {killMsg && (
+                  <p className="mt-2 text-xs text-gray-400">{killMsg}</p>
+                )}
+
+                <label className="mt-3 flex items-center gap-3 cursor-pointer">
+                  <Toggle on={killLweOnQuit} onClick={handleKillLweOnQuitToggle} />
+                  <span className="flex items-center gap-2 text-sm text-gray-300">
+                    <Skull size={16} />
+                    {t('settings.killOnQuit')}
+                  </span>
+                </label>
               </div>
-            )}
+            </div>
 
-            <label className="flex items-center gap-3 cursor-pointer pl-12">
-              <Toggle
-                on={autostartMinimized}
-                onClick={() => saveAutostart({ minimized: !autostartMinimized })}
-                disabled={!trayEnabled || !autostartEnabled}
-              />
-              <span className="text-sm text-gray-300">
-                {t('settings.startMinimized')}
-                {!trayEnabled && <span className="text-gray-600"> {t('settings.enableTrayFirst')}</span>}
-              </span>
-            </label>
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+                {t('settings.weOptions')}
+              </label>
+              <p className="mt-1 text-xs text-gray-600">
+                {t('settings.weOptionsHint')}
+              </p>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">{t('settings.defaultFps')}</label>
+                  <p className="text-xs text-gray-600 mb-2">
+                    {t('settings.defaultFpsHint')}
+                  </p>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="number"
+                      min={1}
+                      max={360}
+                      placeholder={t('settings.unlimited')}
+                      value={defaultFps}
+                      onChange={(e) => { setDefaultFps(e.target.value); setFpsSaved(false) }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSaveDefaultFps()}
+                      className="w-28 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
+                    />
+                    <button
+                      onClick={handleSaveDefaultFps}
+                      className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
+                    >
+                      <Save size={14} />
+                      {fpsSaved ? t('common.saved') : t('common.save')}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="mt-1 flex items-center gap-3 cursor-pointer">
+                    <Toggle on={recommendedFpsEnabled} onClick={handleRecommendedFpsToggle} />
+                    <span className="flex items-center gap-2 text-sm text-gray-300">
+                      <Film size={16} />
+                      {t('settings.recommendedVideo')}
+                    </span>
+                  </label>
+                  <p className="mt-2 text-xs text-gray-600">
+                    {t('settings.recommendedVideoHint')}
+                  </p>
+                </div>
+                <div>
+                  <label className="mt-1 flex items-center gap-3 cursor-pointer">
+                    <Toggle on={recommendedWebFpsEnabled} onClick={handleRecommendedWebFpsToggle} />
+                    <span className="flex items-center gap-2 text-sm text-gray-300">
+                      <Globe size={16} />
+                      {t('settings.recommendedWeb')}
+                    </span>
+                  </label>
+                  <p className="mt-2 text-xs text-gray-600">
+                    {t('settings.recommendedWebHint')}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">{t('settings.resetFps')}</label>
+                  <p className="text-xs text-gray-600 mb-2">
+                    {t('settings.resetFpsHint')}
+                  </p>
+                  {resetFpsConfirm ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-400">{t('settings.areYouSure')}</span>
+                      <button
+                        onClick={handleResetFpsOverrides}
+                        className="rounded-lg bg-red-600/80 px-3 py-1.5 text-xs text-white hover:bg-red-600"
+                      >
+                        {t('settings.resetAllConfirm')}
+                      </button>
+                      <button
+                        onClick={() => setResetFpsConfirm(false)}
+                        className="rounded-lg bg-fg/5 px-3 py-1.5 text-xs text-gray-400 hover:bg-fg/10"
+                      >
+                        {t('common.cancel')}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleResetFpsOverrides}
+                      className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
+                    >
+                      <RotateCcw size={14} />
+                      {t('settings.resetAllFps')}
+                    </button>
+                  )}
+                  {resetFpsMsg && (
+                    <p className="mt-2 text-xs text-gray-400">{resetFpsMsg}</p>
+                  )}
+                </div>
+              </div>
+            </div>
 
-            <div className="pl-12">
-              <label className="block text-xs text-gray-400 mb-1">{t('settings.autoplay')}</label>
-              <select
-                value={autostartPlaylistId ?? ''}
-                onChange={(e) => saveAutostart({ playlistId: e.target.value || null })}
-                className="w-56 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+                {t('settings.weConfig')}
+              </label>
+              <p className="mt-1 text-xs text-gray-600">
+                {t('settings.weConfigHint')}
+              </p>
+              <button
+                onClick={handleImportConfig}
+                className="mt-3 flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
               >
-                <option value="">{t('settings.none')}</option>
-                {playlists.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title}
-                  </option>
-                ))}
-              </select>
+                <Upload size={14} />
+                {t('settings.importConfig')}
+              </button>
+              {importStatus && (
+                <p className="mt-2 text-xs text-gray-400">{importStatus}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+                {t('settings.desktopIcons')}
+              </label>
+              <p className="mt-1 text-xs text-gray-600">
+                {t('settings.desktopIconsHint')}
+              </p>
+              <label className="mt-3 flex items-center gap-3 cursor-pointer">
+                <Toggle on={desktopIconsEnabled} onClick={handleDesktopIconsToggle} />
+                <span className="flex items-center gap-2 text-sm text-gray-300">
+                  <Monitor size={16} />
+                  {desktopIconsEnabled ? t('settings.desktopIconsOn') : t('settings.desktopIconsOff')}
+                </span>
+              </label>
+              {desktopIconsStatus?.problem && (
+                <p className="mt-2 text-xs text-amber-400">
+                  {t(`settings.desktopIcons_${desktopIconsStatus.problem}`)}
+                  {desktopIconsStatus.detail && <span className="block whitespace-pre-wrap text-gray-500">{desktopIconsStatus.detail}</span>}
+                  {desktopIconsStatus.command && (
+                    <code className="mt-1 block select-text text-gray-400">{desktopIconsStatus.command}</code>
+                  )}
+                </p>
+              )}
+              {desktopIconsStatus?.command && (
+                <button
+                  onClick={handleDesktopIconsInstall}
+                  disabled={desktopIconsInstall.busy}
+                  className="mt-2 flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
+                >
+                  {desktopIconsInstall.busy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                  {desktopIconsInstall.busy ? t('settings.desktopIconsInstalling') : t('settings.desktopIconsInstall')}
+                </button>
+              )}
+              {desktopIconsInstall.error && (
+                <p className="mt-2 whitespace-pre-wrap text-xs text-red-400">
+                  {translatedOr(`settings.desktopIconsInstall_${desktopIconsInstall.error}`,
+                    t('settings.desktopIconsInstallFailed', { error: desktopIconsInstall.error }))}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+                {t('settings.troubleshooting')}
+              </label>
+              <p className="mt-1 text-xs text-gray-600">
+                {t('settings.puppetHint')}
+              </p>
+              <label className="mt-3 flex items-center gap-3 cursor-pointer">
+                <Toggle on={disablePuppetAnimation} onClick={handleDisablePuppetAnimationToggle} />
+                <span className="flex items-center gap-2 text-sm text-gray-300">
+                  <Bug size={16} />
+                  {t('settings.puppet')}
+                </span>
+              </label>
             </div>
           </div>
-        </div>
+        )}
 
-        <div>
-          <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-            {t('settings.steam')}
-          </label>
-          <p className="mt-1 text-xs text-gray-600">
-            {t('settings.steamHint')}
-          </p>
+        {tab === 'display' && (
+          <div className="max-w-lg space-y-8">
+            <DisplaySettings screens={screens} />
 
-          <div className="mt-3 flex rounded-lg overflow-hidden text-sm w-fit">
-            <button
-              onClick={() => handleSteamIdentityChange('wallpaper-engine')}
-              className={`flex items-center gap-2 px-3 py-2 transition-colors ${
-                steamIdentity === 'wallpaper-engine'
-                  ? 'bg-accent-600 text-white'
-                  : 'bg-fg/5 text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              <Shield size={14} />
-              {t('settings.steamWe')}
-            </button>
-            <button
-              onClick={() => handleSteamIdentityChange('standalone')}
-              className={`flex items-center gap-2 px-3 py-2 transition-colors ${
-                steamIdentity === 'standalone'
-                  ? 'bg-accent-600 text-white'
-                  : 'bg-fg/5 text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              <Shield size={14} />
-              {t('settings.steamOwn')}
-            </button>
+            <SplitScreenSettings />
+
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+                {t('settings.audio')}
+              </label>
+              <p className="mt-1 text-xs text-gray-600">
+                {t('settings.audioHint')}
+              </p>
+              <div className="mt-3 space-y-4">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">{t('settings.audioScreen')}</label>
+                  <p className="text-xs text-gray-600 mb-2">
+                    {t('settings.audioScreenHint')}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={audioScreen ?? ''}
+                      onChange={(e) => handleAudioScreenChange(e.target.value || null)}
+                      className="w-56 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
+                    >
+                      <option value="">{t('settings.allScreensDefault')}</option>
+                      {screens.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleRefreshScreens}
+                      disabled={screensRefreshing}
+                      className="rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 outline-none hover:bg-fg/10 disabled:opacity-50"
+                      title={t('settings.redetectHint')}
+                    >
+                      {screensRefreshing ? '...' : t('settings.redetect')}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">{t('settings.ambientVolume')}</label>
+                  <p className="text-xs text-gray-600 mb-2">
+                    {t('settings.ambientVolumeHint')}
+                  </p>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="number"
+                      min={0}
+                      max={128}
+                      placeholder={t('settings.ambientPlaceholder')}
+                      value={ambientVolume}
+                      onChange={(e) => { setAmbientVolume(e.target.value); setAmbientVolumeSaved(false) }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSaveAmbientVolume()}
+                      className="w-44 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
+                    />
+                    <button
+                      onClick={handleSaveAmbientVolume}
+                      className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
+                    >
+                      <Save size={14} />
+                      {ambientVolumeSaved ? t('common.saved') : t('common.save')}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">{t('settings.audioSensitivity')}</label>
+                  <p className="text-xs text-gray-600 mb-2">
+                    {t('settings.audioSensitivityHint')}
+                  </p>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="number"
+                      min={0}
+                      max={200}
+                      value={defaultAudioSensitivity}
+                      onChange={(e) => { setDefaultAudioSensitivity(e.target.value); setDefaultAudioSensitivitySaved(false) }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSaveDefaultAudioSensitivity()}
+                      className="w-44 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
+                    />
+                    <span className="text-sm text-gray-500">%</span>
+                    <button
+                      onClick={handleSaveDefaultAudioSensitivity}
+                      className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
+                    >
+                      <Save size={14} />
+                      {defaultAudioSensitivitySaved ? t('common.saved') : t('common.save')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          {steamIdentitySaved && (
-            <p className="mt-2 text-xs text-green-400">{t('settings.steamSaved')}</p>
-          )}
-          <p className="mt-2 text-xs text-gray-600">
-            {steamIdentity === 'wallpaper-engine' ? (
-              <>
-                {t('settings.steamWeHint')}
-              </>
-            ) : (
-              <>
-                {t('settings.steamOwnHint')}
-              </>
-            )}
-          </p>
-        </div>
+        )}
+
+        {tab === 'performance' && (
+          <div className="max-w-lg space-y-8">
+            <PerformanceSettings
+              defaultFps={defaultFps ? Number(defaultFps) : null}
+              onDefaultFpsChanged={(fps) => setDefaultFps(fps != null ? String(fps) : '')}
+            />
+
+            <ScheduleSettings />
+          </div>
+        )}
+
+        {tab === 'system' && (
+          <div className="max-w-lg space-y-8">
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+                {t('settings.trayStartup')}
+              </label>
+              <p className="mt-1 text-xs text-gray-600">
+                {t('settings.trayStartupHint')}
+              </p>
+
+              <label className="mt-3 flex items-center gap-3 cursor-pointer">
+                <Toggle on={trayEnabled} onClick={handleTrayToggle} />
+                <span className="flex items-center gap-2 text-sm text-gray-300">
+                  <LayoutGrid size={16} />
+                  {t('settings.trayEnable')}
+                </span>
+              </label>
+
+              <div className="mt-4 space-y-3">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <Toggle on={autostartEnabled} onClick={() => autostartSupported && saveAutostart({ enabled: !autostartEnabled })} disabled={!autostartSupported} />
+                  <span className="flex items-center gap-2 text-sm text-gray-300">
+                    <Power size={16} />
+                    {t('settings.autostart')}
+                  </span>
+                </label>
+                {!autostartSupported && (
+                  <p className="text-xs text-yellow-500/80">
+                    {t('settings.autostartDev')}
+                  </p>
+                )}
+                {autostartCompositorLine && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-gray-500">
+                      {t('settings.autostartCompositor')}
+                    </p>
+                    <CopyField text={autostartCompositorLine} />
+                  </div>
+                )}
+
+                <label className="flex items-center gap-3 cursor-pointer pl-12">
+                  <Toggle
+                    on={autostartMinimized}
+                    onClick={() => saveAutostart({ minimized: !autostartMinimized })}
+                    disabled={!trayEnabled || !autostartEnabled}
+                  />
+                  <span className="text-sm text-gray-300">
+                    {t('settings.startMinimized')}
+                    {!trayEnabled && <span className="text-gray-600"> {t('settings.enableTrayFirst')}</span>}
+                  </span>
+                </label>
+
+                <div className="pl-12">
+                  <label className="block text-xs text-gray-400 mb-1">{t('settings.autoplay')}</label>
+                  <select
+                    value={autostartPlaylistId ?? ''}
+                    onChange={(e) => saveAutostart({ playlistId: e.target.value || null })}
+                    className="w-56 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
+                  >
+                    <option value="">{t('settings.none')}</option>
+                    {playlists.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <UpdateSettings />
+
+            <DiagnosticsSettings />
+
+          </div>
+        )}
+
       </div>
     </div>
   )

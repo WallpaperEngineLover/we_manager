@@ -53,6 +53,7 @@ interface AppConfig {
   engineFlags: EngineFlags
   engineFlagPresets: EngineFlagPreset[]
   displayMode: DisplayMode
+  disabledScreens: string[]
   /** screen -> its slots, see SplitScreen */
   splitScreens: Record<string, SplitScreen>
   appearance: Appearance
@@ -93,6 +94,7 @@ const store = openStore<AppConfig>({
     engineFlags: {},
     engineFlagPresets: [],
     displayMode: 'shared',
+    disabledScreens: [],
     splitScreens: {},
     appearance: normalizeAppearance(undefined),
     language: 'system',
@@ -335,6 +337,14 @@ export function getDisplayMode(): DisplayMode {
 
 export function setDisplayMode(mode: DisplayMode): void {
   store.set('displayMode', mode)
+}
+
+export function getDisabledScreens(): string[] {
+  return store.get('disabledScreens', [])
+}
+
+export function setDisabledScreens(screens: string[]): void {
+  store.set('disabledScreens', screens)
 }
 
 export function getSplitScreens(): Record<string, SplitScreen> {

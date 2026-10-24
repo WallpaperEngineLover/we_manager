@@ -67,6 +67,8 @@ import {
   getEngineFlagPresets,
   setEngineFlagPresets,
   getDisplayMode,
+  getDisabledScreens,
+  setDisabledScreens,
   getSplitScreens,
   setDisplayMode
 } from '../services/config.service'
@@ -117,6 +119,7 @@ export function registerConfigHandlers(): void {
     engineFlags: getGlobalEngineFlags(),
     engineFlagPresets: [...BUILT_IN_PRESETS, ...getEngineFlagPresets()],
     displayMode: getDisplayMode(),
+    disabledScreens: getDisabledScreens(),
     splitScreens: getSplitScreens(),
     appearance: getAppearance(),
     language: getLanguagePreference(),
@@ -252,6 +255,11 @@ export function registerConfigHandlers(): void {
     stopPlaylist()
     await resetDisplays()
     setDisplayMode(mode)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_DISABLED_SCREENS, (_e, screens: string[]) => {
+    setDisabledScreens(screens.filter((s) => typeof s === 'string'))
     return { ok: true }
   })
 

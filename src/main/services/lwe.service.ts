@@ -28,6 +28,7 @@ import {
   invalidateCommandCache,
   whichCommand,
   getConnectedScreens,
+  getMirroredScreens,
   getScreenGeometry,
   getWaylandDisplay,
   getXdgRuntimeDir,
@@ -53,7 +54,8 @@ import {
   getAudioScreen,
   getAmbientVolume,
   getDefaultAudioSensitivity,
-  getDisablePuppetAnimation
+  getDisablePuppetAnimation,
+  getDisabledScreens
 } from './config.service'
 import { DEFAULT_LWE_FPS, DEFAULT_LWE_REPO } from '@shared/constants'
 import { engineFlagArgs, filterSupportedArgs } from '@shared/engineFlags'
@@ -232,6 +234,10 @@ export function detectDistro(): LinuxDistro {
   } catch {
     return 'unknown'
   }
+  return distroFromIds(ids)
+}
+
+export function distroFromIds(ids: string[]): LinuxDistro {
   for (const id of ids) {
     if (['fedora', 'nobara', 'rhel', 'centos'].includes(id)) return 'fedora'
     if (['arch', 'manjaro', 'endeavouros'].includes(id)) return 'arch'
@@ -247,7 +253,7 @@ export function isOstreeSystem(): boolean {
 
 const DEPS_DEBIAN = [
   'git', 'build-essential', 'cmake', 'pkg-config',
-  'libxrandr-dev', 'libxinerama-dev', 'libxcursor-dev', 'libxi-dev',
+  'libxrandr-dev', 'libxinerama-dev', 'libxcomposite-dev', 'libxdamage-dev', 'libxcursor-dev', 'libxi-dev',
   'libgl-dev', 'libglew-dev', 'freeglut3-dev', 'libsdl2-dev',
   'liblz4-dev', 'libavcodec-dev', 'libavformat-dev', 'libavutil-dev', 'libswscale-dev',
   'libxxf86vm-dev', 'libglm-dev', 'libglfw3-dev',
@@ -261,7 +267,7 @@ const DEPS_DEBIAN = [
 // 'ffmpeg' conflicts with ffmpeg-free on Fedora
 const DEPS_FEDORA = [
   'git', 'gcc', 'g++', 'cmake', 'pkg-config',
-  'libXrandr-devel', 'libXinerama-devel', 'libXcursor-devel', 'libXi-devel',
+  'libXrandr-devel', 'libXinerama-devel', 'libXcomposite-devel', 'libXdamage-devel', 'libXcursor-devel', 'libXi-devel',
   'mesa-libGL-devel', 'glew-devel', 'freeglut-devel', 'SDL2-devel',
   'lz4-devel', 'ffmpeg-free-devel',
   'libXxf86vm-devel', 'glm-devel', 'glfw-devel',
@@ -304,7 +310,7 @@ function installedNodePackages(): string[] {
 // Node.js is the default (V8 for scene scripts), all capabilities. FFmpeg's devel packages are ffmpeg-<N>-lib*-devel, see suseFfmpegDevel
 const DEPS_SUSE = [
   'git', 'gcc', 'gcc-c++', 'cmake', 'pkgconf-pkg-config', 'make',
-  'libXrandr-devel', 'libXinerama-devel', 'libXcursor-devel', 'libXi-devel',
+  'libXrandr-devel', 'libXinerama-devel', 'libXcomposite-devel', 'libXdamage-devel', 'libXcursor-devel', 'libXi-devel',
   'Mesa-libGL-devel', 'glew-devel', 'freeglut-devel', 'pkgconfig(sdl2)',
   'liblz4-devel',
   'libXxf86vm-devel', 'glm-devel', 'pkgconfig(glfw3)',
@@ -339,7 +345,7 @@ const DEPS_ARCH = [
   'git', 'base-devel', 'cmake', 'pkg-config',
   'glew', 'freeglut', 'sdl2', 'lz4', 'ffmpeg',
   'glm', 'glfw', 'mpv', 'libpulse', 'fftw', 'freetype2', 'harfbuzz', 'dbus',
-  'libxrandr', 'libxinerama', 'libxcursor', 'libxi', 'libxxf86vm',
+  'libxrandr', 'libxinerama', 'libxcomposite', 'libxdamage', 'libxcursor', 'libxi', 'libxxf86vm',
   'wayland', 'wayland-protocols', 'mesa',
   'gmp', 'patchelf'
 ]
@@ -994,6 +1000,13 @@ function windowedGeometry(screen?: ScreenTarget): string {
   return getScreenGeometry(screen && screen !== ALL_SCREENS ? screen : undefined) ?? FALLBACK_WINDOW
 }
 
+export function getActiveScreens(): string[] {
+  const all = getConnectedScreens()
+  const off = new Set([...getDisabledScreens(), ...getMirroredScreens()])
+  const active = all.filter((s) => !off.has(s))
+  return active.length > 0 ? active : all
+}
+
 export function buildLweArgs(
   wallpaperPath: string,
   options: LweLaunchOptions,
@@ -1033,8 +1046,7 @@ export function buildLweArgs(
   } else if (options.screen && options.screen !== ALL_SCREENS) {
     args.push('--screen-root', options.screen)
   } else {
-    const screens = getConnectedScreens()
-    for (const s of screens) args.push('--screen-root', s)
+    for (const s of getActiveScreens()) args.push('--screen-root', s)
   }
 
   if (options.fps) args.push('--fps', String(options.fps))
@@ -1179,6 +1191,13 @@ let engineRenderer: string | undefined
 // a crash this soon after a launch or hotswap is blamed on it
 const CRASH_WINDOW_MS = 20_000
 const CRASH_SIGNALS = new Set(['SIGSEGV', 'SIGABRT', 'SIGBUS', 'SIGFPE', 'SIGILL', 'SIGTRAP'])
+
+const launchListeners = new Set<() => void>()
+
+export function onLweLaunched(cb: () => void): () => void {
+  launchListeners.add(cb)
+  return () => launchListeners.delete(cb)
+}
 
 export function onLweExit(cb: (info: LweExitInfo) => void): () => void {
   exitListeners.add(cb)
@@ -1832,6 +1851,7 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
     setTimeout(() => {
       if (!settled && instances.get(screen) === inst && child.exitCode === null) {
         settled = true
+        for (const cb of launchListeners) cb()
         if (options.xrayMode && options.xrayMode !== 'normal') {
           void hotswapLweSettings({ xray: options.xrayMode }, { screens: [screen] })
         }

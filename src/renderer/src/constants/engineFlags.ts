@@ -10,6 +10,7 @@ type ChoiceFlag =
   | 'ssaa'
   | 'hwdec'
   | 'webFrames'
+  | 'frameLimiter'
   | 'hrtf'
   | 'batteryFps'
   | 'idlePause'
@@ -145,6 +146,16 @@ export const CHOICE_FLAGS: {
       { value: 'auto', label: 'flags.opt.auto' },
       { value: 'dmabuf', label: 'flags.opt.webFramesDmabuf' },
       { value: 'shm', label: 'flags.opt.webFramesShm' }
+    ]
+  },
+  {
+    key: 'frameLimiter',
+    label: 'flags.frameLimiter.label',
+    hint: 'flags.frameLimiter.hint',
+    fallback: 'budget',
+    options: [
+      { value: 'budget', label: 'flags.opt.frameLimiterBudget' },
+      { value: 'fixed', label: 'flags.opt.frameLimiterFixed' }
     ]
   },
   {

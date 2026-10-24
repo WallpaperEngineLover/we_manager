@@ -37,6 +37,8 @@ describe('engineFlagArgs', () => {
     expect(engineFlagArgs({ webFrames: 'dmabuf' })).toEqual(['--web-frames', 'dmabuf'])
     expect(engineFlagArgs({ webFrames: 'shm' })).toEqual(['--web-frames', 'shm'])
     expect(engineFlagArgs({ webFrames: 'auto' })).toEqual([])
+    expect(engineFlagArgs({ frameLimiter: 'fixed' })).toEqual(['--frame-limiter', 'fixed'])
+    expect(engineFlagArgs({ frameLimiter: 'budget' })).toEqual([])
     expect(engineFlagArgs({ hrtf: 'on' })).toEqual(['--hrtf', 'on'])
     expect(engineFlagArgs({ hrtf: 'auto' })).toEqual([])
     expect(engineFlagArgs({ batteryFps: '15' })).toEqual(['--fps-battery', '15'])

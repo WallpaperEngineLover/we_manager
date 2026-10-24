@@ -4,7 +4,8 @@ import * as os from 'os'
 import * as path from 'path'
 import { IpcChannels } from '@shared/ipc-channels'
 import { t } from '../i18n'
-import { NoEngineRunningError, collectDiagnostics } from '../services/diagnostics.service'
+import { NoEngineRunningError, collectDiagnostics, type DiagnosticsTarget } from '../services/diagnostics.service'
+import { resetAllCompat } from '../services/library.service'
 import { getGraphicsWarning, installNvidiaExtension } from '../services/graphics.service'
 
 let running = false
@@ -13,12 +14,18 @@ export function registerDiagnosticsHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.GRAPHICS_WARNING, () => getGraphicsWarning())
   ipcMain.handle(IpcChannels.GRAPHICS_INSTALL_NVIDIA, () => installNvidiaExtension())
 
-  ipcMain.handle(IpcChannels.DIAGNOSTICS_COLLECT, async () => {
+  ipcMain.handle(IpcChannels.DIAGNOSTICS_RESET_CRASHES, () => {
+    const reset = resetAllCompat()
+    if (reset > 0) win.webContents.send(IpcChannels.EVENT_LIBRARY_CHANGED)
+    return reset
+  })
+
+  ipcMain.handle(IpcChannels.DIAGNOSTICS_COLLECT, async (_event, target?: DiagnosticsTarget) => {
     if (running) throw new Error('Already collecting')
     running = true
     let report: string
     try {
-      report = await collectDiagnostics()
+      report = await collectDiagnostics(undefined, target)
     } catch (err) {
       if (err instanceof NoEngineRunningError) return { status: 'no-engine' as const }
       throw err

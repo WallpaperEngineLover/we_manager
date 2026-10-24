@@ -94,6 +94,25 @@ const COMPOSITOR_QUERIES: { marker: string; command: string; parse: (output: str
   { marker: 'NIRI_SOCKET', command: 'niri msg --json outputs', parse: parseNiriOutputs }
 ]
 
+/** Outputs that show another output's picture; kscreen-doctor -j gives them a nonzero replicationSource (an output id) */
+export function parseKscreenMirrors(json: string): string[] {
+  try {
+    const outputs = (JSON.parse(json) as { outputs?: { name?: string; replicationSource?: number }[] }).outputs ?? []
+    return outputs.filter((o) => o.name && o.replicationSource).map((o) => o.name as string)
+  } catch {
+    return []
+  }
+}
+
+export function getMirroredScreens(): string[] {
+  if (process.platform !== 'linux' || !isWaylandSession() || detectDesktopEnv() !== 'kde') return []
+  try {
+    return parseKscreenMirrors(execSync(hostShell('kscreen-doctor -j 2>/dev/null'), { encoding: 'utf8', timeout: 5000 }))
+  } catch {
+    return []
+  }
+}
+
 export function getConnectedScreens(): string[] {
   if (process.platform !== 'linux') return []
 

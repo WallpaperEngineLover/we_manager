@@ -14,6 +14,7 @@ import { getAllWallpapers, getWallpaper, updateWallpaper } from './library.servi
 import { applyWallpaperMeta, isAnimatedWallpaper } from './wallpaper.service'
 import {
   ALL_SCREENS,
+  getActiveScreens,
   getRunningInstances,
   hotswapLweSettings,
   launchLweAsync,
@@ -28,7 +29,6 @@ import { resolveEngineFlags } from '@shared/engineFlags'
 import { clearAssignment, getAssignments, setAssignment } from './wallpaper-state.service'
 import { getDefaultFps, getDisplayMode, getGlobalEngineFlags, getSplitScreens } from './config.service'
 import { ensureDependencyInstalled } from './dependency.service'
-import { getConnectedScreens } from '../utils/platform'
 import { t } from '../i18n'
 
 const LAUNCH_CHECK_MS = 20_000
@@ -46,7 +46,7 @@ function send(channel: string, payload?: unknown): void {
 
 export function getDisplayTargets(): ScreenTarget[] {
   if (getDisplayMode() === 'shared') return [ALL_SCREENS]
-  const screens = getConnectedScreens()
+  const screens = getActiveScreens()
   return screens.length > 0 ? screens : [ALL_SCREENS]
 }
 

@@ -82,6 +82,8 @@ export const IpcChannels = {
   CONFIG_SET_ENGINE_FLAGS: 'config:set-engine-flags',
   CONFIG_SET_ENGINE_PRESETS: 'config:set-engine-presets',
   CONFIG_SET_DISPLAY_MODE: 'config:set-display-mode',
+  CONFIG_SET_DISABLED_SCREENS: 'config:set-disabled-screens',
+  LWE_MIRRORED_SCREENS: 'lwe:mirrored-screens',
   CONFIG_SET_STEAM_IDENTITY: 'config:set-steam-identity',
   CONFIG_IGNORE_CREATOR: 'config:ignore-creator',
   CONFIG_UNIGNORE_CREATOR: 'config:unignore-creator',
@@ -153,6 +155,8 @@ export const IpcChannels = {
 
   DESKTOP_ICONS_SET_ENABLED: 'desktop-icons:set-enabled',
   DESKTOP_ICONS_GET_ENABLED: 'desktop-icons:get-enabled',
+  DESKTOP_ICONS_GET_STATUS: 'desktop-icons:get-status',
+  DESKTOP_ICONS_INSTALL_DEPS: 'desktop-icons:install-deps',
   GNOME_EXTENSION_STATUS: 'gnome-extension:status',
   GNOME_EXTENSION_INSTALL: 'gnome-extension:install',
 
@@ -164,6 +168,7 @@ export const IpcChannels = {
   UPDATES_RESTART: 'updates:restart',
 
   DIAGNOSTICS_COLLECT: 'diagnostics:collect',
+  DIAGNOSTICS_RESET_CRASHES: 'diagnostics:reset-crashes',
   GRAPHICS_WARNING: 'graphics:warning',
   GRAPHICS_INSTALL_NVIDIA: 'graphics:install-nvidia',
 
@@ -174,6 +179,7 @@ export const IpcChannels = {
   EVENT_LWE_INSTALL_PROGRESS: 'event:lwe-install-progress',
   EVENT_BACKUP_PROGRESS: 'event:backup-progress',
   EVENT_VERIFY_PROGRESS: 'event:verify-progress',
+  EVENT_REPAIR_PROGRESS: 'event:repair-progress',
   EVENT_PLAYLIST_STATE_CHANGED: 'event:playlist-state-changed',
   EVENT_VOTED_IDS_CHANGED: 'event:voted-ids-changed',
   EVENT_DISLIKED_IDS_CHANGED: 'event:disliked-ids-changed',

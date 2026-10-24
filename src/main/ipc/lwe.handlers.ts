@@ -7,7 +7,7 @@ import { stopPlaylist } from '../services/playlist-player.service'
 import type { ScreenTarget } from '@shared/types'
 import { invalidateEnvCache } from '../services/wallpaper.service'
 import { refreshEngineUpdate } from '../services/update.service'
-import { getConnectedScreens } from '../utils/platform'
+import { getConnectedScreens, getMirroredScreens } from '../utils/platform'
 import { listDesktopApplications } from '../services/shortcuts.service'
 import { findWallpaperVideoFile, getVideoDurationSec } from '../utils/video'
 import { t } from '../i18n'
@@ -81,6 +81,8 @@ export function registerLweHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.LWE_LIST_SCREENS, () => {
     return getConnectedScreens()
   })
+
+  ipcMain.handle(IpcChannels.LWE_MIRRORED_SCREENS, () => getMirroredScreens())
 
   ipcMain.handle(IpcChannels.LWE_INPUT_FILES, () => listInputFiles(getConnectedScreens()))
 

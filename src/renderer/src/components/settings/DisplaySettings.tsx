@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Monitor, MonitorSmartphone } from 'lucide-react'
 import type { DisplayMode } from '@shared/types'
 import { useConfig } from '../../hooks/queries'
@@ -16,6 +16,17 @@ export default function DisplaySettings({ screens }: { screens: string[] }) {
   const config = useConfig()
   const [switching, setSwitching] = useState(false)
   const current = config?.displayMode ?? 'shared'
+  const disabled = config?.disabledScreens ?? []
+  const { data: mirrored = [] } = useQuery({
+    queryKey: ['mirrored-screens'],
+    queryFn: () => window.electronAPI.lwe.mirroredScreens()
+  })
+
+  async function toggleScreen(screen: string) {
+    const next = disabled.includes(screen) ? disabled.filter((s) => s !== screen) : [...disabled, screen]
+    await window.electronAPI.config.setDisabledScreens(next)
+    for (const key of ['config', 'display-targets']) queryClient.invalidateQueries({ queryKey: [key] })
+  }
 
   async function switchTo(mode: DisplayMode) {
     if (mode === current || switching) return
@@ -51,6 +62,25 @@ export default function DisplaySettings({ screens }: { screens: string[] }) {
           </button>
         ))}
       </div>
+      {screens.length > 1 && (
+        <div className="mt-4">
+          <p className="text-xs text-gray-500">{t('display.useScreens')}</p>
+          <div className="mt-2 space-y-1">
+            {screens.map((screen) => {
+              const isMirror = mirrored.includes(screen)
+              const on = !disabled.includes(screen) && !isMirror
+              return (
+                <label key={screen} className={`flex items-center gap-2 text-sm ${isMirror ? 'text-gray-600' : 'cursor-pointer text-gray-300'}`}>
+                  <input type="checkbox" checked={on} disabled={isMirror} onChange={() => toggleScreen(screen)} />
+                  {screen}
+                  {isMirror && <span className="text-xs text-gray-500">{t('display.mirrored')}</span>}
+                </label>
+              )
+            })}
+          </div>
+          <p className="mt-2 text-xs text-gray-600">{t('display.useScreensHint')}</p>
+        </div>
+      )}
       {current === 'per-screen' && (
         <p className="mt-2 text-xs text-gray-500">
           {screens.length > 0 ? t('display.detected', { screens: screens.join(', ') }) : t('display.noneDetected')}

@@ -9,6 +9,7 @@ const {
   getConnectedScreens,
   hasStatusNotifierHost,
   parseHyprctlMonitors,
+  parseKscreenMirrors,
   parseNameHasOwner,
   parseNiriOutputs,
   parseSwayOutputs,
@@ -202,5 +203,23 @@ describe('parseXrandrGeometries', () => {
       ['DP-1', '1920x0x2560x1440'],
       ['HDMI-1', '0x0x1920x1080']
     ])
+  })
+})
+
+describe('parseKscreenMirrors', () => {
+  it('lists outputs that replicate another one', () => {
+    const json = JSON.stringify({
+      outputs: [
+        { id: 1, name: 'DP-1', replicationSource: 0 },
+        { id: 2, name: 'HDMI-A-1', replicationSource: 1 },
+        { id: 3, name: 'DP-2' }
+      ]
+    })
+    expect(parseKscreenMirrors(json)).toEqual(['HDMI-A-1'])
+  })
+
+  it('returns nothing for output it cannot read', () => {
+    expect(parseKscreenMirrors('not json')).toEqual([])
+    expect(parseKscreenMirrors('{}')).toEqual([])
   })
 })

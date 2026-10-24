@@ -13,7 +13,7 @@ import { getWorkshopPath } from '../utils/paths'
 import { setDependencyInstaller } from '../services/dependency.service'
 
 // by item state, GetItemDownloadInfo can still answer for a finished item
-function startDownloadPoll(win: BrowserWindow, itemId: string): Promise<boolean> {
+function startDownloadPoll(win: BrowserWindow, itemId: string, intervalMs = 1000): Promise<boolean> {
   const idBig = BigInt(itemId)
   let polling = false
   let lastState = -1
@@ -71,7 +71,7 @@ function startDownloadPoll(win: BrowserWindow, itemId: string): Promise<boolean>
           status: success ? 'completed' : 'error'
         })
       })
-    }, 1000)
+    }, intervalMs)
   })
 }
 
@@ -94,14 +94,17 @@ async function downloadStarts(itemId: bigint, dir: string | null, timeoutMs: num
 
 const repairing = new Set<string>()
 
+// dozens of repairs poll at once, a slower tick keeps the Steam host and the window quiet
+const REPAIR_POLL_MS = 3000
+
 // moves the copy aside and redownloads (resubscribing if needed); the old copy returns if nothing arrives
-async function repairItem(win: BrowserWindow, itemId: string): Promise<boolean> {
-  if (repairing.has(itemId)) return false
+async function repairItem(win: BrowserWindow, itemId: string): Promise<{ done: Promise<void> } | null> {
+  if (repairing.has(itemId)) return null
   repairing.add(itemId)
   let started: { done: Promise<void> } | null = null
   try {
     started = await startRepair(win, itemId)
-    return !!started
+    return started
   } finally {
     if (started) void started.done.finally(() => repairing.delete(itemId))
     else repairing.delete(itemId)
@@ -179,7 +182,7 @@ async function startRepair(win: BrowserWindow, itemId: string): Promise<{ done: 
     throw err
   }
 
-  const done = startDownloadPoll(win, itemId)
+  const done = startDownloadPoll(win, itemId, REPAIR_POLL_MS)
     .then(async (ok) => {
       if (!ok) return giveUp()
       await removeLocalFiles(stash)
@@ -253,14 +256,28 @@ export function registerSteamHandlers(win: BrowserWindow): void {
   ipcMain.handle(IpcChannels.STEAM_REPAIR, async (_e, itemIds: string[]) => {
     let started = 0
     let failed = 0
+    let finished = 0
+    let total = itemIds.length
+    const sendProgress = (): void => {
+      if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_REPAIR_PROGRESS, { done: finished, total })
+    }
     await backup.forEachLimit(itemIds, 3, async (id) => {
       try {
-        if (await repairItem(win, id)) started++
-        else failed++
+        const repair = await repairItem(win, id)
+        if (repair) {
+          started++
+          void repair.done.finally(() => {
+            finished++
+            sendProgress()
+          })
+          return
+        }
       } catch (err) {
         console.error(`[Steam] Repair of ${id} failed:`, err)
-        failed++
       }
+      failed++
+      total--
+      sendProgress()
     })
     return { started, failed }
   })

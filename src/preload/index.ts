@@ -49,6 +49,7 @@ import type {
   FavoriteStatus,
   UpdateChecks,
   UpdateStatus,
+  DesktopIconsStatus,
   GraphicsWarning,
   UpdateTarget
 } from '../shared/types'
@@ -172,6 +173,7 @@ const api = {
       engineFlags: EngineFlags
       engineFlagPresets: EngineFlagPreset[]
       displayMode: DisplayMode
+      disabledScreens: string[]
       splitScreens: Record<string, SplitScreen>
       appearance: Appearance
       language: LanguagePreference
@@ -184,6 +186,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_ENGINE_FLAGS, flags),
     setEnginePresets: (presets: EngineFlagPreset[]): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_ENGINE_PRESETS, presets),
+    setDisabledScreens: (screens: string[]): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_DISABLED_SCREENS, screens),
     setDisplayMode: (mode: DisplayMode): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DISPLAY_MODE, mode),
     setWorkshopPath: (p: string): Promise<{ ok: boolean }> =>
@@ -388,6 +392,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LWE_LIST_PROPERTIES, wallpaperPath),
     listScreens: (): Promise<string[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_SCREENS),
+    mirroredScreens: (): Promise<string[]> =>
+      ipcRenderer.invoke(IpcChannels.LWE_MIRRORED_SCREENS),
     inputFiles: (): Promise<{ screen: string; path: string }[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_INPUT_FILES),
     videoDuration: (wallpaperPath: string, projectFile?: string): Promise<number | null> =>
@@ -434,7 +440,10 @@ const api = {
     setEnabled: (enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> =>
       ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_SET_ENABLED, enabled),
     getEnabled: (): Promise<boolean> =>
-      ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_GET_ENABLED)
+      ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_GET_ENABLED),
+    getStatus: (): Promise<DesktopIconsStatus> => ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_GET_STATUS),
+    installDeps: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_INSTALL_DEPS)
   },
 
   updates: {
@@ -455,8 +464,12 @@ const api = {
   },
 
   diagnostics: {
-    collect: (): Promise<{ status: 'saved'; path: string } | { status: 'cancelled' | 'no-engine' }> =>
-      ipcRenderer.invoke(IpcChannels.DIAGNOSTICS_COLLECT)
+    collect: (target?: {
+      wallpaperId: string
+      screen: string
+    }): Promise<{ status: 'saved'; path: string } | { status: 'cancelled' | 'no-engine' }> =>
+      ipcRenderer.invoke(IpcChannels.DIAGNOSTICS_COLLECT, target),
+    resetCrashes: (): Promise<number> => ipcRenderer.invoke(IpcChannels.DIAGNOSTICS_RESET_CRASHES)
   },
 
   gnomeExtension: {
@@ -503,6 +516,11 @@ const api = {
       const listener = (_: Electron.IpcRendererEvent, progress: VerifyProgressEvent) => cb(progress)
       ipcRenderer.on(IpcChannels.EVENT_VERIFY_PROGRESS, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_VERIFY_PROGRESS, listener)
+    },
+    repairProgress: (cb: (progress: VerifyProgressEvent) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, progress: VerifyProgressEvent) => cb(progress)
+      ipcRenderer.on(IpcChannels.EVENT_REPAIR_PROGRESS, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_REPAIR_PROGRESS, listener)
     },
     backupProgress: (cb: (progress: BackupProgressEvent) => void): (() => void) => {
       const listener = (_: Electron.IpcRendererEvent, progress: BackupProgressEvent) => cb(progress)

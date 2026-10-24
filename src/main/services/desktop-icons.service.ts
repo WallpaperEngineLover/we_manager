@@ -1,10 +1,12 @@
-import { spawn, type ChildProcess } from 'child_process'
+import { execFile, execFileSync, spawn, type ChildProcess } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
 import { openStore } from '../utils/safeStore'
 import { app } from 'electron'
-import { getConnectedScreens, getWaylandDisplay, getXdgRuntimeDir } from '../utils/platform'
-import { isFlatpak } from '../utils/flatpak'
+import { detectDesktopEnv, getConnectedScreens, getWaylandDisplay, getXdgRuntimeDir, isCommandAvailable, isWaylandSession } from '../utils/platform'
+import { hostCommand, isFlatpak, isHostCommandAvailable } from '../utils/flatpak'
+import { detectDistro, distroFromIds, isOstreeSystem, parseOsReleaseIds, onLweLaunched } from './lwe.service'
+import type { DesktopIconsStatus, LinuxDistro } from '@shared/types'
 
 interface DesktopIconsStoreSchema {
   desktopIconsEnabled: boolean
@@ -30,21 +32,103 @@ function getOverlayScriptPath(): string {
   return candidates[0]
 }
 
-const LAYER_SHELL_LIBS = [
-  '/usr/lib64/libgtk4-layer-shell.so',
-  '/usr/lib/libgtk4-layer-shell.so',
-  '/usr/lib/x86_64-linux-gnu/libgtk4-layer-shell.so'
+const LAYER_SHELL_DIRS = [
+  '/usr/lib64',
+  '/usr/lib',
+  '/usr/lib/x86_64-linux-gnu',
+  '/usr/lib/aarch64-linux-gnu',
+  '/usr/local/lib64',
+  '/usr/local/lib',
+  '/lib64',
+  '/lib'
 ]
+const LAYER_SHELL_NAMES = ['libgtk4-layer-shell.so.0', 'libgtk4-layer-shell.so']
+const LAYER_SHELL_LIBS = LAYER_SHELL_DIRS.flatMap((dir) => LAYER_SHELL_NAMES.map((name) => `${dir}/${name}`))
 
-function findLayerShellLib(): string {
-  return LAYER_SHELL_LIBS.find((p) => fs.existsSync(p)) ?? LAYER_SHELL_LIBS[0]
+const PACKAGES: Record<string, string> = {
+  fedora: 'sudo dnf install gtk4-layer-shell python3-gobject python3-cairo',
+  arch: 'sudo pacman -S gtk4-layer-shell python-gobject python-cairo',
+  debian: 'sudo apt install gir1.2-gtk4layershell-1.0 libgtk4-layer-shell0 python3-gi python3-gi-cairo gir1.2-gtk-4.0',
+  suse: 'sudo zypper install libgtk4-layer-shell0 typelib-1_0-Gtk4LayerShell-1_0 python3-gobject python3-cairo typelib-1_0-Gtk-4_0'
+}
+
+/** In a Flatpak /etc/os-release is the runtime's, the packages go onto the host */
+let cachedHostDistro: LinuxDistro | undefined
+
+function hostDistro(): LinuxDistro {
+  if (!isFlatpak()) return detectDistro()
+  if (cachedHostDistro) return cachedHostDistro
+  try {
+    const [file, args] = hostCommand('cat', ['/etc/os-release'])
+    cachedHostDistro = distroFromIds(parseOsReleaseIds(execFileSync(file, args, { encoding: 'utf8', timeout: 5000 })))
+  } catch {
+    cachedHostDistro = 'unknown'
+  }
+  return cachedHostDistro
+}
+
+function hostIsImmutable(): boolean {
+  if (!isFlatpak()) return isOstreeSystem()
+  try {
+    const [file, args] = hostCommand('test', ['-e', '/run/ostree-booted'])
+    execFileSync(file, args, { stdio: 'ignore', timeout: 5000 })
+    return true
+  } catch {
+    return false
+  }
+}
+
+const INSTALL_ARGS: Record<string, string[]> = {
+  fedora: ['dnf', 'install', '-y', 'gtk4-layer-shell', 'python3-gobject', 'python3-cairo'],
+  arch: ['pacman', '-S', '--needed', '--noconfirm', 'gtk4-layer-shell', 'python-gobject', 'python-cairo'],
+  debian: ['apt-get', 'install', '-y', 'gir1.2-gtk4layershell-1.0', 'libgtk4-layer-shell0', 'python3-gi', 'python3-gi-cairo', 'gir1.2-gtk-4.0'],
+  suse: ['zypper', '--non-interactive', 'install', 'libgtk4-layer-shell0', 'typelib-1_0-Gtk4LayerShell-1_0', 'python3-gobject', 'python3-cairo', 'typelib-1_0-Gtk-4_0']
+}
+
+export function installDesktopIconsDependencies(): Promise<{ ok: boolean; error?: string }> {
+  const install = INSTALL_ARGS[hostDistro()]
+  if (!install) return Promise.resolve({ ok: false, error: 'unknown-distro' })
+  if (hostIsImmutable()) return Promise.resolve({ ok: false, error: 'immutable' })
+  const hasPkexec = isFlatpak() ? isHostCommandAvailable('pkexec') : isCommandAvailable('pkexec')
+  if (!hasPkexec) return Promise.resolve({ ok: false, error: 'no-pkexec' })
+
+  const [file, args] = hostCommand('pkexec', install)
+  return new Promise((resolve) => {
+    execFile(file, args, { timeout: 10 * 60 * 1000, encoding: 'utf8' }, (err, _stdout, stderr) => {
+      if (err) {
+        // 126 and 127 are pkexec's dismissed and not-authorized codes
+        const code = (err as { code?: number }).code
+        if (code === 126 || code === 127) return resolve({ ok: false, error: 'cancelled' })
+        return resolve({ ok: false, error: stderr.trim().split('\n').slice(-4).join('\n') || err.message })
+      }
+      startFailure = null
+      if (getDesktopIconsEnabled()) startDesktopIconsOverlay()
+      resolve({ ok: true })
+    })
+  })
+}
+
+/** The runtime library is libgtk4-layer-shell.so.0, the plain .so name only comes with the -devel package */
+function findLayerShellLib(): string | undefined {
+  const found = LAYER_SHELL_LIBS.find((p) => fs.existsSync(p))
+  if (found) return found
+  for (const ldconfig of ['ldconfig', '/sbin/ldconfig', '/usr/sbin/ldconfig']) {
+    try {
+      const out = execFileSync(ldconfig, ['-p'], { encoding: 'utf8', timeout: 3000 })
+      const line = out.split('\n').find((l) => l.includes('libgtk4-layer-shell.so'))
+      const target = line?.split('=>')[1]?.trim()
+      if (target && fs.existsSync(target)) return target
+    } catch {
+    }
+  }
+  return undefined
 }
 
 /** The overlay needs the host's Python, GTK4 and gtk4-layer-shell, so it runs on the host from a copy of the script */
 function flatpakOverlayCommand(scriptPath: string, envVars: string[], screen?: string): [string, string[]] {
   const hostScript = path.join(app.getPath('userData'), 'desktop-icons-overlay.py')
   fs.copyFileSync(scriptPath, hostScript)
-  const findLib = `for lib in ${LAYER_SHELL_LIBS.join(' ')}; do [ -e "$lib" ] && export LD_PRELOAD="$lib" && break; done`
+  const findLib = `for lib in ${LAYER_SHELL_LIBS.join(' ')} $(ldconfig -p 2>/dev/null | sed -n 's/.*libgtk4-layer-shell.so.* => //p'); do [ -e "$lib" ] && export LD_PRELOAD="$lib" && break; done`
   const args = ['--host', ...envVars.filter((v) => !v.startsWith('LD_PRELOAD=')).map((v) => `--env=${v}`),
     'sh', '-c', `${findLib}; exec python3 "$@"`, 'sh', hostScript]
   if (screen) args.push(screen)
@@ -52,10 +136,10 @@ function flatpakOverlayCommand(scriptPath: string, envVars: string[], screen?: s
 }
 
 /** Env vars for the overlay; Electron runs under XWayland so the Wayland env must be passed explicitly. */
-function buildOverlayEnvVars(): string[] {
+function buildOverlayEnvVars(layerShellLib: string | undefined): string[] {
   const vars: string[] = []
 
-  vars.push(`LD_PRELOAD=${findLayerShellLib()}`)
+  if (layerShellLib) vars.push(`LD_PRELOAD=${layerShellLib}`)
 
   // Force GTK4 onto the Wayland backend (layer-shell does not work under X11)
   vars.push('GDK_BACKEND=wayland')
@@ -70,16 +154,49 @@ function buildOverlayEnvVars(): string[] {
   return vars
 }
 
+const EXIT_MISSING_MODULES = 2
+const EXIT_NO_LAYER_SHELL = 3
+const STDERR_LINES = 8
+
+let startFailure: { problem: 'missing-modules' | 'failed'; detail: string } | null = null
+
+/** Only Plasma's Folder View sits below the engine's surface; other desktops draw their icons above it themselves */
+function unsupportedReason(): 'not-kde' | 'not-wayland' | null {
+  if (detectDesktopEnv() !== 'kde') return 'not-kde'
+  if (!isWaylandSession()) return 'not-wayland'
+  return null
+}
+
+export function getDesktopIconsStatus(): DesktopIconsStatus {
+  const enabled = getDesktopIconsEnabled()
+  const unsupported = unsupportedReason()
+  if (unsupported) return { enabled, problem: unsupported }
+  const command = PACKAGES[hostDistro()]
+  if (!isFlatpak() && !findLayerShellLib()) return { enabled, problem: 'missing-lib', command }
+  if (startFailure) return { enabled, problem: startFailure.problem, detail: startFailure.detail, command }
+  return { enabled }
+}
+
 export function startDesktopIconsOverlay(): void {
   stopDesktopIconsOverlay()
+  startFailure = null
+
+  if (unsupportedReason()) return
 
   const scriptPath = getOverlayScriptPath()
   if (!fs.existsSync(scriptPath)) {
     console.error('[DesktopIcons] Overlay script not found:', scriptPath)
+    startFailure = { problem: 'failed', detail: 'script not found' }
     return
   }
 
-  const envVars = buildOverlayEnvVars()
+  const layerShellLib = isFlatpak() ? undefined : findLayerShellLib()
+  if (!isFlatpak() && !layerShellLib) {
+    console.error('[DesktopIcons] libgtk4-layer-shell not found')
+    return
+  }
+
+  const envVars = buildOverlayEnvVars(layerShellLib)
   const screens = getConnectedScreens()
 
   const targets = screens.length > 0 ? screens : [undefined]
@@ -91,11 +208,22 @@ export function startDesktopIconsOverlay(): void {
       ? flatpakOverlayCommand(scriptPath, envVars, screen)
       : ['env', [...envVars, ...args]]
     const child = spawn(command, commandArgs, {
-      stdio: 'ignore',
+      stdio: ['ignore', 'ignore', 'pipe'],
       detached: true
     })
-    child.on('exit', () => {
+    const errors: string[] = []
+    child.stderr?.on('data', (chunk: Buffer) => {
+      errors.push(...chunk.toString('utf8').split('\n').filter(Boolean))
+      if (errors.length > STDERR_LINES) errors.splice(0, errors.length - STDERR_LINES)
+    })
+    child.on('exit', (code, signal) => {
+      const mine = overlayProcesses.includes(child)
       overlayProcesses = overlayProcesses.filter((p) => p !== child)
+      if (!mine || signal || code === 0 || code === null) return
+      const detail = errors.join('\n')
+      console.error(`[DesktopIcons] Overlay for ${screen ?? 'default screen'} exited with ${code}: ${detail}`)
+      startFailure = { problem: code === EXIT_MISSING_MODULES ? 'missing-modules' : 'failed', detail }
+      if (code === EXIT_NO_LAYER_SHELL) startFailure.detail = detail || 'the compositor has no layer-shell'
     })
     child.unref()
     overlayProcesses.push(child)
@@ -119,8 +247,14 @@ export function setDesktopIconsEnabled(enabled: boolean): void {
   if (enabled) {
     startDesktopIconsOverlay()
   } else {
+    startFailure = null
     stopDesktopIconsOverlay()
   }
+}
+
+/** The engine and the overlay share the bottom layer and the later surface is drawn on top, so the overlay has to map after the wallpaper */
+export function raiseDesktopIconsOverlay(): void {
+  if (getDesktopIconsEnabled()) startDesktopIconsOverlay()
 }
 
 export function getDesktopIconsEnabled(): boolean {
@@ -128,6 +262,7 @@ export function getDesktopIconsEnabled(): boolean {
 }
 
 export function initDesktopIcons(): void {
+  onLweLaunched(raiseDesktopIconsOverlay)
   if (getDesktopIconsEnabled()) {
     startDesktopIconsOverlay()
   }

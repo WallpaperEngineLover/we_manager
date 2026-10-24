@@ -117,6 +117,11 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
             <span className="text-sm text-gray-300">{t('perf.windowBackground')}</span>
           </label>
           <p className="ml-12 mt-1 text-xs text-gray-600">{t('perf.windowBackgroundHint')}</p>
+          {flags.windowBackground && environment?.displayServer === 'wayland' && (
+            <p className="ml-12 mt-1 text-xs font-medium text-red-400">
+              {t('perf.windowBackgroundWayland', { desktop: desktopEnv === 'kde' ? 'KDE Plasma' : (desktopEnv ?? 'Wayland') })}
+            </p>
+          )}
         </div>
         {(desktopEnv === 'kde' || wlroots) && (
           <div>
@@ -131,6 +136,9 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
               {t('perf.backgroundLayerHint')}
               {desktopEnv === 'kde' && <> {t('perf.backgroundLayerKde')}</>}
             </p>
+            {flags.kdeBackgroundLayer && desktopEnv === 'kde' && environment?.displayServer === 'wayland' && (
+              <p className="ml-12 mt-1 text-xs font-medium text-red-400">{t('perf.backgroundLayerKdeWarning')}</p>
+            )}
           </div>
         )}
         {wlroots && inputFiles.length > 0 && (

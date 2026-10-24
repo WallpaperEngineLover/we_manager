@@ -88,6 +88,7 @@ export function engineFlagArgs(flags: EngineFlags): string[] {
   if (flags.ssaa && flags.ssaa !== 'none') args.push('--ssaa', flags.ssaa)
   if (flags.hwdec && flags.hwdec !== 'auto') args.push('--hwdec', flags.hwdec)
   if (flags.webFrames && flags.webFrames !== 'auto') args.push('--web-frames', flags.webFrames)
+  if (flags.frameLimiter && flags.frameLimiter !== 'budget') args.push('--frame-limiter', flags.frameLimiter)
   if (flags.hrtf && flags.hrtf !== 'auto') args.push('--hrtf', flags.hrtf)
   if (flags.batteryFps === 'pause') args.push('--pause-on-battery')
   else if (flags.batteryFps && flags.batteryFps !== 'off') args.push('--fps-battery', flags.batteryFps)

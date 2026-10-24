@@ -121,9 +121,18 @@ export default function App() {
   }, [queryClient])
 
   useEffect(() => {
-    return window.electronAPI.on.libraryChanged(() => {
-      queryClient.invalidateQueries({ queryKey: ['library'] })
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const off = window.electronAPI.on.libraryChanged(() => {
+      if (timer) return
+      timer = setTimeout(() => {
+        timer = null
+        queryClient.invalidateQueries({ queryKey: ['library'] })
+      }, 500)
     })
+    return () => {
+      off()
+      if (timer) clearTimeout(timer)
+    }
   }, [queryClient])
 
   useEffect(() => {

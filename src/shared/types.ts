@@ -174,6 +174,8 @@ export type HwdecBackend = 'auto' | 'no' | 'vaapi' | 'vaapi-copy' | 'nvdec' | 'n
 /** How web wallpapers hand their frames to the engine: shared GPU buffers or a copy through memory */
 export type WebFramesMode = 'auto' | 'shm' | 'dmabuf'
 
+export type FrameLimiter = 'budget' | 'fixed'
+
 /** auto = while the default output is headphones */
 export type HrtfMode = 'auto' | 'on' | 'off'
 
@@ -204,6 +206,7 @@ export interface EngineFlags {
   hwdec?: HwdecBackend
   /** --web-frames, applies when the web wallpaper starts */
   webFrames?: WebFramesMode
+  frameLimiter?: FrameLimiter
   hrtf?: HrtfMode
   /** --fps-battery / --pause-on-battery */
   batteryFps?: BatteryFps
@@ -466,6 +469,13 @@ export interface LweStatus {
   version?: string
   /** A package manager owns the binary, it can't be uninstalled here */
   managedBy?: string
+}
+
+export interface DesktopIconsStatus {
+  enabled: boolean
+  problem?: 'not-kde' | 'not-wayland' | 'missing-lib' | 'missing-modules' | 'failed'
+  detail?: string
+  command?: string
 }
 
 export type LinuxDistro = 'fedora' | 'arch' | 'debian' | 'suse' | 'unknown'
