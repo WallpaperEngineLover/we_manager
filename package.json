@@ -1,6 +1,6 @@
 {
   "name": "we-manager",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "type": "module",
   "description": "Wallpaper Engine workshop manager",
   "desktopName": "we-manager.desktop",
@@ -77,6 +77,12 @@
       "!node_modules/steamworks.js/dist/{osx,win64}/**",
       "!node_modules/@koromix/koffi-linux-x64/musl_x64/**",
       "resources/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "src/main/services/desktop-icons-overlay.py",
+        "to": "desktop-icons-overlay.py"
+      }
     ],
     "asarUnpack": [
       "resources/icon.png"

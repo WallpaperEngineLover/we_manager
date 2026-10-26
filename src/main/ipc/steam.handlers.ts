@@ -12,18 +12,26 @@ import { isWallpaperEngineItem } from '../services/workshop.service'
 import { getWorkshopPath } from '../utils/paths'
 import { setDependencyInstaller } from '../services/dependency.service'
 
+let activePolls = 0
+const POLLS_PER_TICK = 6
+
 // by item state, GetItemDownloadInfo can still answer for a finished item
 function startDownloadPoll(win: BrowserWindow, itemId: string, intervalMs = 1000): Promise<boolean> {
   const idBig = BigInt(itemId)
   let polling = false
   let lastState = -1
+  let lastPercentage = -1
+  let tick = 0
+  activePolls++
   return new Promise((resolve) => {
     const pollInterval = setInterval(async () => {
       if (win.isDestroyed()) {
         clearInterval(pollInterval)
+        activePolls--
         resolve(false)
         return
       }
+      if (tick++ % Math.ceil(activePolls / POLLS_PER_TICK) !== 0) return
       if (polling || !steam.isSteamAllowed()) return
       polling = true
       try {
@@ -48,7 +56,10 @@ function startDownloadPoll(win: BrowserWindow, itemId: string, intervalMs = 1000
           // the watcher may have imported the half-written folder
           const entry = library.getWallpaper(itemId)
           if (entry?.source === 'workshop' && !entry.downloading) library.updateWallpaper(itemId, { downloading: true })
-          if (info && !win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_DOWNLOAD_PROGRESS, info)
+          if (info && info.percentage !== lastPercentage && !win.isDestroyed()) {
+            lastPercentage = info.percentage
+            win.webContents.send(IpcChannels.EVENT_DOWNLOAD_PROGRESS, info)
+          }
           return
         }
       } finally {
@@ -56,6 +67,7 @@ function startDownloadPoll(win: BrowserWindow, itemId: string, intervalMs = 1000
       }
 
       clearInterval(pollInterval)
+      activePolls--
       library.importWallpaperById(itemId).catch((err) => {
         console.error(`[Steam] Import of ${itemId} failed:`, err)
         return null

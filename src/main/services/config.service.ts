@@ -15,6 +15,7 @@ import type {
   ExtraLibrary,
   SplitScreen,
   SteamIdentity,
+  LedSettings,
   UpdateChecks,
   UpdateTarget
 } from '@shared/types'
@@ -45,6 +46,8 @@ interface AppConfig {
   defaultAudioSensitivity: number
   /** --render-debug no-puppet-animation */
   disablePuppetAnimation: boolean
+  scriptLimits: boolean
+  leds: LedSettings
   disableAnimations: boolean
   steamIdentity: SteamIdentity
   /** steamId64s hidden from browsing */
@@ -88,6 +91,8 @@ const store = openStore<AppConfig>({
     ambientVolume: null,
     defaultAudioSensitivity: 1,
     disablePuppetAnimation: false,
+    scriptLimits: false,
+    leds: { enabled: false, server: '127.0.0.1:6742', brightness: 100, boost: true, reduceFps: false },
     disableAnimations: false,
     steamIdentity: 'wallpaper-engine',
     ignoredCreators: [],
@@ -307,6 +312,22 @@ export function getDisablePuppetAnimation(): boolean {
 
 export function setDisablePuppetAnimation(disabled: boolean): void {
   store.set('disablePuppetAnimation', disabled)
+}
+
+export function getScriptLimits(): boolean {
+  return store.get('scriptLimits')
+}
+
+export function setScriptLimits(enabled: boolean): void {
+  store.set('scriptLimits', enabled)
+}
+
+export function getLeds(): LedSettings {
+  return store.get('leds')
+}
+
+export function setLeds(leds: LedSettings): void {
+  store.set('leds', leds)
 }
 
 export function getDisableAnimations(): boolean {

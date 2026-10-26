@@ -27,6 +27,8 @@ import type {
   LweProperty,
   LweAudioObject,
   LweSceneEffect,
+  LweFontNeed,
+  UserFont,
   DesktopApplication,
   BackupProgressEvent,
   VerifyProgressEvent,
@@ -36,6 +38,7 @@ import type {
   PlaylistSettings,
   PlaylistPlaybackState,
   SteamIdentity,
+  LedSettings,
   ExtraLibrary,
   EngineFlags,
   ImageAdjustments,
@@ -167,6 +170,8 @@ const api = {
       ambientVolume: number | null
       defaultAudioSensitivity: number
       disablePuppetAnimation: boolean
+      scriptLimits: boolean
+      leds: LedSettings
       disableAnimations: boolean
       steamIdentity: SteamIdentity
       ignoredCreators: string[]
@@ -244,6 +249,9 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DEFAULT_AUDIO_SENSITIVITY, multiplier),
     setDisablePuppetAnimation: (disabled: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DISABLE_PUPPET_ANIMATION, disabled),
+    setScriptLimits: (enabled: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_SCRIPT_LIMITS, enabled),
+    setLeds: (leds: LedSettings): Promise<{ ok: boolean }> => ipcRenderer.invoke(IpcChannels.CONFIG_SET_LEDS, leds),
     setSteamIdentity: (identity: SteamIdentity): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_STEAM_IDENTITY, identity),
     ignoreCreator: (steamId: string): Promise<{ ok: boolean }> =>
@@ -348,6 +356,10 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LWE_DETECT_DISTRO),
     installDeps: (): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.LWE_INSTALL_DEPS),
+    libnodeNeeded: (): Promise<boolean> =>
+      ipcRenderer.invoke(IpcChannels.LWE_LIBNODE_NEEDED),
+    installLibnode: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.LWE_INSTALL_LIBNODE),
     install: (): Promise<LweStatus> =>
       ipcRenderer.invoke(IpcChannels.LWE_INSTALL),
     prebuiltTarget: (): Promise<LwePrebuiltTarget> =>
@@ -402,6 +414,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LWE_LIST_AUDIO_OBJECTS, wallpaperPath),
     listEffects: (wallpaperPath: string): Promise<LweSceneEffect[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_EFFECTS, wallpaperPath),
+    listFonts: (wallpaperPath: string): Promise<LweFontNeed[]> =>
+      ipcRenderer.invoke(IpcChannels.LWE_LIST_FONTS, wallpaperPath),
     listApplications: (): Promise<DesktopApplication[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_APPLICATIONS),
     pickShortcutPath: (kind: 'file' | 'directory'): Promise<string | null> =>
@@ -444,6 +458,13 @@ const api = {
     getStatus: (): Promise<DesktopIconsStatus> => ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_GET_STATUS),
     installDeps: (): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_INSTALL_DEPS)
+  },
+
+  fonts: {
+    list: (): Promise<UserFont[]> => ipcRenderer.invoke(IpcChannels.FONTS_LIST),
+    add: (): Promise<{ added: string[]; rejected: string[]; fonts: UserFont[] }> =>
+      ipcRenderer.invoke(IpcChannels.FONTS_ADD),
+    remove: (name: string): Promise<UserFont[]> => ipcRenderer.invoke(IpcChannels.FONTS_REMOVE, name)
   },
 
   updates: {

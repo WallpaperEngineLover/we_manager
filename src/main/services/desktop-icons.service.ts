@@ -3,9 +3,9 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { openStore } from '../utils/safeStore'
 import { app } from 'electron'
-import { detectDesktopEnv, getConnectedScreens, getWaylandDisplay, getXdgRuntimeDir, isCommandAvailable, isWaylandSession } from '../utils/platform'
+import { detectDesktopEnv, getWaylandDisplay, getXdgRuntimeDir, isCommandAvailable, isWaylandSession } from '../utils/platform'
 import { hostCommand, isFlatpak, isHostCommandAvailable } from '../utils/flatpak'
-import { detectDistro, distroFromIds, isOstreeSystem, parseOsReleaseIds, onLweLaunched } from './lwe.service'
+import { distroFromIds, getActiveScreens, isOstreeSystem, parseOsReleaseIds, onLweLaunched } from './lwe.service'
 import type { DesktopIconsStatus, LinuxDistro } from '@shared/types'
 
 interface DesktopIconsStoreSchema {
@@ -52,19 +52,38 @@ const PACKAGES: Record<string, string> = {
   suse: 'sudo zypper install libgtk4-layer-shell0 typelib-1_0-Gtk4LayerShell-1_0 python3-gobject python3-cairo typelib-1_0-Gtk-4_0'
 }
 
+const WAYLAND_DEV: Record<string, string> = { fedora: 'wayland-devel', debian: 'libwayland-dev', suse: 'wayland-devel' }
+
+function withWaylandDev(command: string | undefined): string | undefined {
+  const dev = WAYLAND_DEV[hostDistro()]
+  return command && dev ? `${command} ${dev}` : command
+}
+
 /** In a Flatpak /etc/os-release is the runtime's, the packages go onto the host */
-let cachedHostDistro: LinuxDistro | undefined
+let cachedHostIds: string[] | undefined
+
+function hostOsReleaseIds(): string[] {
+  if (cachedHostIds) return cachedHostIds
+  try {
+    if (!isFlatpak()) {
+      cachedHostIds = parseOsReleaseIds(fs.readFileSync('/etc/os-release', 'utf8'))
+    } else {
+      const [file, args] = hostCommand('cat', ['/etc/os-release'])
+      cachedHostIds = parseOsReleaseIds(execFileSync(file, args, { encoding: 'utf8', timeout: 5000 }))
+    }
+  } catch {
+    cachedHostIds = []
+  }
+  return cachedHostIds
+}
 
 function hostDistro(): LinuxDistro {
-  if (!isFlatpak()) return detectDistro()
-  if (cachedHostDistro) return cachedHostDistro
-  try {
-    const [file, args] = hostCommand('cat', ['/etc/os-release'])
-    cachedHostDistro = distroFromIds(parseOsReleaseIds(execFileSync(file, args, { encoding: 'utf8', timeout: 5000 })))
-  } catch {
-    cachedHostDistro = 'unknown'
-  }
-  return cachedHostDistro
+  return distroFromIds(hostOsReleaseIds())
+}
+
+/** Leap 16's repositories have no gtk4-layer-shell at all, neither the library nor the typelib */
+function hostIsOpenSuseLeap(): boolean {
+  return hostOsReleaseIds().includes('opensuse-leap')
 }
 
 function hostIsImmutable(): boolean {
@@ -108,6 +127,28 @@ export function installDesktopIconsDependencies(): Promise<{ ok: boolean; error?
   })
 }
 
+const WAYLAND_CLIENT = 'libwayland-client'
+
+/** gtk4-layer-shell 1.0.x dlopen()s the plain libwayland-client.so, which only the -devel package has (Fedora 39: "failed to dlopen libwayland") */
+function waylandClientLinkDir(): string {
+  return path.join(app.getPath('userData'), 'overlay-lib')
+}
+
+function ensureWaylandClientLink(): string | undefined {
+  const target = LAYER_SHELL_DIRS.map((dir) => `${dir}/${WAYLAND_CLIENT}.so.0`).find((p) => fs.existsSync(p))
+  if (!target) return undefined
+  const dir = waylandClientLinkDir()
+  const link = path.join(dir, `${WAYLAND_CLIENT}.so`)
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+    fs.rmSync(link, { force: true })
+    fs.symlinkSync(target, link)
+    return dir
+  } catch {
+    return undefined
+  }
+}
+
 /** The runtime library is libgtk4-layer-shell.so.0, the plain .so name only comes with the -devel package */
 function findLayerShellLib(): string | undefined {
   const found = LAYER_SHELL_LIBS.find((p) => fs.existsSync(p))
@@ -128,7 +169,9 @@ function findLayerShellLib(): string | undefined {
 function flatpakOverlayCommand(scriptPath: string, envVars: string[], screen?: string): [string, string[]] {
   const hostScript = path.join(app.getPath('userData'), 'desktop-icons-overlay.py')
   fs.copyFileSync(scriptPath, hostScript)
-  const findLib = `for lib in ${LAYER_SHELL_LIBS.join(' ')} $(ldconfig -p 2>/dev/null | sed -n 's/.*libgtk4-layer-shell.so.* => //p'); do [ -e "$lib" ] && export LD_PRELOAD="$lib" && break; done`
+  const linkDir = waylandClientLinkDir()
+  const linkLib = `mkdir -p "${linkDir}"; for lib in ${LAYER_SHELL_DIRS.map((dir) => `${dir}/${WAYLAND_CLIENT}.so.0`).join(' ')}; do [ -e "$lib" ] && ln -sf "$lib" "${linkDir}/${WAYLAND_CLIENT}.so" && export LD_LIBRARY_PATH="${linkDir}\${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" && break; done`
+  const findLib = `${linkLib}; for lib in ${LAYER_SHELL_LIBS.join(' ')} $(ldconfig -p 2>/dev/null | sed -n 's/.*libgtk4-layer-shell.so.* => //p'); do [ -e "$lib" ] && export LD_PRELOAD="$lib" && break; done`
   const args = ['--host', ...envVars.filter((v) => !v.startsWith('LD_PRELOAD=')).map((v) => `--env=${v}`),
     'sh', '-c', `${findLib}; exec python3 "$@"`, 'sh', hostScript]
   if (screen) args.push(screen)
@@ -138,6 +181,9 @@ function flatpakOverlayCommand(scriptPath: string, envVars: string[], screen?: s
 /** Env vars for the overlay; Electron runs under XWayland so the Wayland env must be passed explicitly. */
 function buildOverlayEnvVars(layerShellLib: string | undefined): string[] {
   const vars: string[] = []
+
+  const linkDir = isFlatpak() ? undefined : ensureWaylandClientLink()
+  if (linkDir) vars.push(`LD_LIBRARY_PATH=${linkDir}${process.env.LD_LIBRARY_PATH ? `:${process.env.LD_LIBRARY_PATH}` : ''}`)
 
   if (layerShellLib) vars.push(`LD_PRELOAD=${layerShellLib}`)
 
@@ -156,9 +202,12 @@ function buildOverlayEnvVars(layerShellLib: string | undefined): string[] {
 
 const EXIT_MISSING_MODULES = 2
 const EXIT_NO_LAYER_SHELL = 3
+const EXIT_NO_MONITOR = 4
+const EXIT_MONITORS_CHANGED = 5
+let restartTimer: NodeJS.Timeout | undefined
 const STDERR_LINES = 8
 
-let startFailure: { problem: 'missing-modules' | 'failed'; detail: string } | null = null
+let startFailure: { problem: 'missing-modules' | 'failed'; detail: string; command?: string } | null = null
 
 /** Only Plasma's Folder View sits below the engine's surface; other desktops draw their icons above it themselves */
 function unsupportedReason(): 'not-kde' | 'not-wayland' | null {
@@ -172,8 +221,11 @@ export function getDesktopIconsStatus(): DesktopIconsStatus {
   const unsupported = unsupportedReason()
   if (unsupported) return { enabled, problem: unsupported }
   const command = PACKAGES[hostDistro()]
-  if (!isFlatpak() && !findLayerShellLib()) return { enabled, problem: 'missing-lib', command }
-  if (startFailure) return { enabled, problem: startFailure.problem, detail: startFailure.detail, command }
+  if (!isFlatpak() && !findLayerShellLib()) {
+    if (hostIsOpenSuseLeap()) return { enabled, problem: 'unavailable-distro' }
+    return { enabled, problem: 'missing-lib', command }
+  }
+  if (startFailure) return { enabled, problem: startFailure.problem, detail: startFailure.detail, command: startFailure.command ?? command }
   return { enabled }
 }
 
@@ -197,7 +249,7 @@ export function startDesktopIconsOverlay(): void {
   }
 
   const envVars = buildOverlayEnvVars(layerShellLib)
-  const screens = getConnectedScreens()
+  const screens = getActiveScreens()
 
   const targets = screens.length > 0 ? screens : [undefined]
   for (const screen of targets) {
@@ -219,7 +271,19 @@ export function startDesktopIconsOverlay(): void {
     child.on('exit', (code, signal) => {
       const mine = overlayProcesses.includes(child)
       overlayProcesses = overlayProcesses.filter((p) => p !== child)
+      if (mine && errors.some((line) => line.includes('failed to dlopen libwayland'))) {
+        startFailure = { problem: 'failed', detail: errors.join('\n'), command: withWaylandDev(PACKAGES[hostDistro()]) }
+        return
+      }
       if (!mine || signal || code === 0 || code === null) return
+      if (code === EXIT_NO_MONITOR) return
+      if (code === EXIT_MONITORS_CHANGED) {
+        clearTimeout(restartTimer)
+        restartTimer = setTimeout(() => {
+          if (getDesktopIconsEnabled()) startDesktopIconsOverlay()
+        }, 500)
+        return
+      }
       const detail = errors.join('\n')
       console.error(`[DesktopIcons] Overlay for ${screen ?? 'default screen'} exited with ${code}: ${detail}`)
       startFailure = { problem: code === EXIT_MISSING_MODULES ? 'missing-modules' : 'failed', detail }

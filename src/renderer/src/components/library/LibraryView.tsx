@@ -38,6 +38,7 @@ import clsx from 'clsx'
 import {
   WE_TYPES,
   WE_LIBRARY_AGE_RATINGS,
+  WE_SHOW_ONLY,
   ALL_RESOLUTION_TAGS,
   migrateResolutionSelection
 } from '../../constants/weFilters'
@@ -58,6 +59,7 @@ interface LibraryFilterState {
   types: string[]
   ageRatings: string[]
   genres: string[]
+  showOnly: string[]
   resolutions: string[]
   sources: string[]
   failedOnly: boolean
@@ -75,6 +77,7 @@ const DEFAULT_STATE: LibraryFilterState = {
   types: [],
   ageRatings: [],
   genres: [],
+  showOnly: [],
   resolutions: [],
   sources: [],
   failedOnly: false,
@@ -159,6 +162,12 @@ function TagsFilterSection({
       </div>
     </FilterSection>
   )
+}
+
+// Steam hands tags back in the case they were made in ("Audio Responsive" before, "Audio responsive" now)
+function hasTag(tags: string[], tag: string): boolean {
+  const lower = tag.toLowerCase()
+  return tags.some((candidate) => candidate.toLowerCase() === lower)
 }
 
 function folderRowClass(active: boolean): string {
@@ -252,6 +261,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     filterState.types.length +
     filterState.ageRatings.length +
     filterState.genres.length +
+    filterState.showOnly.length +
     filterState.resolutions.length +
     filterState.sources.length +
     flagCount +
@@ -259,11 +269,17 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   // keeps the download badges in sync
   useEffect(() => {
-    return window.electronAPI.on.downloadProgress((progress) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const off = window.electronAPI.on.downloadProgress((progress) => {
       if (progress.status === 'completed' || progress.status === 'error') {
-        queryClient.invalidateQueries({ queryKey: ['library'] })
+        clearTimeout(timer)
+        timer = setTimeout(() => queryClient.invalidateQueries({ queryKey: ['library'] }), 500)
       }
     })
+    return () => {
+      off()
+      clearTimeout(timer)
+    }
   }, [queryClient])
 
   const filters: LibraryFilters = {
@@ -293,6 +309,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       if (filterState.types.length > 1 && !types.includes(w.type)) return false
       if (filterState.ageRatings.length > 1 && !ratings.includes(w.contentRating ?? 'uncategorized')) return false
       if (filterState.genres.length > 0 && !filterState.genres.some((g) => w.tags.includes(g))) return false
+      if (filterState.showOnly.length > 0 && !filterState.showOnly.every((tag) => hasTag(w.tags, tag))) return false
       if (filterState.resolutions.length > 0 && !filterState.resolutions.some((r) => w.resolutions?.includes(r)))
         return false
       if (filterState.sources.length > 0 && !sources.includes(w.source)) return false
@@ -406,6 +423,12 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     }
     return counts
   }, [allWallpapers])
+
+  const showOnlyCounts = useMemo(
+    () =>
+      new Map(WE_SHOW_ONLY.map((item) => [item.tag, allWallpapers.filter((w) => hasTag(w.tags, item.tag)).length])),
+    [allWallpapers]
+  )
 
   const { data: availableTags = [] } = useQuery({
     queryKey: ['library-tags'],
@@ -843,6 +866,17 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 checked={filterState.hrtfOnly}
                 onChange={() => toggleFlag('hrtfOnly')}
               />
+            </FilterSection>
+            <FilterSection title={t('filters.showOnly')} defaultOpen={false} activeCount={filterState.showOnly.length}>
+              {WE_SHOW_ONLY.map((item) => (
+                <CheckItem
+                  key={item.tag}
+                  label={tagLabel(item.label)}
+                  count={showOnlyCounts.get(item.tag) ?? 0}
+                  checked={filterState.showOnly.includes(item.tag)}
+                  onChange={() => setFilter('showOnly', toggle(filterState.showOnly, item.tag))}
+                />
+              ))}
             </FilterSection>
             <TagFilterSection
               title={t('filters.type')}

@@ -1,5 +1,6 @@
 import { useState, useRef, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import FontNotice from './FontNotice'
 import {
   X,
   Star,
@@ -38,6 +39,7 @@ import {
   Music2,
   Terminal,
   Sparkles,
+  BellOff,
   CloudFog,
   HeartCrack,
   type LucideIcon
@@ -49,10 +51,11 @@ import { formatFileSize } from '../../utils/format'
 import { isRangeKey } from '../../utils/dom'
 import { useDislikedIds, useVoteAction, useVotedIds } from '../../hooks/useVotes'
 import { useFavoriteAction, useFavoriteIds, useItemFavoriteStatus } from '../../hooks/useFavorites'
-import { useLweInstalled } from '../../hooks/queries'
+import { useConfig, useLweInstalled } from '../../hooks/queries'
 import { useKeyedCommits } from '../../hooks/useKeyedCommits'
 import ScreenSelect from './ScreenSelect'
 import { getPreviewSrc } from '../../utils/preview'
+import { hasEngineFlags } from '@shared/engineFlags'
 import EngineFlagsSection from './sidebar/EngineFlagsSection'
 import ImageAdjustmentsSection from './sidebar/ImageAdjustmentsSection'
 import VideoTrimSection from './sidebar/VideoTrimSection'
@@ -638,6 +641,23 @@ export default function DetailSidebar({
     }
   }
 
+  const globalAutomute = !!useConfig()?.engineFlags?.automute
+  const automuteIgnored = libraryMeta?.engineFlags?.automute === false
+  const [togglingAutomute, setTogglingAutomute] = useState(false)
+
+  async function toggleAutomuteIgnore() {
+    if (togglingAutomute || !libraryMeta) return
+    const next = { ...libraryMeta.engineFlags }
+    if (automuteIgnored) delete next.automute
+    else next.automute = false
+    setTogglingAutomute(true)
+    try {
+      await persistAndMaybeRelaunch({ engineFlags: hasEngineFlags(next) ? next : undefined })
+    } finally {
+      setTogglingAutomute(false)
+    }
+  }
+
   async function toggleFog() {
     if (togglingFog || fogObjects.length === 0) return
     const disabled = new Set(disabledObjects)
@@ -1033,6 +1053,10 @@ export default function DetailSidebar({
           </div>
         )}
 
+        {localPath && lweInstalled && libraryMeta?.type === 'scene' && (
+          <FontNotice wallpaperPath={localPath} revision={libraryMeta.updatedAt} />
+        )}
+
         {localPath && lweInstalled && libraryMeta?.type && libraryMeta.type !== 'application' && (
           <div className="border-t border-fg/5 pt-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -1294,6 +1318,20 @@ export default function DetailSidebar({
                 <span className="rounded-full bg-green-600/30 px-1.5 normal-case text-green-300">
                   {t('image.live')}
                 </span>
+              )}
+              {libraryMeta && (globalAutomute || automuteIgnored) && (
+                <button
+                  onClick={toggleAutomuteIgnore}
+                  disabled={togglingAutomute}
+                  title={automuteIgnored ? t('detail.automuteIgnoreOn') : t('detail.automuteIgnoreOff')}
+                  className={clsx(
+                    'flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium normal-case transition-colors disabled:opacity-40',
+                    automuteIgnored ? 'bg-accent-600/30 text-accent-300' : 'bg-fg/10 text-gray-300 hover:bg-fg/15'
+                  )}
+                >
+                  {togglingAutomute ? <Loader2 size={10} className="animate-spin" /> : <BellOff size={10} />}
+                  {t('detail.automuteIgnore')}
+                </button>
               )}
               <span className="normal-case text-gray-400">{Math.round((volume / 128) * 100)}%</span>
             </div>

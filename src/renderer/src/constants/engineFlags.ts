@@ -12,6 +12,8 @@ type ChoiceFlag =
   | 'webFrames'
   | 'frameLimiter'
   | 'hrtf'
+  | 'transition'
+  | 'transitionDuration'
   | 'batteryFps'
   | 'idlePause'
 // kdeBackgroundLayer, windowed and windowBackground are global only
@@ -23,6 +25,7 @@ type BooleanFlag = Exclude<
 export const BOOLEAN_FLAGS: { key: BooleanFlag; label: MessageKey; hint?: MessageKey }[] = [
   { key: 'disableParticles', label: 'flags.disableParticles.label', hint: 'flags.disableParticles.hint' },
   { key: 'disableAnimations', label: 'flags.disableAnimations.label', hint: 'flags.disableAnimations.hint' },
+  { key: 'noDesktopIcons', label: 'flags.noDesktopIcons.label', hint: 'flags.noDesktopIcons.hint' },
   { key: 'disableMouse', label: 'flags.disableMouse.label', hint: 'flags.disableMouse.hint' },
   {
     key: 'pauseOnFocus',
@@ -168,6 +171,35 @@ export const CHOICE_FLAGS: {
       { value: 'auto', label: 'flags.opt.auto' },
       { value: 'on', label: 'flags.opt.alwaysOn' },
       { value: 'off', label: 'flags.opt.disabled' }
+    ]
+  },
+  {
+    key: 'transition',
+    label: 'flags.transition.label',
+    hint: 'flags.transition.hint',
+    note: 'flags.transition.note',
+    fallback: 'none',
+    options: [
+      { value: 'none', label: 'flags.opt.none' },
+      { value: 'fade', label: 'flags.opt.transitionFade' },
+      { value: 'slide-left', label: 'flags.opt.transitionSlideLeft' },
+      { value: 'slide-right', label: 'flags.opt.transitionSlideRight' },
+      { value: 'wipe-left', label: 'flags.opt.transitionWipeLeft' },
+      { value: 'wipe-right', label: 'flags.opt.transitionWipeRight' },
+      { value: 'zoom', label: 'flags.opt.transitionZoom' }
+    ]
+  },
+  {
+    key: 'transitionDuration',
+    label: 'flags.transitionDuration.label',
+    hint: 'flags.transitionDuration.hint',
+    fallback: '600',
+    options: [
+      { value: '300', label: '0.3 s' },
+      { value: '600', label: '0.6 s' },
+      { value: '1000', label: '1 s' },
+      { value: '1500', label: '1.5 s' },
+      { value: '2500', label: '2.5 s' }
     ]
   },
   {

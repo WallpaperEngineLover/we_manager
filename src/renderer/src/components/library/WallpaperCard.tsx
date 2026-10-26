@@ -74,14 +74,13 @@ export default function WallpaperCard({
       } else {
         setDownloadPercentage(null)
         setIsRedownloading(false)
-        queryClient.invalidateQueries({ queryKey: ['library'] })
       }
     })
     return () => {
       off()
       setDownloadPercentage(null)
     }
-  }, [wallpaper.downloading, wallpaper.id, queryClient])
+  }, [wallpaper.downloading, wallpaper.id])
 
   function refreshLibrary() {
     queryClient.invalidateQueries({ queryKey: ['library'] })

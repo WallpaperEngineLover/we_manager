@@ -16,9 +16,17 @@ export interface FilterItem {
 
 export const WE_SHOW_ONLY: FilterItem[] = [
   { tag: 'Approved', label: 'Approved' },
-  { tag: 'Mobile', label: 'Mobile Compatible' },
-  { tag: 'Audio Responsive', label: 'Audio Responsive' },
-  { tag: 'Customizable', label: 'Customizable' }
+  { tag: 'Audio responsive', label: 'Audio Responsive' },
+  { tag: '3D', label: '3D' },
+  { tag: 'Customizable', label: 'Customizable' },
+  { tag: 'Puppet Warp', label: 'Puppet Warp' },
+  { tag: 'HDR', label: 'HDR' },
+  { tag: 'Media Integration', label: 'Media Integration' },
+  { tag: 'User Shortcut', label: 'User Shortcut' },
+  { tag: 'Video Texture', label: 'Video Texture' },
+  { tag: 'Asset Pack', label: 'Asset Pack' },
+  { tag: 'Verified', label: 'Verified' },
+  { tag: 'Multi-monitor optimized', label: 'Multi-monitor optimized' }
 ]
 
 export const WE_TYPES: FilterItem[] = [
@@ -31,12 +39,41 @@ export const WE_TYPES: FilterItem[] = [
 ]
 
 export const WE_ASSET_TYPES: FilterItem[] = [
+  { tag: 'Particle', label: 'Particle' },
+  { tag: 'Image', label: 'Image' },
   { tag: 'Sound', label: 'Sound' },
-  { tag: 'Shader', label: 'Shader' },
-  { tag: 'Texture', label: 'Texture' },
-  { tag: '3D', label: '3D' },
+  { tag: 'Model', label: 'Model' },
+  { tag: 'Text', label: 'Text' },
+  { tag: 'Sprite', label: 'Sprite' },
+  { tag: 'Fullscreen', label: 'Fullscreen' },
+  { tag: 'Composite', label: 'Composite' },
   { tag: 'Script', label: 'Script' },
-  { tag: 'Effect', label: 'Effect' }
+  { tag: 'Effect', label: 'Effect' },
+  { tag: 'Scripted Layer', label: 'Scripted Layer' }
+]
+
+export const WE_ASSET_GENRES: FilterItem[] = [
+  { tag: 'Audio Visualizer', label: 'Audio Visualizer' },
+  { tag: 'Background', label: 'Background' },
+  { tag: 'Character', label: 'Character' },
+  { tag: 'Clock', label: 'Clock' },
+  { tag: 'Fire', label: 'Fire' },
+  { tag: 'Interactive', label: 'Interactive' },
+  { tag: 'Magic', label: 'Magic' },
+  { tag: 'Post Processing', label: 'Post Processing' },
+  { tag: 'Smoke', label: 'Smoke' },
+  { tag: 'Space', label: 'Space' }
+]
+
+export const WE_SCRIPT_TYPES: FilterItem[] = [
+  { tag: 'Boolean', label: 'Boolean' },
+  { tag: 'Number', label: 'Number' },
+  { tag: 'Vec2', label: 'Vec2' },
+  { tag: 'Vec3', label: 'Vec3' },
+  { tag: 'Vec4', label: 'Vec4' },
+  { tag: 'String', label: 'String' },
+  { tag: 'No Animation', label: 'No Animation' },
+  { tag: 'Oversized', label: 'Oversized' }
 ]
 
 export const WE_AGE_RATINGS: FilterItem[] = [
@@ -79,3 +116,12 @@ export const WE_GENRES: FilterItem[] = [
   { tag: 'Vehicle', label: 'Vehicle' },
   { tag: 'Unspecified Genre', label: 'Unspecified Genre' }
 ]
+
+export function migrateTagSelection(selected: unknown, options: FilterItem[]): string[] {
+  if (!Array.isArray(selected)) return []
+  const known = new Map(options.map((o) => [o.tag.toLowerCase(), o.tag]))
+  return selected.flatMap((tag) => {
+    const match = typeof tag === 'string' ? known.get(tag.toLowerCase()) : undefined
+    return match ? [match] : []
+  })
+}

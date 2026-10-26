@@ -1,7 +1,7 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import * as path from 'path'
-import type { DisplayMode, EngineFlagPreset, EngineFlags, ExtraLibrary, SteamIdentity } from '@shared/types'
+import type { DisplayMode, EngineFlagPreset, EngineFlags, ExtraLibrary, LedSettings, SteamIdentity } from '@shared/types'
 import { BUILT_IN_PRESETS } from '@shared/engineFlags'
 import { isTranslucent, type Appearance } from '@shared/appearance'
 import type { CardBorders } from '@shared/cardBorders'
@@ -56,6 +56,10 @@ import {
   setDefaultAudioSensitivity,
   getDisablePuppetAnimation,
   setDisablePuppetAnimation,
+  getScriptLimits,
+  setScriptLimits,
+  getLeds,
+  setLeds,
   getDisableAnimations,
   getSteamIdentity,
   setSteamIdentity,
@@ -113,6 +117,8 @@ export function registerConfigHandlers(): void {
     ambientVolume: getAmbientVolume(),
     defaultAudioSensitivity: getDefaultAudioSensitivity(),
     disablePuppetAnimation: getDisablePuppetAnimation(),
+    scriptLimits: getScriptLimits(),
+    leds: getLeds(),
     disableAnimations: getDisableAnimations(),
     steamIdentity: getSteamIdentity(),
     ignoredCreators: getIgnoredCreators(),
@@ -234,6 +240,16 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle(IpcChannels.CONFIG_SET_DISABLE_PUPPET_ANIMATION, (_e, disabled: boolean) => {
     setDisablePuppetAnimation(disabled)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_SCRIPT_LIMITS, (_e, enabled: boolean) => {
+    setScriptLimits(enabled)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_LEDS, (_e, leds: LedSettings) => {
+    setLeds(leds)
     return { ok: true }
   })
 

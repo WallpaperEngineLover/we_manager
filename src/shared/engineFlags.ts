@@ -72,6 +72,7 @@ export function engineFlagArgs(flags: EngineFlags): string[] {
   const args: string[] = []
   if (flags.disableParticles) args.push('--disable-particles')
   if (flags.disableMouse) args.push('--disable-mouse')
+  if (flags.noDesktopIcons) args.push('--no-desktop-icons')
   if (flags.noAudioProcessing) args.push('--no-audio-processing')
   if (flags.fullscreenPause === 'off') args.push('--no-fullscreen-pause')
   if (flags.fullscreenPause === 'active-only') args.push('--fullscreen-pause-only-active')
@@ -90,6 +91,12 @@ export function engineFlagArgs(flags: EngineFlags): string[] {
   if (flags.webFrames && flags.webFrames !== 'auto') args.push('--web-frames', flags.webFrames)
   if (flags.frameLimiter && flags.frameLimiter !== 'budget') args.push('--frame-limiter', flags.frameLimiter)
   if (flags.hrtf && flags.hrtf !== 'auto') args.push('--hrtf', flags.hrtf)
+  if (flags.transition && flags.transition !== 'none') {
+    args.push('--transition', flags.transition)
+    if (flags.transitionDuration && flags.transitionDuration !== '600') {
+      args.push('--transition-duration', flags.transitionDuration)
+    }
+  }
   if (flags.batteryFps === 'pause') args.push('--pause-on-battery')
   else if (flags.batteryFps && flags.batteryFps !== 'off') args.push('--fps-battery', flags.batteryFps)
   if (flags.idlePause && flags.idlePause !== 'off') args.push('--idle-pause', flags.idlePause)

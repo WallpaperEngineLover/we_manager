@@ -7,7 +7,8 @@ linux-wallpaperengine wallpaper, which would otherwise cover them. The surface t
 wl_region), clicks go to the desktop underneath.
 
 Launch with: LD_PRELOAD=<libgtk4-layer-shell.so.0> GDK_BACKEND=wayland python3 this.py [CONNECTOR]
-Exit codes: 2 a Python module or typelib is missing, 3 no layer-shell, 4 no monitor
+Exit codes: 2 a Python module or typelib is missing, 3 no layer-shell, 4 no monitor, 5 monitors plugged or unplugged
+(the caller starts the overlays again, one per monitor)
 """
 
 import configparser
@@ -32,9 +33,12 @@ except (ImportError, ValueError) as e:
 
 APPLETSRC = os.path.expanduser('~/.config/plasma-org.kde.plasma.desktop-appletsrc')
 
+FOLDER_PLUGINS = ('org.kde.plasma.folder', 'org.kde.desktopcontainment')
+
 ICON_SIZES = [22, 32, 48, 64, 96, 128, 256]
 SMALL_SPACING = 4
 SMALL_ICON = 16
+EXIT_MONITORS_CHANGED = 5
 
 
 def read_config(path):
@@ -68,11 +72,12 @@ def folder_view_containments(cp):
         parts = section.split('][')
         if len(parts) != 2 or parts[0] != 'Containments':
             continue
-        if cp.get(section, 'plugin', fallback='') != 'org.kde.desktopcontainment':
+        if cp.get(section, 'plugin', fallback='') not in FOLDER_PLUGINS:
             continue
         general = section + '][General'
         found.append({
             'screen': cp.getint(section, 'lastScreen', fallback=0),
+            'activity': cp.get(section, 'activityId', fallback=''),
             'general': dict(cp.items(general)) if cp.has_section(general) else {},
         })
     found.sort(key=lambda c: c['screen'])
@@ -83,8 +88,59 @@ def folder_view_for(cp, screen_index):
     found = folder_view_containments(cp)
     for c in found:
         if c['screen'] == screen_index:
-            return c['general']
-    return found[0]['general'] if found else {}
+            return c
+    return found[0] if found else {'screen': screen_index, 'activity': '', 'general': {}}
+
+
+FLOATING_GAP = 16
+
+
+def plasma_layout(geo, fallback):
+    """Plasma's screen number for a monitor geometry (its numbering is not GDK's monitor order) and the space its panels
+    take from each edge, (left, top, right, bottom); None for the space when Plasma doesn't answer"""
+    script = ('for (var i = 0; i < desktops().length; i++) { var d = desktops()[i]; var g = screenGeometry(d.screen); '
+              'print("D " + d.screen + " " + g.left + " " + g.top + " " + g.width + " " + g.height + "\\n"); } '
+              'for (var i = 0; i < panels().length; i++) { var p = panels()[i]; '
+              'print("P " + p.screen + " " + p.location + " " + p.height + " " + p.floating + " " + p.hiding + "\\n"); }')
+    try:
+        proxy = Gio.DBusProxy.new_for_bus_sync(Gio.BusType.SESSION, Gio.DBusProxyFlags.DO_NOT_LOAD_PROPERTIES, None,
+                                               'org.kde.plasmashell', '/PlasmaShell', 'org.kde.PlasmaShell', None)
+        reply = proxy.call_sync('evaluateScript', GLib.Variant('(s)', (script,)), Gio.DBusCallFlags.NONE, 3000, None)
+        lines = [line.split() for line in reply.unpack()[0].splitlines()]
+    except GLib.Error:
+        return fallback, None
+    screen = fallback
+    reserved = {'left': 0, 'top': 0, 'right': 0, 'bottom': 0}
+    matched = False
+    try:
+        for parts in lines:
+            if len(parts) == 6 and parts[0] == 'D' and tuple(int(v) for v in parts[2:]) == (geo.x, geo.y, geo.width, geo.height):
+                screen = int(parts[1])
+                matched = True
+        for parts in lines:
+            if len(parts) == 6 and parts[0] == 'P' and int(parts[1]) == screen and parts[2] in reserved and parts[5] == 'none':
+                reserved[parts[2]] += int(parts[3]) + (FLOATING_GAP if parts[4] == 'true' else 0)
+    except ValueError:
+        return fallback, None
+    if not matched:
+        return fallback, None
+    return screen, (reserved['left'], reserved['top'], reserved['right'], reserved['bottom'])
+
+
+def screen_mapping(cp):
+    """Which screen shows which file of the desktop folder: desktop:/<name>,<screen>,<activity> triples"""
+    raw = cp.get('ScreenMapping', 'screenMapping', fallback='') if cp.has_section('ScreenMapping') else ''
+    parts = raw.split(',')
+    mapping = {}
+    for i in range(0, len(parts) - 2, 3):
+        name = parts[i]
+        if name.startswith('desktop:/'):
+            name = urllib.parse.unquote(name[len('desktop:/'):])
+        try:
+            mapping[(name, parts[i + 2])] = int(parts[i + 1])
+        except ValueError:
+            continue
+    return mapping
 
 
 def desktop_dir(general):
@@ -101,7 +157,7 @@ def desktop_dir(general):
 
 
 def saved_positions(general, width, height):
-    """Folder View keeps one entry per resolution: [columns, rows, name, column, row, ...]"""
+    """Folder View keeps one entry per resolution: [item count, cells per stripe, name, stripe, index in stripe, ...]"""
     raw = general.get('positions', '')
     if not raw:
         return {}
@@ -117,6 +173,8 @@ def saved_positions(general, width, height):
         name = str(arr[i])
         if name.startswith('desktop:/'):
             name = urllib.parse.unquote(name[len('desktop:/'):])
+        elif name.startswith('file://'):
+            name = os.path.basename(urllib.parse.unquote(name))
         try:
             icons[name] = (int(arr[i + 1]), int(arr[i + 2]))
         except (TypeError, ValueError):
@@ -129,10 +187,14 @@ def icon_for_path(path):
     try:
         info = Gio.File.new_for_path(path).query_info('standard::icon,standard::content-type',
                                                        Gio.FileQueryInfoFlags.NONE, None)
+        content_type = info.get_content_type()
         icon = info.get_icon()
+        if content_type == 'application/x-zerosize':
+            content_type = Gio.content_type_guess(path, None)[0]
+            icon = Gio.content_type_get_icon(content_type)
         if isinstance(icon, Gio.ThemedIcon):
             names = [n for n in icon.get_names() if n != 'text-x-generic']
-        generic = Gio.content_type_get_generic_icon_name(info.get_content_type())
+        generic = Gio.content_type_get_generic_icon_name(content_type)
         if generic:
             names.append(generic)
     except GLib.Error:
@@ -151,7 +213,7 @@ def desktop_entry(path):
         return None, None
 
 
-def read_entries(directory, dirs_first, descending):
+def read_entries(directory, dirs_first, descending, entry_names):
     entries = []
     try:
         names = os.listdir(directory)
@@ -164,6 +226,8 @@ def read_entries(directory, dirs_first, descending):
         label, icon = (None, None)
         if name.endswith('.desktop'):
             label, icon = desktop_entry(path)
+            if not entry_names:
+                label = None
         entries.append({
             'file': name,
             'label': label or name,
@@ -200,12 +264,29 @@ class Metrics:
         return int(max(container - count * cell, 0) / count)
 
 
+def split_between_screens(entries, mapping, containment, cp):
+    """With one Folder View per screen on the desktop folder, every file is shown on one screen only, a new file (not in the mapping yet) on the last one (checked on Plasma 6.7 with two screens)"""
+    screens = sorted(c['screen'] for c in folder_view_containments(cp) if c['activity'] == containment['activity'])
+    if len(screens) < 2:
+        return entries
+    here = containment['screen']
+    mine = []
+    for e in entries:
+        target = mapping.get((e['file'], containment['activity']))
+        if target not in screens:
+            target = screens[-1]
+        if target == here:
+            mine.append(e)
+    return mine
+
+
 def place(entries, saved, general, m, view_w, view_h):
     """Cell (column, row) per entry: saved ones stay, the others take the free cells in flow order"""
     columns_first = general.get('arrangement', '0') == '1'
     right = general.get('alignment', '0') == '1'
     per_row = max(view_w // m.cell_w, 1)
     per_col = max(view_h // m.cell_h, 1)
+    saved = {name: (stripe, index) if columns_first else (index, stripe) for name, (stripe, index) in saved.items()}
     taken = set(saved.values())
     cells = {}
     cursor = 0
@@ -262,7 +343,7 @@ def main():
         print(f'no monitor {connector}', file=sys.stderr)
         sys.exit(4)
 
-    state = {'window': None, 'layer': None, 'size': (0, 0), 'font_px': 20, 'rebuild': 0}
+    state = {'window': None, 'layer': None, 'size': (0, 0), 'font_px': 20, 'rebuild': 0, 'leaving': False, 'exit': 0}
     empty = cairo.Region()
 
     def font_height_px():
@@ -290,12 +371,21 @@ def main():
         if view_w <= 0 or view_h <= 0:
             return False
 
-        general = folder_view_for(read_config(APPLETSRC), index)
-        m = Metrics(general, state['font_px'], view_w, view_h)
+        cp = read_config(APPLETSRC)
         geo = monitor.get_geometry()
+        screen, reserved = plasma_layout(geo, index)
+        pad_left, pad_top, pad_right, pad_bottom = reserved or (0, 0, 0, 0)
+        view_w -= pad_left + pad_right
+        view_h -= pad_top + pad_bottom
+        containment = folder_view_for(cp, screen)
+        general = containment['general']
+        m = Metrics(general, state['font_px'], view_w, view_h)
         saved = saved_positions(general, geo.width, geo.height)
+        on_desktop = general.get('url', '') in ('', 'desktop:/')
         entries = read_entries(desktop_dir(general), general.get('sortDirsFirst', 'true') != 'false',
-                               general.get('sortDesc', 'false') == 'true')
+                               general.get('sortDesc', 'false') == 'true', on_desktop)
+        if on_desktop:
+            entries = split_between_screens(entries, screen_mapping(cp), containment, cp)
         cells, right, per_row = place(entries, saved, general, m, view_w, view_h)
         theme = Gtk.IconTheme.get_for_display(display)
 
@@ -305,7 +395,7 @@ def main():
             if right:
                 x = view_w - (col + 1) * m.cell_w
             widget = icon_widget(e, m, theme)
-            layer.put(widget, max(0, x), max(0, row * m.cell_h))
+            layer.put(widget, pad_left + max(0, x), pad_top + max(0, row * m.cell_h))
             state['children'].append(widget)
         return False
 
@@ -359,9 +449,21 @@ def main():
 
         state['rebuild'] = GLib.timeout_add(300, run)
 
+    def on_monitors_changed(*_):
+        if not state['leaving']:
+            state['leaving'] = True
+            GLib.timeout_add(3000, leave)
+
+    def leave():
+        state['exit'] = EXIT_MONITORS_CHANGED
+        app.quit()
+        return False
+
     def on_activate(app):
         nonlocal window
         window = Gtk.Window(application=app)
+        screen, reserved = plasma_layout(monitor.get_geometry(), index)
+        state['reserved'] = reserved
         Gtk4LayerShell.init_for_window(window)
         Gtk4LayerShell.set_layer(window, Gtk4LayerShell.Layer.BOTTOM)
         Gtk4LayerShell.set_namespace(window, 'desktop')
@@ -369,7 +471,7 @@ def main():
         for edge in (Gtk4LayerShell.Edge.TOP, Gtk4LayerShell.Edge.BOTTOM,
                      Gtk4LayerShell.Edge.LEFT, Gtk4LayerShell.Edge.RIGHT):
             Gtk4LayerShell.set_anchor(window, edge, True)
-        Gtk4LayerShell.set_exclusive_zone(window, 0)
+        Gtk4LayerShell.set_exclusive_zone(window, -1 if state['reserved'] else 0)
         Gtk4LayerShell.set_keyboard_mode(window, Gtk4LayerShell.KeyboardMode.NONE)
 
         state['font_px'] = font_height_px()
@@ -407,7 +509,7 @@ def main():
         if surface:
             surface.connect('layout', on_layout)
 
-        general = folder_view_for(read_config(APPLETSRC), index)
+        general = folder_view_for(read_config(APPLETSRC), screen)['general']
         watched = [Gio.File.new_for_path(desktop_dir(general)),
                    Gio.File.new_for_path(os.path.dirname(APPLETSRC))]
         state['monitors'] = []
@@ -419,11 +521,13 @@ def main():
             mon.connect('changed', schedule_rebuild)
             state['monitors'].append(mon)
         monitor.connect('notify::geometry', schedule_rebuild)
+        monitors.connect('items-changed', on_monitors_changed)
 
     window = None
     app = Gtk.Application(application_id=f'com.wemanager.desktop-icons-overlay.screen{index}')
     app.connect('activate', on_activate)
     app.run(None)
+    sys.exit(state['exit'])
 
 
 if __name__ == '__main__':

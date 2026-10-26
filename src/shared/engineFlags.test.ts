@@ -19,6 +19,7 @@ describe('engineFlagArgs', () => {
     expect(engineFlagArgs({ fullscreenPause: 'off' })).toEqual(['--no-fullscreen-pause'])
     expect(engineFlagArgs({ fullscreenPause: 'default' })).toEqual([])
     expect(engineFlagArgs({ hdr: true })).toEqual(['--hdr'])
+    expect(engineFlagArgs({ noDesktopIcons: true })).toEqual(['--no-desktop-icons'])
     expect(engineFlagArgs({ postProcessing: 'ultra', volumetrics: 'high', shadows: 'disabled' })).toEqual([
       '--post-processing',
       'ultra',
@@ -72,5 +73,20 @@ describe('hasEngineFlags', () => {
     expect(hasEngineFlags(undefined)).toBe(false)
     expect(hasEngineFlags({ disableMouse: undefined })).toBe(false)
     expect(hasEngineFlags({ disableMouse: false })).toBe(true)
+  })
+})
+
+describe('transition flags', () => {
+  it('sends the transition and a non default length only when a transition is set', () => {
+    expect(engineFlagArgs({ transition: 'none', transitionDuration: '1000' })).toEqual([])
+    expect(engineFlagArgs({ transitionDuration: '1000' })).toEqual([])
+    expect(engineFlagArgs({ transition: 'fade' })).toEqual(['--transition', 'fade'])
+    expect(engineFlagArgs({ transition: 'zoom', transitionDuration: '600' })).toEqual(['--transition', 'zoom'])
+    expect(engineFlagArgs({ transition: 'slide-left', transitionDuration: '1500' })).toEqual([
+      '--transition',
+      'slide-left',
+      '--transition-duration',
+      '1500'
+    ])
   })
 })

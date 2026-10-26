@@ -52,6 +52,9 @@ voting. Without Steam the app still works as a local library manager.
   battery or when idle, background layer, SSAA and MSAA, post processing, shadows, HDR output, hardware decoding.
 - Audio: automute, silent mode, volume, audio processing and HRTF.
 - Startup and tray, update notices for the app and the engine, library folders, backups, the desktop icons overlay.
+- Fonts for wallpapers: wallpapers that need a Windows font this system lacks are flagged, and fonts you add are used by the engine.
+- RGB lighting: sends the wallpaper's colors to the devices of an OpenRGB server (`openrgb --server`) through the engine's `--leds`.
+- Stop runaway scripts (off by default, real Wallpaper Engine has no such limits).
 - Appearance: theme, accent color, window transparency and KDE blur, card sizes and borders, animated previews always
   or on hover.
 - 13 languages: English, German, Spanish, French, Italian, Japanese, Korean, Polish, Portuguese, Russian, Turkish and
@@ -59,7 +62,7 @@ voting. Without Steam the app still works as a local library manager.
 
 **Engine management**
 - Downloads and updates the prebuilt engine, or builds it from source, and installs the system libraries it is missing
-  (see Notes). Without the engine it can still set a wallpaper through hyprpaper, swww/awww or swaybg.
+  (see Notes; on Arch also the `libnode` the scripting needs). Without the engine it can still set a wallpaper through hyprpaper, swww/awww or swaybg.
 
 ## Installing
 
@@ -145,6 +148,6 @@ npm run lint
   compositor binding writes `{"leftDown":true}` into that file while the left button is held, e.g.
   `echo '{"leftDown":true}' > "$XDG_RUNTIME_DIR/lwe-input-DP-1"`, and keeps refreshing it: the engine ignores
   the file once it is older than 2 seconds. WE Manager never writes the file itself.
-- Not done, these are engine side and tracked in the linux-wallpaperengine-kde repository: the fullscreen pause is
-  global per engine and ignores maximized windows on wlroots compositors, fractional scaling is rounded to an
-  integer scale, and the Flatpak sandbox cannot reach the Hyprland socket.
+- A fullscreen window pauses only the screen it is on on these compositors (maximized ones too with
+  `--pause-on-maximized`, the engine's per output pause), fractional scaling renders at the real pixel size, and the
+  Flatpak reaches the Hyprland socket through the engine's helper.

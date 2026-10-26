@@ -26,7 +26,7 @@ interface LibraryStore {
   resolutionsVersion: number
 }
 
-const store = openStore<LibraryStore>({
+const fileStore = openStore<LibraryStore>({
   name: 'library',
   defaults: {
     wallpapers: {},
@@ -35,6 +35,25 @@ const store = openStore<LibraryStore>({
     resolutionsVersion: 0
   }
 })
+
+// electron-store re-reads and parses the whole file on every get, and the wallpaper map is megabytes
+let wallpapersCache: LibraryStore['wallpapers'] | null = null
+
+const store = {
+  get path(): string {
+    return fileStore.path
+  },
+  get<K extends keyof LibraryStore>(key: K): LibraryStore[K] {
+    if (key !== 'wallpapers') return fileStore.get(key)
+    wallpapersCache ??= fileStore.get('wallpapers')
+    return wallpapersCache as LibraryStore[K]
+  },
+  set<K extends keyof LibraryStore>(key: K, value: LibraryStore[K]): void {
+    if (key === 'wallpapers') wallpapersCache = null
+    fileStore.set(key, value)
+    if (key === 'wallpapers') wallpapersCache = value as LibraryStore['wallpapers']
+  }
+}
 
 export function initLibrary(): void {
   console.log('[Library] Store initialized at', store.path)
@@ -473,7 +492,7 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     ? new Set(await getSubscribedItems().catch(() => []))
     : new Set<string>()
 
-  const wallpapers = store.get('wallpapers')
+  const wallpapers = { ...store.get('wallpapers') }
   let imported = 0
   let skipped = 0
   let removed = 0
@@ -850,7 +869,6 @@ export function deleteFolder(id: string): void {
   store.set('folders', folders)
 }
 
-/** Pulls the wallpaper out of any other folder */
 export function addItemsToFolder(folderId: string, itemIds: string[]): WallpaperFolder | null {
   const folders = store.get('folders')
   const moving = new Set(itemIds)

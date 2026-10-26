@@ -33,6 +33,15 @@ export type WorkshopQueryType =
 
 export type ContentRating = 'everyone' | 'questionable' | 'mature' | 'uncategorized'
 
+export interface LedSettings {
+  enabled: boolean
+  server: string
+  /** percent, 100 leaves the colors as they are */
+  brightness: number
+  boost: boolean
+  reduceFps: boolean
+}
+
 /** See getSteamIdentity() */
 export type SteamIdentity = 'wallpaper-engine' | 'standalone'
 
@@ -179,6 +188,11 @@ export type FrameLimiter = 'budget' | 'fixed'
 /** auto = while the default output is headphones */
 export type HrtfMode = 'auto' | 'on' | 'off'
 
+export type TransitionMode = 'none' | 'fade' | 'slide-left' | 'slide-right' | 'wipe-left' | 'wipe-right' | 'zoom'
+
+/** --transition-duration in milliseconds */
+export type TransitionDuration = '300' | '600' | '1000' | '1500' | '2500'
+
 /** FPS limit on battery, off = same as plugged in */
 export type BatteryFps = 'off' | 'pause' | '10' | '15' | '20' | '30'
 
@@ -187,6 +201,7 @@ export type IdlePause = 'off' | '1' | '5' | '10' | '15' | '30'
 
 export interface EngineFlags {
   disableParticles?: boolean
+  noDesktopIcons?: boolean
   disableMouse?: boolean
   disableAnimations?: boolean
   noAudioProcessing?: boolean
@@ -208,6 +223,8 @@ export interface EngineFlags {
   webFrames?: WebFramesMode
   frameLimiter?: FrameLimiter
   hrtf?: HrtfMode
+  transition?: TransitionMode
+  transitionDuration?: TransitionDuration
   /** --fps-battery / --pause-on-battery */
   batteryFps?: BatteryFps
   /** --idle-pause */
@@ -314,6 +331,20 @@ export interface LweSceneEffect {
   objectName: string
   /** e.g. "Blur/Sharpen", may be empty */
   group: string
+}
+
+export interface LweFontNeed {
+  kind: 'font' | 'emoji'
+  family: string
+  /** installed, a metric compatible clone stands in (compatible), or something else does (missing) */
+  status: 'installed' | 'compatible' | 'missing'
+  using: string
+  objects: string[]
+}
+
+export interface UserFont {
+  name: string
+  size: number
 }
 
 /** From --list-audio-objects */
@@ -473,7 +504,7 @@ export interface LweStatus {
 
 export interface DesktopIconsStatus {
   enabled: boolean
-  problem?: 'not-kde' | 'not-wayland' | 'missing-lib' | 'missing-modules' | 'failed'
+  problem?: 'not-kde' | 'not-wayland' | 'missing-lib' | 'unavailable-distro' | 'missing-modules' | 'failed'
   detail?: string
   command?: string
 }

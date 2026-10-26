@@ -29,6 +29,16 @@ export async function fetchLatestRelease(repo: string): Promise<GithubRelease | 
   return (await res.json()) as GithubRelease
 }
 
+export async function fetchReleaseByTag(repo: string, tag: string): Promise<GithubRelease | null> {
+  const res = await fetch(`https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(tag)}`, {
+    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'we-manager' },
+    signal: AbortSignal.timeout(20_000)
+  })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`GitHub answered ${res.status} ${res.statusText} for the ${tag} release of ${repo}.`)
+  return (await res.json()) as GithubRelease
+}
+
 export async function download(url: string, dest: string, total: number, onProgress: (fraction: number) => void): Promise<void> {
   const res = await fetch(url, { headers: { 'User-Agent': 'we-manager' } })
   if (!res.ok || !res.body) throw new Error(`Download failed: ${res.status} ${res.statusText}`)

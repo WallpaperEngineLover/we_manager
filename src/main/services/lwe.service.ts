@@ -5,6 +5,7 @@ import * as path from 'path'
 import * as os from 'os'
 import type { BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
+import { parseLweFontList } from './lwe-fonts'
 import type {
   LweStatus,
   LweInstallProgress,
@@ -13,11 +14,14 @@ import type {
   LweProperty,
   LweAudioObject,
   LweSceneEffect,
+  LweFontNeed,
   CrashPhase,
   EngineFlags,
   ScreenTarget,
   HwdecBackend,
   HrtfMode,
+  TransitionDuration,
+  TransitionMode,
   BatteryFps,
   IdlePause,
   SplitLayout,
@@ -53,8 +57,10 @@ import {
   getLweCmakeArgs,
   getAudioScreen,
   getAmbientVolume,
+  getLeds,
   getDefaultAudioSensitivity,
   getDisablePuppetAnimation,
+  getScriptLimits,
   getDisabledScreens
 } from './config.service'
 import { DEFAULT_LWE_FPS, DEFAULT_LWE_REPO } from '@shared/constants'
@@ -69,6 +75,16 @@ const execFileAsync = promisify(execFile)
 
 // AppRun points LD_LIBRARY_PATH etc. into /tmp/.mount_*, which CMake would cache
 const APPIMAGE_MOUNT = /^\/tmp\/\.mount_[^/]+(\/|$)/
+
+const DEFAULT_LED_SERVER = '127.0.0.1:6742'
+
+function validLedServer(value: string): string {
+  const server = value.trim()
+  const match = /^([^\s:]+)(?::(\d{1,5}))?$/.exec(server)
+  if (!match) return DEFAULT_LED_SERVER
+  if (match[2] !== undefined && (Number(match[2]) < 1 || Number(match[2]) > 65535)) return DEFAULT_LED_SERVER
+  return server
+}
 
 function isAppImagePath(entry: string, appDir: string | undefined): boolean {
   if (appDir && (entry === appDir || entry.startsWith(`${appDir}/`))) return true
@@ -340,7 +356,6 @@ export function suseFfmpegDevel(): string[] | null {
   }
 }
 
-// Arch only has libnode in the AUR, see installLweDeps
 const DEPS_ARCH = [
   'git', 'base-devel', 'cmake', 'pkg-config',
   'glew', 'freeglut', 'sdl2', 'lz4', 'ffmpeg',
@@ -432,7 +447,7 @@ export async function installLweDeps(win: BrowserWindow): Promise<boolean> {
     await execFileAsync(elevate, [pkgManager, ...installArgs, ...packages], {
       timeout: 600_000
     })
-    // libnode is AUR only on Arch, left to the user; openSUSE Leap's Node.js packages have no shared library at all
+    // libnode is AUR only on Arch, the settings page has a button for the CI's prebuilt package; openSUSE Leap's Node.js packages have no shared library at all
     const libnodeMissing = distro === 'arch' && !fs.existsSync('/usr/lib/libnode.so')
     const suseNoV8 = distro === 'suse' && !fs.readdirSync('/usr/lib64').some((name) => name.startsWith('libnode.so'))
     send({
@@ -857,6 +872,8 @@ function buildLweEnvVars(): string[] {
 
   if (diagnosticStats) vars.push('LWE_FRAME_STATS=1')
 
+  if (getScriptLimits()) vars.push('LWE_SCRIPT_TIMEOUT_MS=5000', 'LWE_SCRIPT_HEAP_MB=512', 'LWE_SCRIPT_BUFFER_MB=512')
+
   return vars
 }
 
@@ -947,7 +964,6 @@ function supportsFlag(flag: string): boolean {
   return helpText.includes(flag)
 }
 
-/** --screen-slot, several wallpapers on one screen */
 export function supportsSplitScreens(): boolean {
   return supportsFlag('--screen-slot')
 }
@@ -1055,6 +1071,12 @@ export function buildLweArgs(
   if (audioScreen) args.push('--audio-screen', audioScreen)
   const ambientVolume = getAmbientVolume()
   if (ambientVolume !== null) args.push('--ambient-volume', String(ambientVolume))
+  const leds = getLeds()
+  if (leds.enabled && supportsFlag('--leds-server')) {
+    args.push('--leds-server', validLedServer(leds.server), '--leds-brightness', String(leds.brightness))
+    if (!leds.boost) args.push('--leds-no-boost')
+    if (leds.reduceFps) args.push('--leds-reduce-fps')
+  }
   if (getDisablePuppetAnimation()) args.push('--render-debug', 'no-puppet-animation')
   const flags = options.engineFlags ?? {}
   if (flags.disableAnimations && supportsDisableAnimations()) args.push('--disable-animations')
@@ -1500,6 +1522,10 @@ function supportsHrtfHotswap(): boolean {
   return supportsFlag('hrtf=<mode>')
 }
 
+function supportsTransitionHotswap(): boolean {
+  return supportsFlag('transition=<kind>')
+}
+
 function supportsPowerHotswap(): boolean {
   return supportsFlag('fps-battery=<fps|off>') && supportsFlag('idle-pause=<minutes>')
 }
@@ -1518,6 +1544,7 @@ function launchKey(options: LweLaunchOptions): string {
       ...flags,
       ...(supportsHwdecHotswap() ? { hwdec: undefined } : {}),
       ...(supportsHrtfHotswap() ? { hrtf: undefined } : {}),
+      ...(supportsTransitionHotswap() ? { transition: undefined, transitionDuration: undefined } : {}),
       ...(supportsPowerHotswap() ? { batteryFps: undefined, idlePause: undefined } : {})
     })
   })
@@ -1557,6 +1584,8 @@ export interface HotswapOptions {
   disableAnimations?: boolean
   hwdec?: HwdecBackend
   hrtf?: HrtfMode
+  transition?: TransitionMode
+  transitionDuration?: TransitionDuration
   batteryFps?: BatteryFps
   idlePause?: IdlePause
 }
@@ -1578,6 +1607,8 @@ export function buildHotswapLines(options: HotswapOptions): string[] {
   if (options.disableAnimations !== undefined) lines.push(`disable-animations=${options.disableAnimations ? 'on' : 'off'}`)
   if (options.hwdec !== undefined) lines.push(`hwdec=${options.hwdec}`)
   if (options.hrtf !== undefined) lines.push(`hrtf=${options.hrtf}`)
+  if (options.transition !== undefined) lines.push(`transition=${options.transition}`)
+  if (options.transitionDuration !== undefined) lines.push(`transition-duration=${options.transitionDuration}`)
   if (options.batteryFps !== undefined) lines.push(`fps-battery=${options.batteryFps}`)
   if (options.idlePause !== undefined) lines.push(`idle-pause=${options.idlePause}`)
   if (options.volume !== undefined) lines.push(`volume=${options.volume}`)
@@ -1679,10 +1710,13 @@ export async function hotswapLweSettings(
 
 export function liveEngineFlagOptions(
   flags: EngineFlags
-): Pick<HotswapOptions, 'hwdec' | 'hrtf' | 'batteryFps' | 'idlePause'> {
+): Pick<HotswapOptions, 'hwdec' | 'hrtf' | 'transition' | 'transitionDuration' | 'batteryFps' | 'idlePause'> {
   return {
     ...(supportsHwdecHotswap() ? { hwdec: flags.hwdec ?? 'auto' } : {}),
     ...(supportsHrtfHotswap() ? { hrtf: flags.hrtf ?? 'auto' } : {}),
+    ...(supportsTransitionHotswap()
+      ? { transition: flags.transition ?? 'none', transitionDuration: flags.transitionDuration ?? '600' }
+      : {}),
     ...(supportsPowerHotswap() ? { batteryFps: flags.batteryFps ?? 'off', idlePause: flags.idlePause ?? 'off' } : {})
   }
 }
@@ -1898,6 +1932,25 @@ export async function listLweObjects(wallpaperPath: string): Promise<LweSceneObj
     const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
     throw new Error(`Failed to list wallpaper objects: ${msg}`, { cause: err })
   }
+}
+
+export async function listLweFonts(wallpaperPath: string): Promise<LweFontNeed[]> {
+  const status = getLweStatus()
+  if (!status.installed) return []
+  // older builds ignore unknown flags and render the wallpaper instead of exiting
+  if (!supportsFlag('--list-fonts')) return []
+
+  const args = ['--list-fonts']
+  const assetsDir = findWeAssetsDir()
+  if (assetsDir) args.push('--assets-dir', assetsDir)
+  args.push(wallpaperPath)
+
+  const { stdout } = await execFileAsync('env', [...buildLweEnvVars(), getLweBinaryPath(), ...args], {
+    timeout: 15_000,
+    maxBuffer: 5 * 1024 * 1024,
+    encoding: 'utf8'
+  })
+  return parseLweFontList(stdout)
 }
 
 // `  42 - Bloom (object=17 objectName="body" group="Lighting")`

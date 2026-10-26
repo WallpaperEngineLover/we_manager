@@ -26,6 +26,9 @@ import type { WorkshopQueryType } from '@shared/types'
 import clsx from 'clsx'
 import {
   WE_SHOW_ONLY,
+  WE_ASSET_GENRES,
+  WE_SCRIPT_TYPES,
+  migrateTagSelection,
   WE_TYPES,
   WE_ASSET_TYPES,
   WE_AGE_RATINGS,
@@ -56,18 +59,20 @@ const QUERY_TYPES: WorkshopQueryType[] = [
   'RankedByTotalUniqueSubscriptions',
   'RankedByLastUpdatedDate'
 ]
-const STORAGE_VERSION = 2
+const STORAGE_VERSION = 3
 
 const ALL_TAGS = {
   types: WE_TYPES.map((i) => i.tag),
   assetTypes: WE_ASSET_TYPES.map((i) => i.tag),
+  assetGenres: WE_ASSET_GENRES.map((i) => i.tag),
+  scriptTypes: WE_SCRIPT_TYPES.map((i) => i.tag),
   ageRatings: WE_AGE_RATINGS.map((i) => i.tag),
   resolutions: ALL_RESOLUTION_TAGS,
   genres: WE_GENRES.map((i) => i.tag)
 }
 type TagCategory = keyof typeof ALL_TAGS
 const TAG_CATEGORIES = Object.keys(ALL_TAGS) as TagCategory[]
-// showOnly and assetTypes always AND, these follow the Match setting
+// showOnly and the asset categories always AND, these follow the Match setting
 const OR_CATEGORIES: TagCategory[] = ['types', 'ageRatings', 'resolutions', 'genres']
 
 interface WorkshopFilterState extends Record<TagCategory, string[]> {
@@ -88,6 +93,8 @@ const DEFAULT_STATE: WorkshopFilterState = {
   showOnly: [],
   types: ['Scene', 'Video', 'Web'],
   assetTypes: [],
+  assetGenres: [],
+  scriptTypes: [],
   ageRatings: ALL_TAGS.ageRatings,
   resolutions: ALL_RESOLUTION_TAGS,
   genres: ALL_TAGS.genres,
@@ -101,6 +108,16 @@ const DEFAULT_STATE: WorkshopFilterState = {
 
 function loadFilters(stored: unknown): WorkshopFilterState {
   const parsed = stored as Partial<WorkshopFilterState>
+  if ((parsed['_v'] as number | undefined) === 2) {
+    return {
+      ...DEFAULT_STATE,
+      ...parsed,
+      _v: STORAGE_VERSION,
+      showOnly: migrateTagSelection(parsed.showOnly, WE_SHOW_ONLY),
+      assetTypes: migrateTagSelection(parsed.assetTypes, WE_ASSET_TYPES),
+      resolutions: migrateResolutionSelection(parsed.resolutions)
+    }
+  }
   if (parsed['_v'] !== STORAGE_VERSION) return DEFAULT_STATE
   const state = { ...DEFAULT_STATE, ...parsed }
   if ('resolutions' in parsed) state.resolutions = migrateResolutionSelection(parsed.resolutions)
@@ -189,6 +206,8 @@ export default function WorkshopBrowser({
   const steamTags: string[] = [
     ...filters.showOnly,
     ...effective.assetTypes,
+    ...effective.assetGenres,
+    ...effective.scriptTypes,
     ...OR_CATEGORIES.flatMap((key) =>
       filters.filterMode === 'and' || effective[key].length === 1 ? effective[key] : []
     )
@@ -599,6 +618,26 @@ export default function WorkshopBrowser({
                 selected={filters.assetTypes}
                 activeCount={effective.assetTypes.length}
                 onChange={(tags) => setFilter('assetTypes', tags)}
+              />
+            )}
+            {assetSelected && (
+              <TagFilterSection
+                title={t('filters.assetGenre')}
+                defaultOpen={false}
+                options={WE_ASSET_GENRES}
+                selected={filters.assetGenres}
+                activeCount={effective.assetGenres.length}
+                onChange={(tags) => setFilter('assetGenres', tags)}
+              />
+            )}
+            {assetSelected && (
+              <TagFilterSection
+                title={t('filters.scriptType')}
+                defaultOpen={false}
+                options={WE_SCRIPT_TYPES}
+                selected={filters.scriptTypes}
+                activeCount={effective.scriptTypes.length}
+                onChange={(tags) => setFilter('scriptTypes', tags)}
               />
             )}
             <TagFilterSection

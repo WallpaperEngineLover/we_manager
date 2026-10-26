@@ -173,7 +173,6 @@ export function getPrebuiltTarget(): LwePrebuiltTarget {
   }
 }
 
-/** Unresolved sonames */
 async function findMissingLibraries(binary: string): Promise<string[]> {
   // the portable launcher adds its bundled fallback libraries before running ldd
   const portable = fs.existsSync(`${binary}.bin`)

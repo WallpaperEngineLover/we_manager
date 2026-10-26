@@ -3,6 +3,7 @@ import Toggle from '../common/Toggle'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull, Film, Globe, Shield, Bug } from 'lucide-react'
 import type { LweStatus, LwePrebuiltTarget, LweInstallProgress, LinuxDistro, SteamIdentity, DesktopIconsStatus } from '../../../../shared/types'
+import AutomuteIgnoreSettings from './AutomuteIgnoreSettings'
 import PerformanceSettings from './PerformanceSettings'
 import DisplaySettings from './DisplaySettings'
 import SplitScreenSettings from './SplitScreenSettings'
@@ -10,6 +11,8 @@ import CardBorderSettings from './CardBorderSettings'
 import CardBadgeSettings from './CardBadgeSettings'
 import AppearanceSettings from './AppearanceSettings'
 import LibraryFoldersSettings from './LibraryFoldersSettings'
+import FontSettings from './FontSettings'
+import LedSettings from './LedSettings'
 import ScheduleSettings from './ScheduleSettings'
 import UpdateSettings from './UpdateSettings'
 import DiagnosticsSettings from './DiagnosticsSettings'
@@ -53,6 +56,10 @@ export default function SettingsView() {
   const lweInstalling = lweProgress !== null && !['done', 'error', 'installing-deps'].includes(lweProgress.stage)
   const depsInstalling = lweProgress?.stage === 'installing-deps'
   const [distro, setDistro] = useState<LinuxDistro | null>(null)
+  const { data: libnodeNeeded = false } = useQuery<boolean>({
+    queryKey: ['lwe-libnode-needed', lweProgress?.stage],
+    queryFn: () => window.electronAPI.lwe.libnodeNeeded()
+  })
   const [prebuiltTarget, setPrebuiltTarget] = useState<LwePrebuiltTarget | null>(null)
   const [showSourceBuild, setShowSourceBuild] = useState(false)
   const engineManaged = prebuiltTarget?.managed === true
@@ -89,6 +96,7 @@ export default function SettingsView() {
   const [defaultAudioSensitivity, setDefaultAudioSensitivity] = useState<string>('100')
   const [defaultAudioSensitivitySaved, setDefaultAudioSensitivitySaved] = useState(false)
   const [disablePuppetAnimation, setDisablePuppetAnimation] = useState(false)
+  const [scriptLimits, setScriptLimits] = useState(false)
 
   useEffect(() => {
     window.electronAPI.config.get().then((cfg) => {
@@ -114,6 +122,7 @@ export default function SettingsView() {
       setAmbientVolume(cfg.ambientVolume != null ? String(cfg.ambientVolume) : '')
       setDefaultAudioSensitivity(String(Math.round(cfg.defaultAudioSensitivity * 100)))
       setDisablePuppetAnimation(cfg.disablePuppetAnimation)
+      setScriptLimits(cfg.scriptLimits)
     })
     window.electronAPI.lwe.status().then(setLweStatus)
     window.electronAPI.lwe.detectDistro().then(setDistro)
@@ -170,6 +179,19 @@ export default function SettingsView() {
       setLweProgress({
         stage: 'error',
         message: t('lwe.depsFailed', { error: (err as Error).message }),
+        percentage: 0
+      })
+    }
+  }
+
+  async function handleInstallLibnode() {
+    setLweProgress({ stage: 'installing-deps', message: t('lwe.lookingUpLibnode'), percentage: 0 })
+    try {
+      await window.electronAPI.lwe.installLibnode()
+    } catch (err) {
+      setLweProgress({
+        stage: 'error',
+        message: t('lwe.libnodeFailed', { error: (err as Error).message }),
         percentage: 0
       })
     }
@@ -316,6 +338,12 @@ export default function SettingsView() {
     await window.electronAPI.config.setKillLweOnQuit(newVal)
   }
 
+  async function handleScriptLimitsToggle() {
+    const newVal = !scriptLimits
+    setScriptLimits(newVal)
+    await window.electronAPI.config.setScriptLimits(newVal)
+  }
+
   async function handleDisablePuppetAnimationToggle() {
     const newVal = !disablePuppetAnimation
     setDisablePuppetAnimation(newVal)
@@ -445,6 +473,10 @@ export default function SettingsView() {
             </div>
 
             <LibraryFoldersSettings />
+
+            <FontSettings />
+
+            <LedSettings />
 
             <div>
               <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
@@ -702,6 +734,18 @@ export default function SettingsView() {
                       {depsInstalling ? t('lwe.installingDeps') : t('lwe.installDeps')}
                     </button>
 
+                    {libnodeNeeded && (
+                      <button
+                        onClick={handleInstallLibnode}
+                        disabled={isBusy}
+                        title={t('lwe.installLibnodeHint')}
+                        className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
+                      >
+                        <Download size={14} />
+                        {t('lwe.installLibnode')}
+                      </button>
+                    )}
+
                     <button
                       onClick={handleInstallLwe}
                       disabled={isBusy}
@@ -949,6 +993,14 @@ export default function SettingsView() {
                   {t('settings.puppet')}
                 </span>
               </label>
+              <label className="mt-3 flex items-center gap-3 cursor-pointer">
+                <Toggle on={scriptLimits} onClick={handleScriptLimitsToggle} />
+                <span className="flex items-center gap-2 text-sm text-gray-300">
+                  <Bug size={16} />
+                  {t('settings.scriptLimits')}
+                </span>
+              </label>
+              <p className="mt-1 text-xs text-gray-600">{t('settings.scriptLimitsHint')}</p>
             </div>
           </div>
         )}
@@ -1057,6 +1109,8 @@ export default function SettingsView() {
               defaultFps={defaultFps ? Number(defaultFps) : null}
               onDefaultFpsChanged={(fps) => setDefaultFps(fps != null ? String(fps) : '')}
             />
+
+            <AutomuteIgnoreSettings />
 
             <ScheduleSettings />
           </div>

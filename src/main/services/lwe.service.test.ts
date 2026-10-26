@@ -13,6 +13,7 @@ vi.mock('./config.service', () => ({
   getLweCmakeArgs: () => null,
   getAudioScreen: () => null,
   getAmbientVolume: () => null,
+  getLeds: () => ({ enabled: false, server: '127.0.0.1:6742', brightness: 100, boost: true, reduceFps: false }),
   getDefaultAudioSensitivity: () => 1,
   getDisablePuppetAnimation: () => false
 }))
