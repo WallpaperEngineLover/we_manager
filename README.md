@@ -40,6 +40,8 @@ voting. Without Steam the app still works as a local library manager.
 - Per wallpaper: scaling, zoom, offset, corner color, FPS, the wallpaper's own user properties applied live, Wallpaper
   Engine's image filters and color options, layer and effect toggles, extra engine arguments, shortcuts for the
   wallpaper's buttons, and trimming a video to one part or several parts.
+- Animated transitions when another wallpaper takes over (fade, slide, wipe, zoom) with an adjustable length, set per
+  wallpaper.
 - Changes are hot-swapped into the running engine where that is possible. A wallpaper that crashes is recorded
   (on launch, on switch, while running) with a note and a "test fresh launch" button, and marked on its card.
 - **Playlists** per screen: a time per wallpaper or play videos to the end, shuffle or sort, favorites only, volume per
@@ -49,12 +51,16 @@ voting. Without Steam the app still works as a local library manager.
 
 **Settings**
 - Performance: built-in presets (Battery saver, Full quality, Never pause, Steam Deck) and your own, FPS limits (also on battery), pause when another window is fullscreen, maximized or focused, pause on
-  battery or when idle, background layer, SSAA and MSAA, post processing, shadows, HDR output, hardware decoding.
-- Audio: automute, silent mode, volume, audio processing and HRTF.
+  battery or when idle, the frame limiter (like Wallpaper Engine's one second budget or a fixed sleep), how web wallpapers hand
+  their frames to the engine (GPU buffers or shared memory), background layer, SSAA and MSAA, post processing, shadows,
+  HDR output, hardware decoding.
+- Audio: automute (with an ignore list of wallpapers that are never muted), silent mode, volume, audio processing and HRTF.
 - Startup and tray, update notices for the app and the engine, library folders, backups, the desktop icons overlay.
 - Fonts for wallpapers: wallpapers that need a Windows font this system lacks are flagged, and fonts you add are used by the engine.
 - RGB lighting: sends the wallpaper's colors to the devices of an OpenRGB server (`openrgb --server`) through the engine's `--leds`.
 - Stop runaway scripts (off by default, real Wallpaper Engine has no such limits).
+- Diagnostics: restarts a chosen wallpaper for a few seconds with detailed timings and saves a report for bug reports
+  (personal paths removed, nothing is uploaded), and clears the "crashes on launch" marks.
 - Appearance: theme, accent color, window transparency and KDE blur, card sizes and borders, animated previews always
   or on hover.
 - 13 languages: English, German, Spanish, French, Italian, Japanese, Korean, Polish, Portuguese, Russian, Turkish and
@@ -62,7 +68,9 @@ voting. Without Steam the app still works as a local library manager.
 
 **Engine management**
 - Downloads and updates the prebuilt engine, or builds it from source, and installs the system libraries it is missing
-  (see Notes; on Arch also the `libnode` the scripting needs). Without the engine it can still set a wallpaper through hyprpaper, swww/awww or swaybg.
+  (see Notes; on Arch also the `libnode` the scripting needs). It warns when the engine draws on the CPU (llvmpipe), and in
+  the Flatpak can install the NVIDIA graphics extension that matches the host driver. On GNOME Wayland it installs and
+  checks the engine's Shell extension. Without the engine it can still set a wallpaper through hyprpaper, swww/awww or swaybg.
 
 ## Installing
 
@@ -110,7 +118,8 @@ npm run lint
   (`src/main/services/desktop-icons-overlay.py`) draws KDE Folder View icons
   on a transparent layer-shell surface above the wallpaper. It needs python3,
   GTK4, gtk4-layer-shell and pycairo, and only works on Wayland.
-- On GNOME Wayland the engine needs its Shell extension, WE Manager offers to install it.
+- On GNOME Wayland the engine needs its Shell extension, WE Manager offers to install and update it (a first install needs
+  one log out and back in).
 - KDE blur needs X11: with blur on in a Plasma Wayland session the app restarts itself through XWayland.
 - The Steam connection only exists while the window is shown. Steam counts a process that initializes its API as a
   running game, which would show you as in-game and make Steam's game recording capture the wrong thing, so the
