@@ -18,7 +18,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Install clang for bindgen
         run: sudo apt-get update && sudo apt-get install -y clang libclang-dev
@@ -51,7 +51,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci

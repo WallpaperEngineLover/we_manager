@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarClock, Moon, Pencil, Play, Plus, Sun, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
@@ -38,12 +38,27 @@ function describeTrigger(trigger: ScheduleTrigger): string {
   return `${trigger.time}, ${days}`
 }
 
+const currentTime = (): Date => new Date()
+
 export default function ScheduleSettings() {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
   const { targets, perScreen } = useDisplayTargets()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [wallpaperFilter, setWallpaperFilter] = useState('')
+  const [now, setNow] = useState(currentTime)
+
+  useEffect(() => {
+    let id: ReturnType<typeof setInterval>
+    const first = setTimeout(() => {
+      setNow(currentTime())
+      id = setInterval(() => setNow(currentTime()), 60_000)
+    }, 60_000 - (Date.now() % 60_000))
+    return () => {
+      clearTimeout(first)
+      clearInterval(id)
+    }
+  }, [])
 
   const { data: rules = [] } = useQuery({
     queryKey: ['schedule'],
@@ -72,6 +87,7 @@ export default function ScheduleSettings() {
   }, [wallpapers, wallpaperFilter, selectedWallpaperId])
 
   function refresh() {
+    setNow(currentTime())
     queryClient.invalidateQueries({ queryKey: ['schedule'] })
   }
 
@@ -129,7 +145,7 @@ export default function ScheduleSettings() {
 
       <div className="mt-3 space-y-1.5">
         {rules.map((rule) => {
-          const next = rule.enabled && rule.trigger.type === 'time' ? nextFireTime(rule, new Date()) : null
+          const next = rule.enabled && rule.trigger.type === 'time' ? nextFireTime(rule, now) : null
           return (
             <div
               key={rule.id}

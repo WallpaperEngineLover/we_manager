@@ -40,6 +40,13 @@ finish-args:
   - --talk-name=org.mpris.MediaPlayer2.*
   - --talk-name=org.kde.StatusNotifierWatcher
   - --talk-name=org.freedesktop.Notifications
+  # lock and blanked display pause: logind's LockedHint, the screen savers' GetActive, Mutter's PowerSaveMode
+  - --system-talk-name=org.freedesktop.login1
+  - --talk-name=org.freedesktop.ScreenSaver
+  - --talk-name=org.gnome.ScreenSaver
+  - --talk-name=org.cinnamon.ScreenSaver
+  - --talk-name=org.mate.ScreenSaver
+  - --talk-name=org.gnome.Mutter.DisplayConfig
 
 modules:
   - name: linux-wallpaperengine

@@ -1,6 +1,6 @@
 {
   "name": "we-manager",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "type": "module",
   "description": "Wallpaper Engine workshop manager",
   "desktopName": "we-manager.desktop",
@@ -21,7 +21,7 @@
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
     "clsx": "^2.1.1",
-    "electron-store": "^11.0.2",
+    "electron-store": "^12.0.0",
     "koffi": "^3.1.2",
     "lucide-react": "^1.27.0",
     "react": "^19.2.8",
@@ -33,15 +33,15 @@
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.2.0",
-    "electron": "^43.7.11",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^45.0.0",
     "electron-builder": "^26.15.3",
-    "electron-vite": "^5.0.0",
+    "electron-vite": "^6.0.0",
     "oxlint": "^1.85.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^7.3.6",
-    "vitest": "^4.1.11"
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
   },
   "build": {
     "appId": "com.we-manager.app",

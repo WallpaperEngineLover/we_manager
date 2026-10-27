@@ -50,7 +50,7 @@ const store = {
   },
   set<K extends keyof LibraryStore>(key: K, value: LibraryStore[K]): void {
     if (key === 'wallpapers') wallpapersCache = null
-    fileStore.set(key, value)
+    fileStore.set(key as string, value)
     if (key === 'wallpapers') wallpapersCache = value as LibraryStore['wallpapers']
   }
 }
