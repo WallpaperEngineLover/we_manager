@@ -173,6 +173,7 @@ export const IpcChannels = {
   UPDATES_CHECK: 'updates:check',
   UPDATES_DISMISS: 'updates:dismiss',
   UPDATES_INSTALL_APP: 'updates:install-app',
+  UPDATES_VERSIONS: 'updates:versions',
   UPDATES_RESTART: 'updates:restart',
 
   DIAGNOSTICS_COLLECT: 'diagnostics:collect',

@@ -50,6 +50,7 @@ import type {
   ScheduleRule,
   CrashEvent,
   FavoriteStatus,
+  ReleaseChoice,
   UpdateChecks,
   UpdateStatus,
   DesktopIconsStatus,
@@ -364,8 +365,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LWE_INSTALL),
     prebuiltTarget: (): Promise<LwePrebuiltTarget> =>
       ipcRenderer.invoke(IpcChannels.LWE_PREBUILT_TARGET),
-    installPrebuilt: (): Promise<LweStatus> =>
-      ipcRenderer.invoke(IpcChannels.LWE_INSTALL_PREBUILT),
+    installPrebuilt: (tag?: string): Promise<LweStatus> =>
+      ipcRenderer.invoke(IpcChannels.LWE_INSTALL_PREBUILT, tag),
     uninstall: (): Promise<{ ok: boolean; message: string }> =>
       ipcRenderer.invoke(IpcChannels.LWE_UNINSTALL),
     launch: (wallpaperPath: string, options?: { screen?: ScreenTarget; fps?: number }): Promise<{ ok: boolean; running: boolean }> =>
@@ -472,9 +473,11 @@ const api = {
     setChecks: (checks: UpdateChecks): Promise<UpdateStatus> =>
       ipcRenderer.invoke(IpcChannels.UPDATES_SET_CHECKS, checks),
     check: (): Promise<UpdateStatus> => ipcRenderer.invoke(IpcChannels.UPDATES_CHECK),
-    dismiss: (target: UpdateTarget, version: string): Promise<UpdateStatus> =>
-      ipcRenderer.invoke(IpcChannels.UPDATES_DISMISS, target, version),
-    installApp: (): Promise<UpdateStatus> => ipcRenderer.invoke(IpcChannels.UPDATES_INSTALL_APP),
+    dismiss: (target: UpdateTarget, version: string, forever = false): Promise<UpdateStatus> =>
+      ipcRenderer.invoke(IpcChannels.UPDATES_DISMISS, target, version, forever),
+    versions: (target: UpdateTarget): Promise<ReleaseChoice[]> =>
+      ipcRenderer.invoke(IpcChannels.UPDATES_VERSIONS, target),
+    installApp: (tag?: string): Promise<UpdateStatus> => ipcRenderer.invoke(IpcChannels.UPDATES_INSTALL_APP, tag),
     restart: (): Promise<void> => ipcRenderer.invoke(IpcChannels.UPDATES_RESTART)
   },
 

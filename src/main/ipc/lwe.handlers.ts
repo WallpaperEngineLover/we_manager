@@ -68,8 +68,9 @@ export function registerLweHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(IpcChannels.LWE_PREBUILT_TARGET, () => getPrebuiltTarget())
 
-  ipcMain.handle(IpcChannels.LWE_INSTALL_PREBUILT, async () => {
-    await installLwePrebuilt(win)
+  ipcMain.handle(IpcChannels.LWE_INSTALL_PREBUILT, async (_e, tag?: string) => {
+    if (tag !== undefined && typeof tag !== 'string') throw new Error('The version has to be a release tag.')
+    await installLwePrebuilt(win, tag)
     invalidateEnvCache()
     refreshEngineUpdate()
     return getLweStatus()

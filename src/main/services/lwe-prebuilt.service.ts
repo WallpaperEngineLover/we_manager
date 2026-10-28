@@ -9,7 +9,7 @@ import type { LweInstallProgress, LwePrebuiltTarget } from '@shared/types'
 import { isCommandAvailable } from '../utils/platform'
 import { getLwePrebuiltDir } from '../utils/paths'
 import { isFlatpak } from '../utils/flatpak'
-import { downloadVerified, fetchLatestRelease } from '../utils/github'
+import { downloadVerified, fetchLatestRelease, fetchReleaseByTag, isVersionTag, type GithubRelease } from '../utils/github'
 import { buildCleanBuildEnv, isOstreeSystem, pacmanHasSyncDatabases, parseOsReleaseIds, readPrebuiltRelease, resetLweDetection } from './lwe.service'
 import { t } from '../i18n'
 
@@ -173,6 +173,14 @@ export function getPrebuiltTarget(): LwePrebuiltTarget {
   }
 }
 
+/** Whether a release has a build for this system, the distribution one or the portable fallback */
+export function hasPrebuiltAsset(release: GithubRelease): boolean {
+  const target = getPrebuiltTarget()
+  if (!target.supported || !target.asset) return false
+  const portable = assetName(isKdeSession() ? 'kde' : 'generic', 'portable')
+  return release.assets.some(a => a.name === target.asset || a.name === portable)
+}
+
 async function findMissingLibraries(binary: string): Promise<string[]> {
   // the portable launcher adds its bundled fallback libraries before running ldd
   const portable = fs.existsSync(`${binary}.bin`)
@@ -231,7 +239,7 @@ async function installMissingLibraries(distro: PrebuiltDistro, missing: string[]
   return false
 }
 
-export async function installLwePrebuilt(win: BrowserWindow): Promise<void> {
+export async function installLwePrebuilt(win: BrowserWindow, tag?: string): Promise<void> {
   const send = (progress: LweInstallProgress) => {
     win.webContents.send(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, progress)
   }
@@ -247,8 +255,9 @@ export async function installLwePrebuilt(win: BrowserWindow): Promise<void> {
     if (!target.supported || !target.asset || !distro) throw new Error(target.reason ?? 'No prebuilt build fits this system.')
 
     send({ stage: 'downloading', message: t('lwe.lookingUpRelease'), percentage: 2 })
-    const release = await fetchLatestRelease(LWE_RELEASE_REPO)
-    if (!release) throw new Error(`${LWE_RELEASE_REPO} has no releases yet.`)
+    if (tag !== undefined && !isVersionTag(tag)) throw new Error(`${tag} is not a version of the engine.`)
+    const release = tag ? await fetchReleaseByTag(LWE_RELEASE_REPO, tag) : await fetchLatestRelease(LWE_RELEASE_REPO)
+    if (!release) throw new Error(tag ? `${LWE_RELEASE_REPO} has no ${tag} release.` : `${LWE_RELEASE_REPO} has no releases yet.`)
     const portableAsset = assetName(isKdeSession() ? 'kde' : 'generic', 'portable')
     const asset = release.assets.find(a => a.name === target.asset) ?? release.assets.find(a => a.name === portableAsset)
     if (!asset) throw new Error(`Release ${release.tag_name} has no ${target.asset}.`)

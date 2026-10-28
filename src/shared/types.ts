@@ -549,9 +549,17 @@ export interface AvailableUpdate {
   publishedAt: string
 }
 
+export interface ReleaseChoice {
+  tag: string
+  publishedAt: string
+  prerelease: boolean
+}
+
 export interface AppUpdateProgress {
   stage: 'downloading' | 'installing' | 'ready' | 'error'
   percentage: number
+  /** Release tag being installed, so a notice for another version ignores it */
+  version?: string
   message?: string
 }
 
@@ -559,6 +567,7 @@ export interface UpdateStatus {
   checks: UpdateChecks | null
   checking: boolean
   checkedAt: number | null
+  checked: UpdateChecks
   error: string | null
   appVersion: string
   appInstall: AppInstallKind
@@ -566,8 +575,13 @@ export interface UpdateStatus {
   appProgress: AppUpdateProgress | null
   engineInstall: EngineInstallKind | null
   engineManagedBy?: string
+  /** Installed engine version when known (prebuilt tag, package version) */
+  engineVersion: string | null
   engine: AvailableUpdate | null
+  /** "Don't notify me again", kept in the config */
   dismissed: Partial<Record<UpdateTarget, string>>
+  /** Closed with the X, back after the next start */
+  snoozed: Partial<Record<UpdateTarget, string>>
 }
 
 export interface BackupProgressEvent {

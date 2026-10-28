@@ -6,18 +6,19 @@ import * as path from 'path'
 import { app, type BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import { APP_RELEASE_REPO, LWE_RELEASE_REPO } from '@shared/constants'
-import { isNewerVersion, parseVersion } from '@shared/updates'
+import { compareVersions, isNewerVersion, parseVersion } from '@shared/updates'
 import type {
   AppInstallKind,
   AppUpdateProgress,
   AvailableUpdate,
   EngineInstallKind,
+  ReleaseChoice,
   UpdateChecks,
   UpdateStatus,
   UpdateTarget
 } from '@shared/types'
 import { isFlatpak } from '../utils/flatpak'
-import { download, fetchLatestRelease, verifyAsset, type GithubRelease } from '../utils/github'
+import { download, fetchLatestRelease, fetchReleaseByTag, fetchReleases, isVersionTag, verifyAsset, type GithubRelease } from '../utils/github'
 import { owningPackage, packageVersion } from '../utils/packages'
 import { isCommandAvailable, runningAppImage } from '../utils/platform'
 import { relaunchApp } from '../utils/relaunch'
@@ -35,10 +36,13 @@ let appInstall: AppInstallKind | undefined
 let appRelease: GithubRelease | null = null
 let engineRelease: GithubRelease | null = null
 let checking = false
+let snoozed: Partial<Record<UpdateTarget, string>> = {}
 let checkedAt: number | null = null
+let checked: UpdateChecks = { app: false, engine: false }
 let lastError: string | null = null
 let appProgress: AppUpdateProgress | null = null
-let engine: { install: EngineInstallKind | null; managedBy?: string; update: AvailableUpdate | null } | null = null
+let installingVersion: string | undefined
+let engine: { install: EngineInstallKind | null; managedBy?: string; version: string | null; update: AvailableUpdate | null } | null = null
 
 function detectAppInstall(): AppInstallKind {
   if (isFlatpak()) return 'flatpak'
@@ -73,11 +77,11 @@ function nixVersion(real: string): string | undefined {
 function evaluateEngine(): void {
   const status = getLweStatus()
   if (!status.installed || !status.path) {
-    engine = { install: null, update: null }
+    engine = { install: null, version: null, update: null }
     return
   }
   if (isFlatpak()) {
-    engine = { install: 'bundled', update: null }
+    engine = { install: 'bundled', version: null, update: null }
     return
   }
 
@@ -107,18 +111,19 @@ function evaluateEngine(): void {
       if (builtAt < Date.parse(engineRelease.published_at)) update = releaseInfo(engineRelease, null)
     }
   }
-  engine = { install, managedBy, update }
+  engine = { install, managedBy, version, update }
 }
 
 export function getUpdateStatus(): UpdateStatus {
   appInstall ??= detectAppInstall()
   // needed before any check ran (setup screen, checks off)
   if (!engine) evaluateEngine()
-  const { install, managedBy, update } = engine!
+  const { install, managedBy, version, update } = engine!
   return {
     checks: getUpdateChecks(),
     checking,
     checkedAt,
+    checked,
     error: lastError,
     appVersion: app.getVersion(),
     appInstall,
@@ -126,8 +131,10 @@ export function getUpdateStatus(): UpdateStatus {
     appProgress,
     engineInstall: install,
     ...(managedBy ? { engineManagedBy: managedBy } : {}),
+    engineVersion: version,
     engine: update,
-    dismissed: getDismissedUpdates()
+    dismissed: getDismissedUpdates(),
+    snoozed
   }
 }
 
@@ -135,17 +142,20 @@ function push(): void {
   if (win && !win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_UPDATE_STATUS, getUpdateStatus())
 }
 
-export async function checkForUpdates(): Promise<UpdateStatus> {
-  const checks = getUpdateChecks()
+/** manual: look at everything whatever the automatic checks are set to */
+export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
+  const checks: UpdateChecks | null = manual ? { app: true, engine: true } : getUpdateChecks()
   if (checking || !checks) return getUpdateStatus()
   checking = true
   lastError = null
   push()
   const errors: string[] = []
+  const done: UpdateChecks = { app: false, engine: false }
   try {
     if (checks.app) {
       try {
         appRelease = await fetchLatestRelease(APP_RELEASE_REPO)
+        done.app = true
       } catch (err) {
         errors.push((err as Error).message)
       }
@@ -155,6 +165,7 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
     if (checks.engine && !isFlatpak()) {
       try {
         engineRelease = await fetchLatestRelease(LWE_RELEASE_REPO)
+        done.engine = true
       } catch (err) {
         errors.push((err as Error).message)
       }
@@ -163,6 +174,7 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
     }
     evaluateEngine()
     checkedAt = Date.now()
+    checked = done
   } finally {
     checking = false
     lastError = errors.length > 0 ? errors.join(' ') : null
@@ -185,18 +197,21 @@ export function setUpdateChecksAndCheck(checks: UpdateChecks): UpdateStatus {
 
 /** Brings dismissed notices back */
 export function checkNow(): Promise<UpdateStatus> {
+  snoozed = {}
   setDismissedUpdates({})
-  return checkForUpdates()
+  return checkForUpdates(true)
 }
 
-export function dismissUpdate(target: UpdateTarget, version: string): UpdateStatus {
-  setDismissedUpdates({ ...getDismissedUpdates(), [target]: version })
+/** forever: kept in the config, otherwise hidden until the app starts again */
+export function dismissUpdate(target: UpdateTarget, version: string, forever: boolean): UpdateStatus {
+  if (forever) setDismissedUpdates({ ...getDismissedUpdates(), [target]: version })
+  else snoozed = { ...snoozed, [target]: version }
   push()
   return getUpdateStatus()
 }
 
 function setAppProgress(progress: AppUpdateProgress | null): void {
-  appProgress = progress
+  appProgress = progress && installingVersion ? { ...progress, version: installingVersion } : progress
   push()
 }
 
@@ -230,7 +245,11 @@ async function installDeb(release: GithubRelease): Promise<void> {
     await verifyAsset(file, asset)
     setAppProgress({ stage: 'installing', percentage: 85 })
     // dpkg alone wouldn't resolve new dependencies
-    const command = isCommandAvailable('apt-get') ? ['apt-get', 'install', '-y', file] : ['dpkg', '-i', file]
+    // apt refuses to go back to an older version unless told to, but only for a deliberate downgrade
+    const downgrade = (compareVersions(release.tag_name, app.getVersion()) ?? 0) < 0
+    const command = isCommandAvailable('apt-get')
+      ? ['apt-get', 'install', '-y', ...(downgrade ? ['--allow-downgrades'] : []), file]
+      : ['dpkg', '-i', file]
     const elevate = isCommandAvailable('pkexec') ? 'pkexec' : 'sudo'
     try {
       await execFileAsync(elevate, command, { timeout: 600_000, maxBuffer: 10 * 1024 * 1024 })
@@ -245,19 +264,42 @@ async function installDeb(release: GithubRelease): Promise<void> {
   }
 }
 
-export async function installAppUpdate(): Promise<UpdateStatus> {
-  const update = appUpdate()
-  if (!appRelease || !update || appProgress?.stage === 'downloading' || appProgress?.stage === 'installing') {
+function hasAppAsset(release: GithubRelease): boolean {
+  appInstall ??= detectAppInstall()
+  const suffix = appInstall === 'deb' ? '.deb' : '.AppImage'
+  return release.assets.some((a) => a.name.endsWith(suffix))
+}
+
+/** usable: the engine's check for an asset that fits this system, the app's follows from how it was installed */
+export async function listVersions(target: UpdateTarget, usable?: (release: GithubRelease) => boolean): Promise<ReleaseChoice[]> {
+  const releases = await fetchReleases(target === 'app' ? APP_RELEASE_REPO : LWE_RELEASE_REPO)
+  const fits = target === 'app' ? hasAppAsset : usable
+  return releases
+    .filter((r) => !fits || fits(r))
+    .map((r) => ({ tag: r.tag_name, publishedAt: r.published_at, prerelease: r.prerelease === true }))
+    .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
+}
+
+/** Without a tag: the pending update. With one: that release, newer or older than the running version */
+export async function installAppUpdate(tag?: string): Promise<UpdateStatus> {
+  if (appProgress?.stage === 'downloading' || appProgress?.stage === 'installing') return getUpdateStatus()
+  if (tag !== undefined && (typeof tag !== 'string' || !isVersionTag(tag))) {
+    installingVersion = undefined
+    setAppProgress({ stage: 'error', percentage: 0, message: `${String(tag)} is not a version of WE Manager.` })
     return getUpdateStatus()
   }
+  if (!tag && !appUpdate()) return getUpdateStatus()
   appInstall ??= detectAppInstall()
+  installingVersion = tag ?? appRelease?.tag_name
   setAppProgress({ stage: 'downloading', percentage: 0 })
   try {
+    const release = tag ? await fetchReleaseByTag(APP_RELEASE_REPO, tag) : appRelease
+    if (!release) throw new Error(`${APP_RELEASE_REPO} has no ${tag} release.`)
     const appImage = runningAppImage()
     if (appInstall === 'appimage' && appImage) {
-      await installAppImage(appRelease, appImage)
+      await installAppImage(release, appImage)
     } else if (appInstall === 'deb') {
-      await installDeb(appRelease)
+      await installDeb(release)
     } else {
       throw new Error(`A ${appInstall} install updates outside WE Manager.`)
     }

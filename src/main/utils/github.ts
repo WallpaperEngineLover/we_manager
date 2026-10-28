@@ -16,7 +16,18 @@ export interface GithubRelease {
   html_url: string
   body: string | null
   published_at: string
+  draft?: boolean
+  prerelease?: boolean
   assets: GithubAsset[]
+}
+
+/** The repos also publish helper releases (libnode for Arch); only "v0.9.8" style tags are versions of the program */
+export function isVersionTag(tag: string): boolean {
+  return /^v\d/.test(tag)
+}
+
+export function selectableReleases(releases: GithubRelease[]): GithubRelease[] {
+  return releases.filter((r) => !r.draft && isVersionTag(r.tag_name))
 }
 
 export async function fetchLatestRelease(repo: string): Promise<GithubRelease | null> {
@@ -27,6 +38,15 @@ export async function fetchLatestRelease(repo: string): Promise<GithubRelease | 
   if (res.status === 404) return null
   if (!res.ok) throw new Error(`GitHub answered ${res.status} ${res.statusText} for the latest release of ${repo}.`)
   return (await res.json()) as GithubRelease
+}
+
+export async function fetchReleases(repo: string): Promise<GithubRelease[]> {
+  const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=100`, {
+    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'we-manager' },
+    signal: AbortSignal.timeout(20_000)
+  })
+  if (!res.ok) throw new Error(`GitHub answered ${res.status} ${res.statusText} for the releases of ${repo}.`)
+  return selectableReleases((await res.json()) as GithubRelease[])
 }
 
 export async function fetchReleaseByTag(repo: string, tag: string): Promise<GithubRelease | null> {

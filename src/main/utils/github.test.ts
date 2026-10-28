@@ -5,7 +5,7 @@ import type { AddressInfo } from 'net'
 import * as os from 'os'
 import * as path from 'path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { downloadVerified, type GithubAsset } from './github'
+import { downloadVerified, selectableReleases, type GithubAsset, type GithubRelease } from './github'
 
 const body = Buffer.from('engine archive bytes '.repeat(500))
 const sha256 = crypto.createHash('sha256').update(body).digest('hex')
@@ -59,5 +59,15 @@ describe('downloadVerified', () => {
     const dest = path.join(tmp, 'nodigest')
     await downloadVerified(asset({ digest: null }), dest, () => {})
     expect(fs.existsSync(dest)).toBe(true)
+  })
+})
+
+const release = (tag_name: string, draft = false) =>
+  ({ tag_name, draft, html_url: '', body: null, published_at: '', assets: [] }) as GithubRelease
+
+describe('selectableReleases', () => {
+  it('keeps v-tagged releases and drops helper releases and drafts', () => {
+    const list = [release('v0.9.8'), release('libnode-arch'), release('libnode (Arch)'), release('v0.9.7-rc1'), release('v0.9.6', true), release('vim')]
+    expect(selectableReleases(list).map(r => r.tag_name)).toEqual(['v0.9.8', 'v0.9.7-rc1'])
   })
 })

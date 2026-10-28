@@ -18,17 +18,31 @@ vi.mock('./config.service', () => ({
 }))
 vi.mock('./lwe.service', () => ({ getLweStatus: () => lweStatus }))
 vi.mock('../utils/flatpak', () => ({ isFlatpak: () => false }))
+let failing = false
 vi.mock('../utils/github', () => ({
-  fetchLatestRelease: async (repo: string) => releases[repo] ?? null
+  fetchLatestRelease: async (repo: string) => {
+    if (failing) throw new Error('offline')
+    return releases[repo] ?? null
+  },
+  fetchReleaseByTag: async () => null,
+  fetchReleases: async (repo: string) => (releases[`${repo}#all`] as unknown[]) ?? [],
+  isVersionTag: (tag: string) => /^v\d/.test(tag),
+  download: async () => {},
+  verifyAsset: async () => {}
 }))
 
-const { checkForUpdates, dismissUpdate } = await import('./update.service')
+const { checkForUpdates, checkNow, dismissUpdate, installAppUpdate, listVersions } = await import('./update.service')
+
+function withAsset(tag: string, publishedAt: string, name: string) {
+  return { ...release(tag, publishedAt), assets: [{ name }] }
+}
 
 function release(tag: string, publishedAt = '2026-10-12T00:00:00Z') {
   return { tag_name: tag, html_url: `https://example.invalid/${tag}`, body: 'notes', published_at: publishedAt, assets: [] }
 }
 
 beforeEach(() => {
+  failing = false
   checks = { app: true, engine: true }
   dismissed = {}
   lweStatus = { installed: false }
@@ -76,10 +90,29 @@ describe('checkForUpdates', () => {
     fs.rmSync(dir, { recursive: true, force: true })
   })
 
-  it('remembers a dismissed version', async () => {
+  it('remembers a version the user does not want to hear about again', async () => {
     releases['WallpaperEngineLover/we_manager'] = release('v0.9.0')
     await checkForUpdates()
-    expect(dismissUpdate('app', 'v0.9.0').dismissed).toEqual({ app: 'v0.9.0' })
+    const status = dismissUpdate('app', 'v0.9.0', true)
+    expect(status.dismissed).toEqual({ app: 'v0.9.0' })
+    expect(status.snoozed).toEqual({})
+  })
+
+  it('looks at everything on a manual check even with automatic checks off', async () => {
+    checks = { app: false, engine: false }
+    releases['WallpaperEngineLover/we_manager'] = release('v0.9.0')
+    expect((await checkForUpdates()).app).toBeNull()
+    const status = await checkNow()
+    expect(status.app).toMatchObject({ version: 'v0.9.0' })
+    expect(status.checked).toEqual({ app: true, engine: true })
+  })
+
+  it('only snoozes a version closed with the X', async () => {
+    releases['WallpaperEngineLover/we_manager'] = release('v0.9.0')
+    await checkForUpdates()
+    const status = dismissUpdate('app', 'v0.9.0', false)
+    expect(status.dismissed).toEqual({})
+    expect(status.snoozed).toEqual({ app: 'v0.9.0' })
   })
 })
 
@@ -89,5 +122,29 @@ describe('getUpdateStatus', () => {
     const { getUpdateStatus } = await import('./update.service')
     lweStatus = { installed: true, path: '/nonexistent/linux-wallpaperengine', version: 'v0.8.0' }
     expect(getUpdateStatus().engineInstall).toBe('prebuilt')
+  })
+
+  it('does not call a failed check up to date', async () => {
+    failing = true
+    const status = await checkForUpdates(true)
+    expect(status.error).toBe('offline offline')
+    expect(status.checked).toEqual({ app: false, engine: false })
+  })
+})
+
+describe('other versions', () => {
+  it('lists the newest release first and only those with an asset for this install', async () => {
+    releases['WallpaperEngineLover/we_manager#all'] = [
+      withAsset('v0.7.0', '2026-01-01T00:00:00Z', 'WE-Manager-0.7.0.AppImage'),
+      withAsset('v0.8.0', '2026-03-01T00:00:00Z', 'WE-Manager-0.8.0.AppImage'),
+      withAsset('v0.7.5', '2026-02-01T00:00:00Z', 'notes.txt')
+    ]
+    const list = await listVersions('app')
+    expect(list.map((r) => r.tag)).toEqual(['v0.8.0', 'v0.7.0'])
+  })
+
+  it('reports a tag that is not a version instead of ignoring it', async () => {
+    const status = await installAppUpdate('libnode-arch')
+    expect(status.appProgress).toMatchObject({ stage: 'error' })
   })
 })

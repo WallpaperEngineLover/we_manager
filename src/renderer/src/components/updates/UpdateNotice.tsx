@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, ExternalLink, Loader2, RefreshCw, RotateCw, X } from 'lucide-react'
-import type { AppInstallKind, AvailableUpdate, LweInstallProgress, UpdateStatus, UpdateTarget } from '@shared/types'
+import { BellOff, Download, ExternalLink, Loader2, RefreshCw, RotateCw, X } from 'lucide-react'
+import type { AppInstallKind, AppUpdateProgress, AvailableUpdate, LweInstallProgress, UpdateStatus, UpdateTarget } from '@shared/types'
 import type { MessageKey } from '@shared/i18n'
 import { UPDATE_STATUS_KEY, useUpdateStatus } from '../../hooks/queries'
 import { t } from '../../i18n'
@@ -27,8 +27,8 @@ function UpdateRow({ target, update, message, action }: {
   const queryClient = useQueryClient()
   const [showNotes, setShowNotes] = useState(false)
 
-  async function dismiss() {
-    queryClient.setQueryData(UPDATE_STATUS_KEY, await window.electronAPI.updates.dismiss(target, update.version))
+  async function dismiss(forever: boolean) {
+    queryClient.setQueryData(UPDATE_STATUS_KEY, await window.electronAPI.updates.dismiss(target, update.version, forever))
   }
 
   return (
@@ -44,8 +44,12 @@ function UpdateRow({ target, update, message, action }: {
           <ExternalLink size={12} />
           {t('update.releasePage')}
         </button>
+        <button onClick={() => dismiss(true)} className={SECONDARY}>
+          <BellOff size={12} />
+          {t('update.dontShowAgain')}
+        </button>
         <button
-          onClick={dismiss}
+          onClick={() => dismiss(false)}
           title={t('update.dismiss')}
           className="rounded p-1 text-gray-500 hover:bg-fg/5 hover:text-gray-300"
         >
@@ -61,9 +65,16 @@ function UpdateRow({ target, update, message, action }: {
   )
 }
 
-function AppAction({ status }: { status: UpdateStatus }) {
-  const queryClient = useQueryClient()
+/** Progress of an install of the pending update; one for another version belongs to the version picker */
+export function pendingProgress(status: UpdateStatus): AppUpdateProgress | null {
   const progress = status.appProgress
+  if (!progress || !status.app) return progress
+  return progress.version === undefined || progress.version === status.app.version ? progress : null
+}
+
+export function AppAction({ status }: { status: UpdateStatus }) {
+  const queryClient = useQueryClient()
+  const progress = pendingProgress(status)
 
   if (status.appInstall !== 'appimage' && status.appInstall !== 'deb') {
     return <span className="text-xs text-gray-500">{t(APP_HINTS[status.appInstall])}</span>
@@ -105,7 +116,7 @@ function AppAction({ status }: { status: UpdateStatus }) {
   )
 }
 
-function EngineAction({ status }: { status: UpdateStatus }) {
+export function EngineAction({ status }: { status: UpdateStatus }) {
   const queryClient = useQueryClient()
   // shared with Settings, fed by App.tsx
   const { data: progress = null } = useQuery<LweInstallProgress | null>({
@@ -163,8 +174,10 @@ export default function UpdateNotice() {
   const status = useUpdateStatus()
   if (!status) return null
 
-  const app = status.app && status.dismissed.app !== status.app.version ? status.app : null
-  const engine = status.engine && status.dismissed.engine !== status.engine.version ? status.engine : null
+  const hidden = (target: UpdateTarget, version: string) =>
+    status.dismissed[target] === version || status.snoozed[target] === version
+  const app = status.app && !hidden('app', status.app.version) ? status.app : null
+  const engine = status.engine && !hidden('engine', status.engine.version) ? status.engine : null
   if (!app && !engine) return null
 
   return (
