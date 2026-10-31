@@ -3,7 +3,10 @@ import { join } from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const execSync = vi.fn<(command: string) => string>()
-vi.mock('child_process', () => ({ execSync: (command: string) => execSync(command) }))
+vi.mock('child_process', () => ({
+  execSync: (command: string) => execSync(command),
+  execFileSync: (file: string, args: string[]) => execSync([file, ...args].join(' '))
+}))
 
 const {
   getConnectedScreens,

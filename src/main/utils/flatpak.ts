@@ -21,12 +21,6 @@ export function hostCommand(cmd: string, args: string[] = []): [string, string[]
   return isFlatpak() ? ['flatpak-spawn', ['--host', ...sessionEnvArgs(), cmd, ...args]] : [cmd, args]
 }
 
-export function hostShell(command: string): string {
-  if (!isFlatpak()) return command
-  const env = sessionEnvArgs().map((arg) => `'${arg.replace(/'/g, `'\\''`)}'`)
-  return ['flatpak-spawn --host', ...env, `sh -c ${JSON.stringify(command)}`].join(' ')
-}
-
 const hostCommandCache = new Map<string, boolean>()
 
 export function isHostCommandAvailable(cmd: string): boolean {

@@ -1,8 +1,15 @@
 import fs from 'fs'
 import path from 'path'
-import { execSync } from 'child_process'
+import { execFileSync, execSync } from 'child_process'
 import { parseDesktopEnv, type DesktopEnvironment } from '@shared/desktop'
-import { hostShell } from './flatpak'
+import { hostCommand } from './flatpak'
+
+/** stdout of a program on the host, stderr dropped; the words are the program and its arguments */
+function hostOutput(commandLine: string, timeout: number): string {
+  const [program, ...args] = commandLine.split(' ')
+  const [file, fileArgs] = hostCommand(program, args)
+  return execFileSync(file, fileArgs, { encoding: 'utf8', timeout, stdio: ['ignore', 'pipe', 'ignore'] })
+}
 
 export type DisplayServer = 'wayland' | 'x11' | 'unknown'
 export type { DesktopEnvironment }
@@ -113,7 +120,7 @@ export function parseKscreenMirrors(json: string): string[] {
 export function getMirroredScreens(): string[] {
   if (process.platform !== 'linux' || !isWaylandSession() || detectDesktopEnv() !== 'kde') return []
   try {
-    return parseKscreenMirrors(execSync(hostShell('kscreen-doctor -j 2>/dev/null'), { encoding: 'utf8', timeout: 5000 }))
+    return parseKscreenMirrors(hostOutput('kscreen-doctor -j', 5000))
   } catch {
     return []
   }
@@ -128,14 +135,14 @@ export function getConnectedScreens(): string[] {
     for (const { marker, command, parse } of COMPOSITOR_QUERIES) {
       if (!process.env[marker]) continue
       try {
-        const output = execSync(hostShell(`${command} 2>/dev/null`), { encoding: 'utf8', timeout: 5000 })
+        const output = hostOutput(command, 5000)
         const screens = parse(output)
         if (screens.length > 0) return screens
       } catch { }
     }
 
     try {
-      const output = execSync(hostShell('wlr-randr 2>/dev/null'), { encoding: 'utf8', timeout: 5000 })
+      const output = hostOutput('wlr-randr', 5000)
       const screens = output
         .split('\n')
         .filter(line => /^[A-Za-z]/.test(line) && !line.startsWith(' '))
@@ -145,7 +152,7 @@ export function getConnectedScreens(): string[] {
     } catch { }
 
     try {
-      const output = execSync(hostShell('kscreen-doctor --outputs 2>/dev/null'), { encoding: 'utf8', timeout: 5000 })
+      const output = hostOutput('kscreen-doctor --outputs', 5000)
       const clean = output.replace(/\x1b\[[0-9;]*m/g, '')
       const screens = clean
         .split('\n')
@@ -158,9 +165,9 @@ export function getConnectedScreens(): string[] {
     } catch { }
 
     try {
-      const output = execSync(
-        hostShell("gdbus call --session --dest org.gnome.Mutter.DisplayConfig --object-path /org/gnome/Mutter/DisplayConfig --method org.gnome.Mutter.DisplayConfig.GetCurrentState 2>/dev/null"),
-        { encoding: 'utf8', timeout: 5000 }
+      const output = hostOutput(
+        'gdbus call --session --dest org.gnome.Mutter.DisplayConfig --object-path /org/gnome/Mutter/DisplayConfig --method org.gnome.Mutter.DisplayConfig.GetCurrentState',
+        5000
       )
       // gdbus prints the monitors as ('connector', 'vendor', 'product', 'serial') tuples
       const screens = [...new Set([...output.matchAll(/\(\('([^']+)',\s*'[^']*',\s*'[^']*',\s*'[^']*'\)/g)].map(m => m[1]))]
@@ -169,7 +176,7 @@ export function getConnectedScreens(): string[] {
   }
 
   try {
-    const output = execSync(hostShell('xrandr --query 2>/dev/null'), { encoding: 'utf8', timeout: 5000 })
+    const output = hostOutput('xrandr --query', 5000)
     const screens = output
       .split('\n')
       .filter(line => / connected/i.test(line))
@@ -194,7 +201,7 @@ export function parseXrandrGeometries(output: string): Map<string, string> {
 /** Geometry of the named screen, else of the first one */
 export function getScreenGeometry(screen?: string): string | null {
   try {
-    const output = execSync(hostShell('xrandr --query 2>/dev/null'), { encoding: 'utf8', timeout: 5000 })
+    const output = hostOutput('xrandr --query', 5000)
     const geometries = parseXrandrGeometries(output)
     return (screen && geometries.get(screen)) || geometries.values().next().value || null
   } catch {
@@ -227,7 +234,7 @@ export function hasStatusNotifierHost(maxAgeMs = TRAY_HOST_CACHE_MS): boolean {
   let value = true
   for (const command of NAME_HAS_OWNER_COMMANDS) {
     try {
-      const output = execSync(hostShell(`${command} 2>/dev/null`), { encoding: 'utf8', timeout: 2000 })
+      const output = hostOutput(command, 2000)
       const owned = parseNameHasOwner(output)
       if (owned !== null) {
         value = owned

@@ -4,7 +4,10 @@ import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const execSync = vi.fn<(command: string, options?: Record<string, unknown>) => string>()
-vi.mock('child_process', () => ({ execSync: (command: string, options?: Record<string, unknown>) => execSync(command, options) }))
+vi.mock('child_process', () => ({
+  execSync: (command: string, options?: Record<string, unknown>) => execSync(command, options),
+  execFileSync: (file: string, args: string[], options?: Record<string, unknown>) => execSync([file, ...args].join(' '), options)
+}))
 
 const platform = await import('./platform')
 
@@ -141,7 +144,7 @@ describe.skipIf(process.platform !== 'linux')('getMirroredScreens', () => {
     vi.stubEnv('XDG_CURRENT_DESKTOP', 'KDE')
     answer({ 'kscreen-doctor -j': kscreen })
     expect(platform.getMirroredScreens()).toEqual(['HDMI-A-1'])
-    expect(execSync.mock.calls[0][1]).toEqual({ encoding: 'utf8', timeout: 5000 })
+    expect(execSync.mock.calls[0][1]).toEqual({ encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] })
   })
 
   it('stays out of other sessions and survives a failing tool', () => {

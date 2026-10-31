@@ -28,29 +28,25 @@ function setSession(values: Record<string, string>): void {
 
 describe('hostCommand', () => {
   it('runs the program itself outside a Flatpak', async () => {
-    const { hostCommand, hostShell, isFlatpak } = await load()
+    const { hostCommand, isFlatpak } = await load()
     expect(isFlatpak()).toBe(false)
     expect(hostCommand('kscreen-doctor', ['--outputs'])).toEqual(['kscreen-doctor', ['--outputs']])
-    expect(hostShell('xrandr --query 2>/dev/null')).toBe('xrandr --query 2>/dev/null')
   })
 
   it('goes through flatpak-spawn inside one', async () => {
     setSession({})
-    const { hostCommand, hostShell, isFlatpak } = await load('io.github.WallpaperEngineLover.we_manager')
+    const { hostCommand, isFlatpak } = await load('io.github.WallpaperEngineLover.we_manager')
     expect(isFlatpak()).toBe(true)
     expect(hostCommand('qdbus', ['org.kde.plasmashell'])).toEqual(['flatpak-spawn', ['--host', 'qdbus', 'org.kde.plasmashell']])
-    expect(hostShell('wlr-randr 2>/dev/null')).toBe('flatpak-spawn --host sh -c "wlr-randr 2>/dev/null"')
   })
 })
 
 describe('session variables for host programs', () => {
   it('passes the session to the host, whose helper may not have it', async () => {
     setSession({ WAYLAND_DISPLAY: 'wayland-1', HYPRLAND_INSTANCE_SIGNATURE: 'abc_1_2', XDG_CURRENT_DESKTOP: 'Hyprland' })
-    const { hostCommand, hostShell } = await load('io.github.WallpaperEngineLover.we_manager')
+    const { hostCommand } = await load('io.github.WallpaperEngineLover.we_manager')
     expect(hostCommand('hyprctl', ['monitors', '-j'])).toEqual(['flatpak-spawn', ['--host', '--env=WAYLAND_DISPLAY=wayland-1',
       '--env=XDG_CURRENT_DESKTOP=Hyprland', '--env=HYPRLAND_INSTANCE_SIGNATURE=abc_1_2', 'hyprctl', 'monitors', '-j']])
-    expect(hostShell('hyprctl monitors -j')).toBe("flatpak-spawn --host '--env=WAYLAND_DISPLAY=wayland-1' " +
-      "'--env=XDG_CURRENT_DESKTOP=Hyprland' '--env=HYPRLAND_INSTANCE_SIGNATURE=abc_1_2' sh -c \"hyprctl monitors -j\"")
   })
 
   it("keeps the sandbox's X display away from the host", async () => {

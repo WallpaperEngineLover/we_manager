@@ -57,14 +57,6 @@ describe('isHostCommandAvailable', () => {
   })
 })
 
-describe('hostShell quoting', () => {
-  it('escapes single quotes in the passed session variables', async () => {
-    process.env.WAYLAND_DISPLAY = "a'b"
-    const { hostShell } = await load(true)
-    expect(hostShell('true')).toContain(`'--env=WAYLAND_DISPLAY=a'\\''b'`)
-  })
-})
-
 describe('sandbox info', () => {
   const info = '[Application]\nname=io.example.app\n\n[Instance]\ninstance-id=1234567\napp-path=/home/u/.local/share/flatpak/app/io.example.app/x86_64/stable/abc/files\n'
 
