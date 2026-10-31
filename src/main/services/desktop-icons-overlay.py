@@ -9,6 +9,7 @@ wl_region), clicks go to the desktop underneath.
 Launch with: LD_PRELOAD=<libgtk4-layer-shell.so.0> GDK_BACKEND=wayland python3 this.py [CONNECTOR]
 Exit codes: 2 a Python module or typelib is missing, 3 no layer-shell, 4 no monitor, 5 monitors plugged or unplugged
 (the caller starts the overlays again, one per monitor)
+The overlay quits by itself when its parent process goes away (we_manager crashed or was killed)
 """
 
 import configparser
@@ -16,6 +17,7 @@ import json
 import locale
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import urllib.parse
@@ -449,6 +451,12 @@ def main():
 
         state['rebuild'] = GLib.timeout_add(300, run)
 
+    def watch_parent():
+        if os.getppid() != parent:
+            app.quit()
+            return False
+        return True
+
     def on_monitors_changed(*_):
         if not state['leaving']:
             state['leaving'] = True
@@ -524,6 +532,9 @@ def main():
         monitors.connect('items-changed', on_monitors_changed)
 
     window = None
+    parent = os.getppid()
+    GLib.timeout_add_seconds(1, watch_parent)
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: app.quit() or False)
     app = Gtk.Application(application_id=f'com.wemanager.desktop-icons-overlay.screen{index}')
     app.connect('activate', on_activate)
     app.run(None)

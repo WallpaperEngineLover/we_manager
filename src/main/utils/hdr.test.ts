@@ -29,7 +29,7 @@ function makePkg(files: Record<string, string>): Buffer {
 }
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hdr-test-'))
-afterAll(() => fs.rmSync(dir, { recursive: true, force: true }))
+afterAll(() => { fs.rmSync(dir, { recursive: true, force: true }) })
 
 describe('readPkgEntry', () => {
   it('reads one entry without the rest of the package', async () => {

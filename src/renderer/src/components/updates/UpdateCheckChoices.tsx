@@ -15,7 +15,7 @@ export default function UpdateCheckChoices({ value, onChange, showEngine }: Upda
         <input
           type="checkbox"
           checked={value.app}
-          onChange={() => onChange({ ...value, app: !value.app })}
+          onChange={() => { onChange({ ...value, app: !value.app }); }}
           className="cursor-pointer"
         />
         {t('update.checkApp')}
@@ -25,7 +25,7 @@ export default function UpdateCheckChoices({ value, onChange, showEngine }: Upda
           <input
             type="checkbox"
             checked={value.engine}
-            onChange={() => onChange({ ...value, engine: !value.engine })}
+            onChange={() => { onChange({ ...value, engine: !value.engine }); }}
             className="cursor-pointer"
           />
           {t('update.checkEngine')}

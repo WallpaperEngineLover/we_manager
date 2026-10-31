@@ -16,7 +16,7 @@ beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wem-local-'))
 })
 
-afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }))
+afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }) })
 
 describe('localWallpaperId', () => {
   it('keeps a workshop folder name', async () => {

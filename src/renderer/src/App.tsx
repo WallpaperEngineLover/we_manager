@@ -61,7 +61,7 @@ export default function App() {
 
   useEffect(() => {
     if (!config) return
-    const apply = (): void => applyAppearance(config.appearance, config.windowTranslucent)
+    const apply = (): void => { applyAppearance(config.appearance, config.windowTranslucent) }
     apply()
     return onSystemThemeChange(apply)
   }, [config])
@@ -70,7 +70,7 @@ export default function App() {
     window.electronAPI.config.get().then((cfg) => {
       setDefaultPath(cfg.defaultWorkshopPath)
       setSetupDone(cfg.isConfigured)
-    })
+    }).catch(console.error)
   }, [])
 
   // here so install progress survives leaving Settings
@@ -126,7 +126,7 @@ export default function App() {
       if (timer) return
       timer = setTimeout(() => {
         timer = null
-        queryClient.invalidateQueries({ queryKey: ['library'] })
+        void queryClient.invalidateQueries({ queryKey: ['library'] })
       }, 500)
     })
     return () => {
@@ -149,7 +149,7 @@ export default function App() {
   }, [queryClient])
 
   useEffect(() => {
-    return window.electronAPI.on.scheduleFired((name) => showToast(t('schedule.fired', { name })))
+    return window.electronAPI.on.scheduleFired((name) => { showToast(t('schedule.fired', { name })) })
   }, [showToast])
 
   if (setupDone === null) return null
@@ -158,7 +158,7 @@ export default function App() {
   if (!setupDone) {
     return (
       <ErrorBoundary>
-        <SetupScreen defaultPath={defaultPath} onComplete={() => setSetupDone(true)} />
+        <SetupScreen defaultPath={defaultPath} onComplete={() => { setSetupDone(true) }} />
       </ErrorBoundary>
     )
   }
@@ -172,16 +172,18 @@ export default function App() {
         <div className="flex flex-1 overflow-hidden">
           <Sidebar activeView={activeView} onNavigate={setActiveView} />
           <main className="flex-1 overflow-hidden">
-            {activeView === 'workshop' && (
-              <WorkshopBrowser
-                creatorFilter={creatorFilter}
-                onClearCreatorFilter={() => setCreatorFilter(null)}
-                onBrowseCreator={browseCreator}
-              />
-            )}
-            {activeView === 'library' && <LibraryView onBrowseCreator={browseCreator} />}
-            {activeView === 'playlists' && <PlaylistsView onBrowseCreator={browseCreator} />}
-            {activeView === 'settings' && <SettingsView />}
+            <div key={activeView} className="view-enter h-full">
+              {activeView === 'workshop' && (
+                <WorkshopBrowser
+                  creatorFilter={creatorFilter}
+                  onClearCreatorFilter={() => { setCreatorFilter(null) }}
+                  onBrowseCreator={browseCreator}
+                />
+              )}
+              {activeView === 'library' && <LibraryView onBrowseCreator={browseCreator} />}
+              {activeView === 'playlists' && <PlaylistsView onBrowseCreator={browseCreator} />}
+              {activeView === 'settings' && <SettingsView />}
+            </div>
           </main>
         </div>
         <StatusBar />

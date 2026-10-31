@@ -7,7 +7,7 @@ import * as library from '../services/library.service'
 import * as steam from '../services/steam.service'
 import { getAutoUnsubscribeAfterBackup } from '../services/config.service'
 
-export interface BackupItemResult {
+interface BackupItemResult {
   ok: boolean
   alreadyBackedUp: boolean
   unsubscribed: boolean
@@ -28,13 +28,11 @@ async function backupOne(id: string, win: BrowserWindow): Promise<BackupItemResu
     }
     const sourcePath = wallpaper.localPath
 
-    let backupDir = backup.resolveBackupDir(wallpaper)
+    const existingDir = backup.resolveBackupDir(wallpaper)
     const alreadyBackedUp =
-      !!backupDir && (await backup.hasBackupFiles(backupDir)) && (await backup.backupMatchesSource(sourcePath, backupDir))
-    if (!alreadyBackedUp) {
-      backupDir = await backup.backupWallpaper(id, sourcePath, win)
-    }
-    library.updateWallpaper(id, { backedUp: true, backupDir: backupDir!, backupOutdated: false })
+      !!existingDir && (await backup.hasBackupFiles(existingDir)) && (await backup.backupMatchesSource(sourcePath, existingDir))
+    const backupDir = alreadyBackedUp ? existingDir : await backup.backupWallpaper(id, sourcePath, win)
+    library.updateWallpaper(id, { backedUp: true, backupDir, backupOutdated: false })
 
     let unsubscribed = false
     if (getAutoUnsubscribeAfterBackup()) {
@@ -44,13 +42,13 @@ async function backupOne(id: string, win: BrowserWindow): Promise<BackupItemResu
       await steam.unsubscribeFromItem(BigInt(id))
       library.updateWallpaper(id, {
         source: 'backup',
-        localPath: backupDir!,
-        previewLocal: await backup.previewInBackup(wallpaper, backupDir!),
+        localPath: backupDir,
+        previewLocal: await backup.previewInBackup(wallpaper, backupDir),
         subscribed: false,
         downloading: false,
         downloadFailed: false
       })
-      if (path.resolve(sourcePath) !== path.resolve(backupDir!)) {
+      if (path.resolve(sourcePath) !== path.resolve(backupDir)) {
         try {
           await fs.promises.rm(sourcePath, { recursive: true, force: true })
         } catch {

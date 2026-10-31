@@ -4,7 +4,7 @@ import type { FavoriteFailure, FavoriteStatus } from '@shared/types'
 import { useToast } from '../components/common/Toast'
 import { t } from '../i18n'
 
-export const FAVORITE_IDS_KEY = ['steam-favorite-ids']
+const FAVORITE_IDS_KEY = ['steam-favorite-ids']
 export const FAVORITE_STATUS_KEY = ['steam-favorite-status']
 
 const NO_STATUS: FavoriteStatus = { failed: {}, checking: [] }
@@ -51,7 +51,7 @@ export function useFavoriteAction(onError?: (message: string) => void) {
   const { showToast } = useToast()
   const recordFavorites = useRecordFavorites()
   const [pending, setPending] = useState(false)
-  const report = onError ?? ((message: string) => showToast(message, { warning: true }))
+  const report = onError ?? ((message: string) => { showToast(message, { warning: true }) })
 
   async function setFavorite(id: string, add: boolean): Promise<void> {
     if (pending) return

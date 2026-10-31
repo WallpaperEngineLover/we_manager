@@ -1,7 +1,7 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
 import * as path from 'path'
-import type { DisplayMode, EngineFlagPreset, EngineFlags, ExtraLibrary, LedSettings, SteamIdentity } from '@shared/types'
+import type { DisplayMode, EngineFlagPreset, EngineFlags, ExtraLibrary, LedSettings, LoaderSettings, SteamIdentity } from '@shared/types'
 import { BUILT_IN_PRESETS } from '@shared/engineFlags'
 import { isTranslucent, type Appearance } from '@shared/appearance'
 import type { CardBorders } from '@shared/cardBorders'
@@ -40,6 +40,8 @@ import {
   setAutostartPlaylistId,
   getKillLweOnQuit,
   setKillLweOnQuit,
+  getSkipPlaylistResume,
+  setSkipPlaylistResume,
   getCardBorders,
   getCardBadges,
   getAppearance,
@@ -60,6 +62,8 @@ import {
   setScriptLimits,
   getLeds,
   setLeds,
+  getLoader,
+  setLoader,
   getDisableAnimations,
   getSteamIdentity,
   setSteamIdentity,
@@ -74,9 +78,12 @@ import {
   getDisabledScreens,
   setDisabledScreens,
   getSplitScreens,
-  setDisplayMode
+  setDisplayMode,
+  resetEngineSettings,
+  DEFAULT_DISPLAY_MODE
 } from '../services/config.service'
 import { pushGlobalEngineFlags, resetDisplays } from '../services/display.service'
+import { hotswapLweSettings } from '../services/lwe.service'
 import { stopPlaylist } from '../services/playlist-player.service'
 import { getDefaultWorkshopPath } from '../utils/paths'
 import { detectDesktopEnv } from '../utils/platform'
@@ -87,6 +94,13 @@ import { createTray, destroyTray, refreshTray } from '../services/tray.service'
 import { t, uiLanguage } from '../i18n'
 import type { LanguagePreference } from '@shared/i18n'
 import { getCompositorAutostartLine, isAutostartSupported, setAutostartEnabled } from '../services/autostart.service'
+
+async function switchDisplayMode(mode: DisplayMode): Promise<void> {
+  if (mode === getDisplayMode()) return
+  stopPlaylist()
+  await resetDisplays()
+  setDisplayMode(mode)
+}
 
 export function registerConfigHandlers(): void {
   ipcMain.handle(IpcChannels.CONFIG_GET, () => ({
@@ -111,6 +125,7 @@ export function registerConfigHandlers(): void {
     autostartMinimized: getAutostartMinimized(),
     autostartPlaylistId: getAutostartPlaylistId(),
     killLweOnQuit: getKillLweOnQuit(),
+    skipPlaylistResume: getSkipPlaylistResume(),
     cardBorders: getCardBorders(),
     cardBadges: getCardBadges(),
     audioScreen: getAudioScreen(),
@@ -119,6 +134,7 @@ export function registerConfigHandlers(): void {
     disablePuppetAnimation: getDisablePuppetAnimation(),
     scriptLimits: getScriptLimits(),
     leds: getLeds(),
+    loader: getLoader(),
     disableAnimations: getDisableAnimations(),
     steamIdentity: getSteamIdentity(),
     ignoredCreators: getIgnoredCreators(),
@@ -160,6 +176,11 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle(IpcChannels.CONFIG_SET_KILL_LWE_ON_QUIT, (_e, enabled: boolean) => {
     setKillLweOnQuit(enabled)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_SKIP_PLAYLIST_RESUME, (_e, enabled: boolean) => {
+    setSkipPlaylistResume(enabled)
     return { ok: true }
   })
 
@@ -248,6 +269,11 @@ export function registerConfigHandlers(): void {
     return { ok: true }
   })
 
+  ipcMain.handle(IpcChannels.CONFIG_SET_LOADER, (_e, loader: LoaderSettings) => {
+    setLoader(loader)
+    return { ok: true }
+  })
+
   ipcMain.handle(IpcChannels.CONFIG_SET_LEDS, (_e, leds: LedSettings) => {
     setLeds(leds)
     return { ok: true }
@@ -267,10 +293,17 @@ export function registerConfigHandlers(): void {
 
   // what was on which screen means nothing in the other mode, so everything starts over
   ipcMain.handle(IpcChannels.CONFIG_SET_DISPLAY_MODE, async (_e, mode: DisplayMode) => {
-    if (mode === getDisplayMode()) return { ok: true }
-    stopPlaylist()
-    await resetDisplays()
-    setDisplayMode(mode)
+    await switchDisplayMode(mode)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_RESET_ENGINE_SETTINGS, async () => {
+    const flagsBefore = getGlobalEngineFlags()
+    await switchDisplayMode(DEFAULT_DISPLAY_MODE)
+    resetEngineSettings()
+    await pushGlobalEngineFlags(flagsBefore, getGlobalEngineFlags())
+    // ambient volume has no "unset" to send, it applies on the next start
+    await hotswapLweSettings({ audioScreen: '', audioSensitivity: { '*': getDefaultAudioSensitivity() } })
     return { ok: true }
   })
 
@@ -316,7 +349,7 @@ export function registerConfigHandlers(): void {
     return result.filePaths[0]
   })
 
-  ipcMain.handle(IpcChannels.CONFIG_PICK_FILE, async (_e) => {
+  ipcMain.handle(IpcChannels.CONFIG_PICK_FILE, async () => {
     const win = BrowserWindow.getFocusedWindow()
     const result = await dialog.showOpenDialog(win!, {
       properties: ['openFile'],

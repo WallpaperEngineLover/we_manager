@@ -18,7 +18,8 @@ export async function localWallpaperId(dir: string): Promise<string | null> {
   }
   const name = path.basename(dir)
   if (WORKSHOP_ID.test(name)) return name
-  const fromProject = pj?.workshopid === undefined ? '' : String(pj.workshopid)
+  const id = pj?.workshopid
+  const fromProject = typeof id === 'string' || typeof id === 'number' ? String(id) : ''
   return WORKSHOP_ID.test(fromProject) ? fromProject : name
 }
 

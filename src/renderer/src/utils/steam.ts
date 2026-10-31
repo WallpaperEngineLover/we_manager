@@ -1,9 +1,9 @@
 export function openWorkshopPage(id: string): void {
-  window.electronAPI.shell.openExternal(`steam://url/CommunityFilePage/${id}`)
+  window.electronAPI.shell.openExternal(`steam://url/CommunityFilePage/${id}`).catch(console.error)
 }
 
 export function openProfilePage(steamId: string): void {
-  window.electronAPI.shell.openExternal(`steam://url/SteamIDPage/${steamId}`)
+  window.electronAPI.shell.openExternal(`steam://url/SteamIDPage/${steamId}`).catch(console.error)
 }
 
 // Backup-sourced wallpapers use their folder name as id, which isn't always

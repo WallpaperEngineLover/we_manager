@@ -51,12 +51,12 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
   async function saveFlags(next: EngineFlags) {
     queryClient.setQueryData(['config'], { ...config!, engineFlags: next })
     await window.electronAPI.config.setEngineFlags(next)
-    queryClient.invalidateQueries({ queryKey: ['config'] })
+    void queryClient.invalidateQueries({ queryKey: ['config'] })
   }
 
   async function savePresets(next: EngineFlagPreset[]) {
     await window.electronAPI.config.setEnginePresets(next)
-    queryClient.invalidateQueries({ queryKey: ['config'] })
+    void queryClient.invalidateQueries({ queryKey: ['config'] })
   }
 
   async function applyPreset(preset: EngineFlagPreset) {
@@ -66,7 +66,7 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
       onDefaultFpsChanged(preset.fps)
     }
     setAppliedId(preset.id)
-    setTimeout(() => setAppliedId(null), 2000)
+    setTimeout(() => { setAppliedId(null) }, 2000)
   }
 
   async function createPreset() {
@@ -92,7 +92,7 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
       <div className="mt-3 space-y-2">
         {BOOLEAN_FLAGS.map(({ key, label, hint }) => (
           <label key={key} className="flex cursor-pointer items-center gap-3" title={hint && t(hint)}>
-            <Toggle on={!!flags[key]} onClick={() => saveFlags({ ...flags, [key]: !flags[key] })} />
+            <Toggle on={!!flags[key]} onClick={() => void saveFlags({ ...flags, [key]: !flags[key] })} />
             <span className="text-sm text-gray-300">{t(label)}</span>
           </label>
         ))}
@@ -101,7 +101,7 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
             <Toggle
               on={!!flags.windowed && !flags.windowBackground}
               onClick={() =>
-                saveFlags({ ...flags, windowed: !(flags.windowed && !flags.windowBackground), windowBackground: false })
+                void saveFlags({ ...flags, windowed: !(flags.windowed && !flags.windowBackground), windowBackground: false })
               }
             />
             <span className="text-sm text-gray-300">{t('perf.windowed')}</span>
@@ -112,7 +112,7 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
           <label className="flex cursor-pointer items-center gap-3">
             <Toggle
               on={!!flags.windowBackground}
-              onClick={() => saveFlags({ ...flags, windowed: false, windowBackground: !flags.windowBackground })}
+              onClick={() => void saveFlags({ ...flags, windowed: false, windowBackground: !flags.windowBackground })}
             />
             <span className="text-sm text-gray-300">{t('perf.windowBackground')}</span>
           </label>
@@ -128,7 +128,7 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
             <label className="flex cursor-pointer items-center gap-3">
               <Toggle
                 on={!!flags.kdeBackgroundLayer}
-                onClick={() => saveFlags({ ...flags, kdeBackgroundLayer: !flags.kdeBackgroundLayer })}
+                onClick={() => void saveFlags({ ...flags, kdeBackgroundLayer: !flags.kdeBackgroundLayer })}
               />
               <span className="text-sm text-gray-300">{t('perf.backgroundLayer')}</span>
             </label>
@@ -158,7 +158,7 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
           <span>{t('perf.fullscreenApps')}</span>
           <select
             value={flags.fullscreenPause ?? 'default'}
-            onChange={(e) => saveFlags({ ...flags, fullscreenPause: e.target.value as FullscreenPauseMode })}
+            onChange={(e) => void saveFlags({ ...flags, fullscreenPause: e.target.value as FullscreenPauseMode })}
             className="rounded-lg bg-fg/5 px-2 py-1.5 text-sm text-gray-200 outline-none"
           >
             {FULLSCREEN_PAUSE_OPTIONS.map((o) => (
@@ -174,7 +174,7 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
               <span>{t(label)}</span>
               <select
                 value={flags[key] ?? fallback}
-                onChange={(e) => saveFlags({ ...flags, [key]: e.target.value })}
+                onChange={(e) => void saveFlags({ ...flags, [key]: e.target.value })}
                 className="rounded-lg bg-fg/5 px-2 py-1.5 text-sm text-gray-200 outline-none"
               >
                 {options.map((o) => (
@@ -205,7 +205,7 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
               <p className="truncate text-xs text-gray-500">{describePreset(preset)}</p>
             </div>
             <button
-              onClick={() => applyPreset(preset)}
+              onClick={() => void applyPreset(preset)}
               className="flex items-center gap-1 rounded bg-accent-600 px-2 py-1 text-xs text-white hover:bg-accent-500"
             >
               {appliedId === preset.id && <Check size={11} />}
@@ -214,14 +214,14 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
             {!preset.builtIn && (
               <>
                 <button
-                  onClick={() => overwritePreset(preset)}
+                  onClick={() => void overwritePreset(preset)}
                   title={t('perf.overwritePreset')}
                   className="rounded p-1 text-gray-500 hover:text-gray-200"
                 >
                   <Save size={13} />
                 </button>
                 <button
-                  onClick={() => deletePreset(preset.id)}
+                  onClick={() => void deletePreset(preset.id)}
                   title={t('perf.deletePreset')}
                   className="rounded p-1 text-gray-500 hover:text-red-400"
                 >
@@ -235,13 +235,13 @@ export default function PerformanceSettings({ defaultFps, onDefaultFpsChanged }:
       <div className="mt-2 flex gap-2">
         <input
           value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && createPreset()}
+          onChange={(e) => { setNewName(e.target.value) }}
+          onKeyDown={(e) => void (e.key === 'Enter' && createPreset())}
           placeholder={t('perf.newPreset')}
           className="flex-1 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
         />
         <button
-          onClick={createPreset}
+          onClick={() => void createPreset()}
           disabled={!newName.trim()}
           className="flex items-center gap-1.5 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
         >

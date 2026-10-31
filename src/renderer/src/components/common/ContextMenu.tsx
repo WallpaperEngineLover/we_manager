@@ -73,10 +73,10 @@ export function MenuSelectionCount({ count }: { count: number }) {
 export function VoteMenuItems({ onVote }: { onVote: (up: boolean) => void }) {
   return (
     <>
-      <MenuItem icon={ThumbsUp} onClick={() => onVote(true)}>
+      <MenuItem icon={ThumbsUp} onClick={() => { onVote(true) }}>
         {t('vote.like')}
       </MenuItem>
-      <MenuItem icon={ThumbsDown} onClick={() => onVote(false)}>
+      <MenuItem icon={ThumbsDown} onClick={() => { onVote(false) }}>
         {t('vote.dislike')}
       </MenuItem>
     </>
@@ -98,12 +98,12 @@ export function FavoriteMenuItems({
   return (
     <>
       {toAdd.length > 0 && (
-        <MenuItem icon={Heart} onClick={() => onFavorite(toAdd, true)}>
+        <MenuItem icon={Heart} onClick={() => { onFavorite(toAdd, true) }}>
           {t('favorite.add')}
         </MenuItem>
       )}
       {toRemove.length > 0 && (
-        <MenuItem icon={HeartOff} onClick={() => onFavorite(toRemove, false)}>
+        <MenuItem icon={HeartOff} onClick={() => { onFavorite(toRemove, false) }}>
           {t('favorite.remove')}
         </MenuItem>
       )}
@@ -130,7 +130,7 @@ export function SubMenu({
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setOpen((v) => !v) }}
         className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-gray-300 hover:bg-fg/5"
       >
         <Icon size={12} /> {label}
@@ -169,7 +169,7 @@ export function FolderMenuItems({
     <>
       <SubMenu icon={FolderInput} label={t('folder.moveTo')} empty={t('folder.noOthers')}>
         {moveTargets.map((f) => (
-          <MenuItem key={f.id} icon={Folder} onClick={() => onMove(f.id)}>
+          <MenuItem key={f.id} icon={Folder} onClick={() => { onMove(f.id) }}>
             {f.title}
           </MenuItem>
         ))}

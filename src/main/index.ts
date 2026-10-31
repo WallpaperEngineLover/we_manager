@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, net, protocol, shell } from 'electron'
+import { app, BrowserWindow, dialog, net, protocol, session, shell } from 'electron'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { IpcChannels } from '@shared/ipc-channels'
@@ -35,6 +35,17 @@ if (needsSoftwareCompositing(detectDesktopEnv(), process.env.WAYLAND_DISPLAY, re
 protocol.registerSchemesAsPrivileged([{ scheme: 'wallpaper', privileges: { supportFetchAPI: true, corsEnabled: true } }])
 let isQuitting = false
 let hasKilledLweOnQuit = false
+
+const gotInstanceLock = app.requestSingleInstanceLock()
+if (!gotInstanceLock) app.quit()
+
+app.on('second-instance', (_event, argv) => {
+  const win = BrowserWindow.getAllWindows()[0]
+  if (!win || argv.includes('--minimized')) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+})
 
 const BACKGROUND_SYNC_INTERVAL_MS = 3 * 60 * 1000
 const TRAY_HOST_WAIT_MS = 10_000
@@ -154,9 +165,9 @@ function createWindow(): BrowserWindow {
     if (openLinks && isSafeExternalUrl(event.url)) void shell.openExternal(event.url)
   }
   // will-frame-navigate comes first, for the main frame as well, and will-navigate is skipped once that one prevents it
-  win.webContents.on('will-frame-navigate', (event) => keepOnApp(event, event.isMainFrame))
-  win.webContents.on('will-navigate', (event) => keepOnApp(event, true))
-  win.webContents.on('will-redirect', (event) => keepOnApp(event, false))
+  win.webContents.on('will-frame-navigate', (event) => { keepOnApp(event, event.isMainFrame) })
+  win.webContents.on('will-navigate', (event) => { keepOnApp(event, true) })
+  win.webContents.on('will-redirect', (event) => { keepOnApp(event, false) })
 
   // closing hides to the tray, or quits without a StatusNotifier host
   win.on('close', (event) => {
@@ -167,9 +178,9 @@ function createWindow(): BrowserWindow {
   })
 
   if (devUrl) {
-    win.loadURL(devUrl)
+    win.loadURL(devUrl).catch((err: unknown) => { console.error('[Main] loadURL failed:', err) })
   } else {
-    win.loadFile(path.join(__dirname, '../renderer/index.html'))
+    win.loadFile(path.join(__dirname, '../renderer/index.html')).catch((err: unknown) => { console.error('[Main] loadFile failed:', err) })
   }
 
   if (startHidden && !hasStatusNotifierHost()) showWindowUnlessTrayAppears(win)
@@ -188,6 +199,11 @@ function announceResetStores(): void {
 }
 
 app.whenReady().then(async () => {
+  if (!gotInstanceLock) return
+  const allowedPermission = (permission: string): boolean => permission === 'clipboard-sanitized-write'
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => { callback(allowedPermission(permission)) })
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => allowedPermission(permission))
+
   protocol.handle('wallpaper', async (request) => {
     let filePath: string
     try {
@@ -243,7 +259,7 @@ app.whenReady().then(async () => {
   }
   initSchedule(win)
   initUpdates(win)
-})
+}).catch((err: unknown) => { console.error('[Main] startup failed:', err) })
 
 app.on('before-quit', (event) => {
   isQuitting = true
@@ -251,8 +267,12 @@ app.on('before-quit', (event) => {
   if (getKillLweOnQuit() && !hasKilledLweOnQuit) {
     event.preventDefault()
     hasKilledLweOnQuit = true
-    killAllLweProcesses().finally(() => app.quit())
+    killAllLweProcesses().catch((err: unknown) => { console.error('[Main] killing engines on quit failed:', err) }).finally(() => { app.quit() })
   }
+})
+
+app.on('will-quit', () => {
+  cleanupDesktopIcons()
 })
 
 app.on('window-all-closed', () => {

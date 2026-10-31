@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Loader2, Play, Plus, RotateCcw, Scissors, X } from 'lucide-react'
 import {
   formatVideoTime,
+  formatVideoTimeExact,
   normalizeVideoSegments,
   parseVideoTime,
   trimmedVideoLength,
@@ -84,13 +85,13 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
 
   function commitText(i: number, side: 'start' | 'end', text: string) {
     const key = `${i}-${side}`
-    const reset = () => clearText(key)
+    const reset = () => { clearText(key) }
     const value = text.trim() === '' ? (side === 'start' ? 0 : undefined) : parseVideoTime(text)
-    if (value === null) return reset()
+    if (value === null) { reset(); return; }
     const changed = { ...rows[i], [side]: value }
-    if (changed.start === rows[i].start && changed.end === rows[i].end) return reset()
+    if (changed.start === rows[i].start && changed.end === rows[i].end) { reset(); return; }
     const length = (changed.end ?? duration ?? Infinity) - changed.start
-    if (length < MIN_LENGTH || (duration !== null && changed.start >= duration)) return reset()
+    if (length < MIN_LENGTH || (duration !== null && changed.start >= duration)) { reset(); return; }
     void commit(withPart(i, changed))
   }
 
@@ -100,7 +101,11 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
     if (start === undefined) return null
     if (duration === null) return { start, end: start + NEW_PART_LENGTH }
     if (start > duration - MIN_LENGTH) return null
-    return { start, end: Math.min(start + NEW_PART_LENGTH, duration) }
+    // a first part covering the whole video would normalize away to "no trim"
+    const wholeVideo = rows.length === 0 && duration <= NEW_PART_LENGTH
+    const length = wholeVideo ? Math.floor((duration / 2) * 10) / 10 : NEW_PART_LENGTH
+    const end = Math.min(start + Math.max(length, MIN_LENGTH), duration)
+    return wholeVideo && end >= duration ? null : { start, end }
   }
 
   function addPart() {
@@ -121,16 +126,16 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
     return (
       <input
         type="text"
-        value={texts[key] ?? (value === null ? '' : formatVideoTime(value))}
+        value={texts[key] ?? (value === null ? '' : formatVideoTimeExact(value))}
         placeholder={side === 'start' ? '0:00' : t('trim.endPlaceholder')}
         disabled={busy}
-        onFocus={() => setSelected(i)}
-        onChange={(e) => setTexts((prev) => ({ ...prev, [key]: e.target.value }))}
+        onFocus={() => { setSelected(i) }}
+        onChange={(e) => { setTexts((prev) => ({ ...prev, [key]: e.target.value })); }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur()
           if (e.key === 'Escape') clearText(key)
         }}
-        onBlur={(e) => texts[key] !== undefined && commitText(i, side, e.currentTarget.value)}
+        onBlur={(e) => { if (texts[key] !== undefined) commitText(i, side, e.currentTarget.value) }}
         title={t('trim.timeHint')}
         className={timeInputClass}
       />
@@ -149,10 +154,10 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
           step={0.1}
           value={side === 'start' ? part.start : (part.end ?? duration)}
           disabled={busy}
-          onChange={(e) => slide(side, Number(e.target.value))}
-          onMouseUp={() => draft && commit(draft)}
-          onTouchEnd={() => draft && commit(draft)}
-          onKeyUp={() => draft && commit(draft)}
+          onChange={(e) => { slide(side, Number(e.target.value)) }}
+          onMouseUp={() => void (draft && commit(draft))}
+          onTouchEnd={() => void (draft && commit(draft))}
+          onKeyUp={() => void (draft && commit(draft))}
           title={side === 'start' ? t('trim.startHint') : t('trim.endHint')}
           className="w-full accent-accent-500 disabled:opacity-50"
         />
@@ -170,7 +175,7 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
         {trimmed && (
           <button
             disabled={busy}
-            onClick={() => commit([])}
+            onClick={() => void commit([])}
             title={t('trim.reset')}
             className="text-gray-500 hover:text-gray-300 disabled:opacity-50"
           >
@@ -189,7 +194,7 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
               <button
                 key={i}
                 disabled={!rows.length}
-                onClick={() => setSelected(i)}
+                onClick={() => { setSelected(i) }}
                 title={`${formatVideoTime(s.start)} - ${formatVideoTime(endOf(s) ?? duration)}`}
                 className={`absolute inset-y-0 ${rows.length && i === index ? 'bg-accent-400' : 'bg-accent-500/50'}`}
                 style={{
@@ -205,7 +210,7 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
         {rows.map((s, i) => (
           <div key={i} className={`flex items-center gap-1.5 rounded px-1 ${i === index ? 'bg-fg/5' : ''}`}>
             <button
-              onClick={() => setSelected(i)}
+              onClick={() => { setSelected(i) }}
               className={`flex-1 text-left ${i === index ? 'text-gray-200' : 'text-gray-500 hover:text-gray-300'}`}
             >
               {t('trim.part', { n: i + 1 })}
@@ -215,7 +220,7 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
             {timeInput(i, 'end')}
             <button
               disabled={busy}
-              onClick={() => removePart(i)}
+              onClick={() => { removePart(i) }}
               title={t('trim.removePart')}
               className="text-gray-500 hover:text-red-300 disabled:opacity-50"
             >
@@ -245,7 +250,7 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
           {live && trimmed && part && seamSeek(part) !== undefined && (
             <button
               disabled={busy}
-              onClick={() => onPreview(segments, seamSeek(part))}
+              onClick={() => { onPreview(segments, seamSeek(part)) }}
               title={t('trim.cutHint', { seconds: SEAM_LEAD, n: index + 1 })}
               className="flex items-center gap-1 rounded bg-fg/10 px-1.5 py-0.5 text-[10px] text-gray-300 hover:bg-fg/15 disabled:opacity-40"
             >

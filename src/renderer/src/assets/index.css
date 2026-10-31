@@ -170,3 +170,59 @@
     box-shadow: 0 0 0 2px rgb(0 0 0 / 0.25), 0 1px 4px rgb(0 0 0 / 0.3);
   }
 }
+
+@keyframes view-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.view-enter,
+.settings-sections {
+  animation: view-in 0.18s ease-out;
+}
+
+.settings-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.settings-sections > :not(.fixed) {
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+  background-color: color-mix(in oklab, var(--color-fg) 3%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-fg) 5%, transparent);
+}
+
+.settings-sections > :not(.fixed) > label.block:first-child {
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--color-gray-100);
+}
+
+@layer components {
+  button:not(:disabled):active {
+    transform: scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-enter,
+  .settings-sections {
+    animation: none;
+  }
+
+  @layer components {
+    button:not(:disabled):active {
+      transform: none;
+    }
+  }
+}

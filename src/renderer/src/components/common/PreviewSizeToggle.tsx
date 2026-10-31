@@ -1,12 +1,15 @@
+import type { ReactNode } from 'react'
+import { List } from 'lucide-react'
 import clsx from 'clsx'
 import type { PreviewSize } from '../../hooks/usePreviewSize'
 import { t } from '../../i18n'
 import type { MessageKey } from '@shared/i18n'
 
-const OPTIONS: { value: PreviewSize; label: string; title: MessageKey }[] = [
+const OPTIONS: { value: PreviewSize; label: ReactNode; title: MessageKey }[] = [
   { value: 'small', label: 'S', title: 'previewSize.small' },
   { value: 'normal', label: 'M', title: 'previewSize.normal' },
-  { value: 'big', label: 'L', title: 'previewSize.big' }
+  { value: 'big', label: 'L', title: 'previewSize.big' },
+  { value: 'list', label: <List size={14} />, title: 'previewSize.list' }
 ]
 
 export default function PreviewSizeToggle({
@@ -21,10 +24,10 @@ export default function PreviewSizeToggle({
       {OPTIONS.map((opt) => (
         <button
           key={opt.value}
-          onClick={() => onChange(opt.value)}
+          onClick={() => { onChange(opt.value) }}
           title={t(opt.title)}
           className={clsx(
-            'px-2.5 py-2 transition-colors',
+            'flex items-center px-2.5 py-2 transition-colors',
             value === opt.value
               ? 'bg-accent-600 text-white'
               : 'bg-fg/5 text-gray-400 hover:text-gray-200'

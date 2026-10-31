@@ -6,6 +6,8 @@ vi.mock('../utils/platform', async (importOriginal) => ({
   getScreenGeometry: () => '1920x0x2560x1440',
   getConnectedScreens: () => ['DP-1']
 }))
+const loaderSettings = { textures: true, shaders: true, threads: 0 }
+
 vi.mock('./config.service', () => ({
   getConfiguredWorkshopPath: () => null,
   getLweRepoUrl: () => null,
@@ -15,11 +17,14 @@ vi.mock('./config.service', () => ({
   getAmbientVolume: () => null,
   getLeds: () => ({ enabled: false, server: '127.0.0.1:6742', brightness: 100, boost: true, reduceFps: false }),
   getDefaultAudioSensitivity: () => 1,
-  getDisablePuppetAnimation: () => false
+  getDisablePuppetAnimation: () => false,
+  getScriptLimits: () => false,
+  getLoader: () => loaderSettings
 }))
 
 const {
   buildCleanBuildEnv,
+  buildLweEnvVars,
   buildHotswapLines,
   buildLweArgs,
   lwePackageOwner,
@@ -28,6 +33,20 @@ const {
   parseCustomArgs,
   parseOsReleaseIds
 } = await import('./lwe.service')
+
+const loaderVars = () => buildLweEnvVars().filter((v) => /^LWE_(NO_|PREFETCH)/.test(v))
+
+describe('buildLweEnvVars loader settings', () => {
+  it('sets nothing by default', () => {
+    Object.assign(loaderSettings, { textures: true, shaders: true, threads: 0 })
+    expect(loaderVars()).toEqual([])
+  })
+
+  it('turns the prefetches off and passes the thread count', () => {
+    Object.assign(loaderSettings, { textures: false, shaders: false, threads: 4 })
+    expect(loaderVars()).toEqual(['LWE_NO_TEXTURE_PREFETCH=1', 'LWE_NO_SHADER_WARM=1', 'LWE_PREFETCH_THREADS=4'])
+  })
+})
 
 describe('parseCustomArgs', () => {
   it('splits on whitespace and keeps quoted values together', () => {

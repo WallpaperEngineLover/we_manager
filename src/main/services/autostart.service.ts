@@ -84,10 +84,6 @@ export function getCompositorAutostartLine(): string | null {
   return compositorAutostartLine(detectDesktopEnv(), launchCommand())
 }
 
-export function isAutostartFileEnabled(): boolean {
-  return fs.existsSync(getAutostartDesktopPath())
-}
-
 /** Rewrites the entry when the app moved since autostart was saved */
 export function refreshAutostartExec(minimized: boolean): void {
   if (!isAutostartSupported()) return

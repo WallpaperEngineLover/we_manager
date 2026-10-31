@@ -58,10 +58,10 @@ export default function ImageAdjustmentsSection({ adjustments = {}, live, onComm
           max={100}
           value={value}
           disabled={busy}
-          onChange={(e) => slide(key, Number(e.target.value))}
-          onMouseUp={() => draft && commit(draft)}
-          onTouchEnd={() => draft && commit(draft)}
-          onKeyUp={() => draft && commit(draft)}
+          onChange={(e) => { slide(key, Number(e.target.value)) }}
+          onMouseUp={() => void (draft && commit(draft))}
+          onTouchEnd={() => void (draft && commit(draft))}
+          onKeyUp={() => void (draft && commit(draft))}
           className="w-full accent-accent-500 disabled:opacity-50"
         />
       </div>
@@ -85,7 +85,7 @@ export default function ImageAdjustmentsSection({ adjustments = {}, live, onComm
           <select
             value={current.filter ?? ''}
             disabled={busy}
-            onChange={(e) => commit({ ...current, filter: e.target.value })}
+            onChange={(e) => void commit({ ...current, filter: e.target.value })}
             className={selectClass}
           >
             <option value="">{t('image.noFilter')}</option>
@@ -104,7 +104,7 @@ export default function ImageAdjustmentsSection({ adjustments = {}, live, onComm
             type="checkbox"
             checked={current.colorEnabled ?? false}
             disabled={busy}
-            onChange={(e) => commit({ ...current, colorEnabled: e.target.checked })}
+            onChange={(e) => void commit({ ...current, colorEnabled: e.target.checked })}
             className="accent-accent-500"
           />
           <span className="flex-1">{t('image.colorOptions')}</span>
@@ -137,7 +137,7 @@ export default function ImageAdjustmentsSection({ adjustments = {}, live, onComm
             type="checkbox"
             checked={current.flip ?? false}
             disabled={busy}
-            onChange={(e) => commit({ ...current, flip: e.target.checked })}
+            onChange={(e) => void commit({ ...current, flip: e.target.checked })}
             className="accent-accent-500"
           />
           {t('image.flip')}

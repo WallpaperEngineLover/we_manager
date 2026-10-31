@@ -303,7 +303,7 @@ async function safeGetWorkshopDetails(ids: string[]): Promise<Map<string, Worksh
   }
 }
 
-export function getDirSize(dirPath: string): number {
+function getDirSize(dirPath: string): number {
   let total = 0
   try {
     for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
@@ -784,7 +784,7 @@ export function queueHdrCheck(): void {
 }
 
 // HDR and HRTF share one scene read
-export async function backfillHdr(): Promise<boolean> {
+async function backfillHdr(): Promise<boolean> {
   if (hdrPassRunning) {
     hdrPassQueued = true
     return false
@@ -921,43 +921,42 @@ export function cleanupFolders(): number {
 }
 
 export function importWEConfig(configPath: string): { folders: number; playlists: number } {
-  const raw = fs.readFileSync(configPath, 'utf8')
-  const data = JSON.parse(raw)
+  const data: unknown = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+  const asRecord = (v: unknown): Record<string, unknown> | null => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null)
+  const asRecords = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.map(asRecord).filter((r) => r !== null) : [])
 
   const imported: WallpaperFolder[] = []
   const existingTitles = new Set(store.get('folders').map((f) => f.title))
 
   // the profile with the most folders, usually '~'
-  let bestProfile: { folders: any[]; playlists: any[] } = { folders: [], playlists: [] }
-  for (const key of Object.keys(data)) {
-    const val = data[key]
-    if (!val || typeof val !== 'object') continue
-    const general = val.general
-    if (!general || typeof general !== 'object') continue
-    const browser = general.browser
-    const folders = browser?.folders ?? []
-    const playlists = general.playlists ?? []
-    const total = folders.length + playlists.length
-    if (total > bestProfile.folders.length + bestProfile.playlists.length) {
-      bestProfile = { folders, playlists }
+  let bestFolders: Record<string, unknown>[] = []
+  let bestPlaylists: Record<string, unknown>[] = []
+  for (const profile of Object.values(asRecord(data) ?? {})) {
+    const general = asRecord(asRecord(profile)?.general)
+    if (!general) continue
+    const folders = asRecords(asRecord(general.browser)?.folders)
+    const playlists = asRecords(general.playlists)
+    if (folders.length + playlists.length > bestFolders.length + bestPlaylists.length) {
+      bestFolders = folders
+      bestPlaylists = playlists
     }
   }
 
-  for (const f of bestProfile.folders) {
-    const title = f.title ?? 'Untitled'
+  for (const f of bestFolders) {
+    const title = typeof f.title === 'string' ? f.title : 'Untitled'
     if (existingTitles.has(title)) continue
-    const items = Object.keys(f.items ?? {}).filter((k) => /^\d+$/.test(k))
+    const items = Object.keys(asRecord(f.items) ?? {}).filter((k) => /^\d+$/.test(k))
     imported.push({ id: randomUUID(), title, items })
     existingTitles.add(title)
   }
 
   // playlist items are full file paths
-  for (const p of bestProfile.playlists) {
-    const title = p.name ?? 'Untitled Playlist'
+  for (const p of bestPlaylists) {
+    const title = typeof p.name === 'string' ? p.name : 'Untitled Playlist'
     if (existingTitles.has(title)) continue
     const items: string[] = []
-    for (const filePath of p.items ?? []) {
-      const match = filePath.match(/\/431960\/(\d+)\//)
+    for (const filePath of Array.isArray(p.items) ? p.items : []) {
+      const match = typeof filePath === 'string' ? /\/431960\/(\d+)\//.exec(filePath) : null
       if (match) items.push(match[1])
     }
     if (items.length > 0) {
@@ -972,8 +971,8 @@ export function importWEConfig(configPath: string): { folders: number; playlists
     store.set('folders', folders)
   }
 
-  const fCount = bestProfile.folders.length
-  const pCount = bestProfile.playlists.length
+  const fCount = bestFolders.length
+  const pCount = bestPlaylists.length
   console.log(`[Library] WE config imported: ${imported.length} folders/playlists from ${fCount} folders + ${pCount} playlists`)
   return { folders: fCount, playlists: pCount }
 }

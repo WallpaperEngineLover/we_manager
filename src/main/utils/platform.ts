@@ -61,12 +61,17 @@ function parseJson(output: string): unknown {
   }
 }
 
+function isNamed(v: unknown): v is { name: string; [key: string]: unknown } {
+  return typeof v === 'object' && v !== null && typeof (v as { name?: unknown }).name === 'string' && (v as { name: string }).name !== ''
+}
+
 /** `hyprctl monitors -j`: an array of monitors, a disabled one has no output to draw on */
 export function parseHyprctlMonitors(output: string): string[] {
   const monitors = parseJson(output)
   if (!Array.isArray(monitors)) return []
   return monitors
-    .filter(m => m && typeof m.name === 'string' && m.name && m.disabled !== true)
+    .filter(isNamed)
+    .filter(m => m.disabled !== true)
     .map(m => m.name)
 }
 
@@ -75,7 +80,8 @@ export function parseSwayOutputs(output: string): string[] {
   const outputs = parseJson(output)
   if (!Array.isArray(outputs)) return []
   return outputs
-    .filter(o => o && typeof o.name === 'string' && o.name && o.active !== false)
+    .filter(isNamed)
+    .filter(o => o.active !== false)
     .map(o => o.name)
 }
 

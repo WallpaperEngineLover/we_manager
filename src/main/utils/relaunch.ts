@@ -30,6 +30,7 @@ const CLOSE_FDS_AND_EXEC = 'for fd in /proc/$$/fd/*; do fd=${fd##*/}; [ "$fd" -g
 export function relaunchApp(args: string[] = process.argv.slice(1), quit: 'quit' | 'exit' = 'quit'): void {
   const appImage = runningAppImage()
   if (appImage) {
+    app.releaseSingleInstanceLock()
     spawn('bash', ['-c', CLOSE_FDS_AND_EXEC, appImage, ...args], {
       detached: true,
       stdio: 'ignore',

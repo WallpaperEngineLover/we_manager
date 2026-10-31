@@ -30,7 +30,7 @@ export function applyAppearance(appearance: Appearance, translucent: boolean): v
 // config arrives after first paint, the cached look avoids a theme flash
 export function applyCachedAppearance(): void {
   try {
-    const cached = JSON.parse(localStorage.getItem(CACHE_KEY) ?? 'null')
+    const cached = JSON.parse(localStorage.getItem(CACHE_KEY) ?? 'null') as { appearance?: Parameters<typeof normalizeAppearance>[0]; translucent?: unknown } | null
     if (cached) applyAppearance(normalizeAppearance(cached.appearance), cached.translucent === true)
   } catch {
   }
@@ -38,5 +38,5 @@ export function applyCachedAppearance(): void {
 
 export function onSystemThemeChange(cb: () => void): () => void {
   darkQuery.addEventListener('change', cb)
-  return () => darkQuery.removeEventListener('change', cb)
+  return () => { darkQuery.removeEventListener('change', cb) }
 }

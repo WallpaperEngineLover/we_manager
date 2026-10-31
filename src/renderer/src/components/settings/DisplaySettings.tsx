@@ -25,7 +25,7 @@ export default function DisplaySettings({ screens }: { screens: string[] }) {
   async function toggleScreen(screen: string) {
     const next = disabled.includes(screen) ? disabled.filter((s) => s !== screen) : [...disabled, screen]
     await window.electronAPI.config.setDisabledScreens(next)
-    for (const key of ['config', 'display-targets']) queryClient.invalidateQueries({ queryKey: [key] })
+    for (const key of ['config', 'display-targets']) void queryClient.invalidateQueries({ queryKey: [key] })
   }
 
   async function switchTo(mode: DisplayMode) {
@@ -34,7 +34,7 @@ export default function DisplaySettings({ screens }: { screens: string[] }) {
     try {
       await window.electronAPI.config.setDisplayMode(mode)
       for (const key of ['config', 'display-targets', 'screen-assignments', 'playlist-playback-state']) {
-        queryClient.invalidateQueries({ queryKey: [key] })
+        void queryClient.invalidateQueries({ queryKey: [key] })
       }
     } finally {
       setSwitching(false)
@@ -51,7 +51,7 @@ export default function DisplaySettings({ screens }: { screens: string[] }) {
         {MODES.map(({ mode, label, icon: Icon }) => (
           <button
             key={mode}
-            onClick={() => switchTo(mode)}
+            onClick={() => void switchTo(mode)}
             disabled={switching}
             className={`flex items-center gap-2 px-3 py-2 transition-colors ${
               current === mode ? 'bg-accent-600 text-white' : 'bg-fg/5 text-gray-400 hover:text-gray-200'
@@ -71,7 +71,7 @@ export default function DisplaySettings({ screens }: { screens: string[] }) {
               const on = !disabled.includes(screen) && !isMirror
               return (
                 <label key={screen} className={`flex items-center gap-2 text-sm ${isMirror ? 'text-gray-600' : 'cursor-pointer text-gray-300'}`}>
-                  <input type="checkbox" checked={on} disabled={isMirror} onChange={() => toggleScreen(screen)} />
+                  <input type="checkbox" checked={on} disabled={isMirror} onChange={() => void toggleScreen(screen)} />
                   {screen}
                   {isMirror && <span className="text-xs text-gray-500">{t('display.mirrored')}</span>}
                 </label>

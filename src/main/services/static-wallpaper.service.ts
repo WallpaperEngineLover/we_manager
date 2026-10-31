@@ -14,7 +14,7 @@ export type CommandRunner = (cmd: string, args: string[]) => Promise<CommandResu
 export type DaemonStarter = (cmd: string, args: string[]) => ChildProcess | void
 
 /** never throws */
-export const runHostCommand: CommandRunner = async (cmd, args) => {
+const runHostCommand: CommandRunner = async (cmd, args) => {
   try {
     const { stdout, stderr } = await execFileAsync(...hostCommand(cmd, args), { timeout: 10000 })
     return { ok: true, output: `${stdout}${stderr}`.trim() }
@@ -24,7 +24,7 @@ export const runHostCommand: CommandRunner = async (cmd, args) => {
   }
 }
 
-export const startHostDaemon: DaemonStarter = (cmd, args) => {
+const startHostDaemon: DaemonStarter = (cmd, args) => {
   const [file, fileArgs] = hostCommand(cmd, args)
   const child = spawn(file, fileArgs, { detached: true, stdio: 'ignore' })
   child.on('error', () => {})
@@ -99,7 +99,7 @@ export async function applySwaybg(imagePath: string, start: DaemonStarter = star
   if (!child) return
 
   const exitCode = await new Promise<number | null | undefined>((resolve) => {
-    const timer = setTimeout(() => resolve(undefined), 700)
+    const timer = setTimeout(() => { resolve(undefined) }, 700)
     child.once('exit', (code) => {
       clearTimeout(timer)
       resolve(code)
@@ -127,7 +127,7 @@ export function hasHyprpaper(has: (cmd: string) => boolean = isHostCommandAvaila
   return has('hyprpaper') && has('hyprctl')
 }
 
-export function isHostProcessRunning(name: string): boolean {
+function isHostProcessRunning(name: string): boolean {
   try {
     execFileSync(...hostCommand('pgrep', ['-x', name]), { stdio: 'ignore', timeout: 5000 })
     return true

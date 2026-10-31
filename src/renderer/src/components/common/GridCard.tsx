@@ -14,13 +14,14 @@ interface GridCardProps extends HTMLAttributes<HTMLDivElement> {
   isDetailOpen: boolean
   steam: CardSteamState
   borders: CardBorders
+  row?: boolean
   [dataAttr: `data-${string}`]: string
 }
 
 // outside the card, so a liked favorite shows both colors
 const FRAME_INSET_PX = [4, 7]
 
-export function GridCard({ selected, isDetailOpen, steam, borders, className, children, ...rest }: GridCardProps) {
+export function GridCard({ selected, isDetailOpen, steam, borders, row = false, className, children, ...rest }: GridCardProps) {
   const { frames, title } = cardFrames(borders, steam)
   return (
     <div
@@ -28,7 +29,8 @@ export function GridCard({ selected, isDetailOpen, steam, borders, className, ch
       data-preview-hover=""
       title={title}
       className={clsx(
-        'group relative cursor-pointer select-none rounded-xl bg-card shadow-sm shadow-black/10 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/25',
+        'group relative cursor-pointer select-none rounded-md bg-card shadow-sm shadow-black/10 transition-all duration-200',
+        row ? 'hover:bg-fg/[0.04]' : 'hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/25',
         isDetailOpen ? 'ring-2 ring-sky-400' : selected ? 'ring-2 ring-accent-500' : 'ring-1 ring-fg/5 hover:ring-accent-500/50',
         className
       )}
@@ -40,13 +42,13 @@ export function GridCard({ selected, isDetailOpen, steam, borders, className, ch
           className="pointer-events-none absolute border-2"
           style={{
             inset: -FRAME_INSET_PX[i],
-            borderRadius: 12 + FRAME_INSET_PX[i],
+            borderRadius: 6 + FRAME_INSET_PX[i],
             borderColor: frame.color,
             borderStyle: frame.kind === 'failed' ? 'dashed' : 'solid'
           }}
         />
       ))}
-      <div className="relative h-full overflow-hidden rounded-xl">
+      <div className={clsx('relative h-full overflow-hidden rounded-md', row && 'flex items-center')}>
         <div
           className={clsx(
             'absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border transition-all',
@@ -180,7 +182,7 @@ export function LikeAction({
             ? t('vote.alreadyLiked')
             : t('vote.likeOnSteam')
       }
-      onClick={() => vote(id, true)}
+      onClick={() => void vote(id, true)}
     />
   )
 }
@@ -192,7 +194,7 @@ export function SteamAction({ id, compact }: { id: string; compact?: boolean }) 
       label="Steam"
       compact={compact}
       title={t('menu.openWorkshop')}
-      onClick={() => openWorkshopPage(id)}
+      onClick={() => { openWorkshopPage(id) }}
     />
   )
 }

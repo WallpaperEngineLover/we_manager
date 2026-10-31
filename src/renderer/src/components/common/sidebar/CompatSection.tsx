@@ -57,7 +57,7 @@ export default function CompatSection({ wallpaper, canTest, onChange, onTest }: 
   return (
     <div className="border-t border-fg/5 pt-3">
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setOpen((v) => !v) }}
         className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -80,7 +80,7 @@ export default function CompatSection({ wallpaper, canTest, onChange, onTest }: 
               {new Date(compat.lastCrash.at).toLocaleString(currentLanguage())}
               {compat.runtimeCrashes ? ` ${t('compat.runtimeCount', { count: compat.runtimeCrashes })}` : ''}
               {compat.lastCrash.log.length > 0 && (
-                <button onClick={() => setShowLog((v) => !v)} className="ml-1 text-accent-300 hover:text-accent-200">
+                <button onClick={() => { setShowLog((v) => !v) }} className="ml-1 text-accent-300 hover:text-accent-200">
                   {showLog ? t('compat.hideLog') : t('compat.showLog')}
                 </button>
               )}
@@ -94,8 +94,8 @@ export default function CompatSection({ wallpaper, canTest, onChange, onTest }: 
 
           <textarea
             value={note}
-            onChange={(e) => setNoteDraft(e.target.value)}
-            onBlur={(e) => commitNote(e.target.value)}
+            onChange={(e) => { setNoteDraft(e.target.value) }}
+            onBlur={(e) => void commitNote(e.target.value)}
             rows={2}
             placeholder={t('compat.notePlaceholder')}
             className="w-full resize-y rounded border border-fg/10 bg-black/30 px-2 py-1 text-xs text-gray-200 placeholder:text-gray-600 focus:border-accent-500/50 focus:outline-none"
@@ -104,7 +104,7 @@ export default function CompatSection({ wallpaper, canTest, onChange, onTest }: 
           <div className="flex gap-1.5">
             {canTest && (
               <button
-                onClick={test}
+                onClick={() => void test()}
                 disabled={testing}
                 title={t('compat.testHint')}
                 className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10 disabled:opacity-50"
@@ -115,7 +115,7 @@ export default function CompatSection({ wallpaper, canTest, onChange, onTest }: 
             )}
             {status !== 'ok' && (
               <button
-                onClick={clearStatus}
+                onClick={() => void clearStatus()}
                 className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10"
               >
                 <Undo2 size={11} />

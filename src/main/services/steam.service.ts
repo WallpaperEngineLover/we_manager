@@ -10,6 +10,7 @@ import { getSteamIdentity } from './config.service'
 import { encodeBigInts, decodeBigInts, type SteamHostResponse } from '../steam-host-protocol'
 import { hostCommand, isFlatpak } from '../utils/flatpak'
 import { SteamListCache } from './steam-list-cache'
+import { openStore } from '../utils/safeStore'
 
 // Steam counts a connected process as a running game, so like WE's ui32.exe connect only while shown
 let windowActive = false
@@ -170,7 +171,7 @@ function startHost(): Promise<void> {
       lastInitFailure = Date.now()
       if (!hasWarnedThisOutage) {
         hasWarnedThisOutage = true
-        console.warn('[Steam] Init failed (Steam may not be running):', err?.message ?? err)
+        console.warn('[Steam] Init failed (Steam may not be running):', err instanceof Error ? err.message : err)
       }
       throw err
     }
@@ -215,7 +216,7 @@ export async function getLocalAccountId(): Promise<number> {
   return id.accountId
 }
 
-export function getSubscribedIds(): Promise<bigint[]> {
+function getSubscribedIds(): Promise<bigint[]> {
   return steamCall<bigint[]>('workshop.getSubscribedItems')
 }
 
@@ -246,15 +247,15 @@ function isSteamOnline(): Promise<boolean> {
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    const timer = setTimeout(() => { reject(new Error(`${label} timed out after ${ms}ms`)); }, ms)
     promise.then(
       (value) => {
         clearTimeout(timer)
         resolve(value)
       },
-      (err) => {
+      (err: unknown) => {
         clearTimeout(timer)
-        reject(err)
+        reject(err instanceof Error ? err : new Error(String(err)))
       }
     )
   })
@@ -274,7 +275,7 @@ async function patchedVoteApiAvailable(): Promise<boolean> {
   return hasPatchedVoteApi
 }
 
-export async function checkUserVote(
+async function checkUserVote(
   itemId: bigint
 ): Promise<{ votedUp: boolean; votedDown: boolean } | null> {
   if (!(await patchedVoteApiAvailable())) return null
@@ -282,7 +283,7 @@ export async function checkUserVote(
   return { votedUp: result.votedUp, votedDown: result.votedDown }
 }
 
-export function voteOnItem(itemId: bigint, voteUp: boolean): Promise<bigint> {
+function voteOnItem(itemId: bigint, voteUp: boolean): Promise<bigint> {
   return steamCall<bigint>('voteRaw', itemId, voteUp)
 }
 
@@ -466,8 +467,8 @@ async function voteOnce(itemId: bigint, voteUp: boolean): Promise<void> {
   }
 }
 
-export async function getVotedUpItemIds(): Promise<string[]> {
-  return likedList.list()
+export function getVotedUpItemIds(): Promise<string[]> {
+  return Promise.resolve(likedList.list())
 }
 
 export function getVotedDownItemIds(): string[] {
@@ -476,8 +477,8 @@ export function getVotedDownItemIds(): string[] {
 
 export async function refreshItemVote(itemId: bigint): Promise<boolean | null> {
   if (!isSteamRunning() || !(await isSteamOnline().catch(() => false))) return null
-  const result = await withTimeout(checkUserVote(itemId), PAGE_FETCH_TIMEOUT_MS, 'getUserVote').catch((err) => {
-    console.warn('[Steam] Per-item vote check failed:', err?.message ?? err)
+  const result = await withTimeout(checkUserVote(itemId), PAGE_FETCH_TIMEOUT_MS, 'getUserVote').catch((err: unknown) => {
+    console.warn('[Steam] Per-item vote check failed:', err instanceof Error ? err.message : err)
     return null
   })
   if (!result) return null
@@ -628,25 +629,77 @@ export async function getInstallInfo(itemId: bigint): Promise<{ folder: string; 
 }
 
 // steamworks.js only knows the player and friends, read the public profile XML
-const authorInfoCache = new Map<string, WorkshopAuthorInfo | null>()
+type CachedAuthor = WorkshopAuthorInfo & { fetchedAt?: number }
+
+const AUTHOR_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+let authorStore: ReturnType<typeof openStore<{ authors: Record<string, CachedAuthor> }>> | null = null
+
+function authorInfoCache(): ReturnType<typeof openStore<{ authors: Record<string, CachedAuthor> }>> {
+  authorStore ??= openStore<{ authors: Record<string, CachedAuthor> }>({ name: 'author-cache', defaults: { authors: {} } })
+  return authorStore
+}
 const PROFILE_FETCH_TIMEOUT_MS = 15_000
 
-export async function getAuthorInfo(steamId: string): Promise<WorkshopAuthorInfo | null> {
-  if (authorInfoCache.has(steamId)) return authorInfoCache.get(steamId) ?? null
-  try {
-    const res = await fetch(`https://steamcommunity.com/profiles/${steamId}?xml=1`, {
-      signal: AbortSignal.timeout(PROFILE_FETCH_TIMEOUT_MS)
-    })
-    if (!res.ok) return null
-    const xml = await res.text()
-    const name = xml.match(/<steamID><!\[CDATA\[([\s\S]*?)\]\]><\/steamID>/)?.[1]
-    const avatarUrl = xml.match(/<avatarFull><!\[CDATA\[([\s\S]*?)\]\]><\/avatarFull>/)?.[1]
-    const info = name && avatarUrl ? { steamId, name, avatarUrl } : null
-    authorInfoCache.set(steamId, info)
-    return info
-  } catch {
-    return null
+const authorInfoInflight = new Map<string, Promise<WorkshopAuthorInfo>>()
+
+// throws on any failure (429 when Steam rate limits, timeouts, private profile without avatar),
+// so the renderer retries instead of caching a null forever
+export function getAuthorInfo(steamId: string): Promise<WorkshopAuthorInfo> {
+  const cached = authorInfoCache().get('authors')[steamId]
+  if (cached?.fetchedAt && Date.now() - cached.fetchedAt < AUTHOR_CACHE_TTL_MS) return Promise.resolve(cached)
+  let pending = authorInfoInflight.get(steamId)
+  if (!pending) {
+    pending = queueProfileFetch(steamId)
+      .catch((err: unknown) => {
+        if (cached) return cached
+        throw err
+      })
+      .finally(() => authorInfoInflight.delete(steamId))
+    authorInfoInflight.set(steamId, pending)
   }
+  return pending
+}
+
+const PROFILE_GAP_MS = 1000
+const PROFILE_MAX_RETRY_WAIT_MS = 10_000
+let profileQueue: Promise<unknown> = Promise.resolve()
+
+function queueProfileFetch(steamId: string): Promise<WorkshopAuthorInfo> {
+  const run = profileQueue.then(async () => {
+    try {
+      return await fetchAuthorInfo(steamId)
+    } finally {
+      await new Promise((resolve) => setTimeout(resolve, PROFILE_GAP_MS))
+    }
+  })
+  profileQueue = run.catch(() => undefined)
+  return run
+}
+
+async function fetchProfileXml(steamId: string): Promise<Response> {
+  const url = `https://steamcommunity.com/profiles/${steamId}?xml=1`
+  let res = await fetch(url, { signal: AbortSignal.timeout(PROFILE_FETCH_TIMEOUT_MS) })
+  if (res.status === 429) {
+    const retryAfter = Number(res.headers.get('retry-after'))
+    const waitMs = retryAfter > 0 ? retryAfter * 1000 : 3000
+    if (waitMs <= PROFILE_MAX_RETRY_WAIT_MS) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs))
+      res = await fetch(url, { signal: AbortSignal.timeout(PROFILE_FETCH_TIMEOUT_MS) })
+    }
+  }
+  return res
+}
+
+async function fetchAuthorInfo(steamId: string): Promise<WorkshopAuthorInfo> {
+  const res = await fetchProfileXml(steamId)
+  if (!res.ok) throw new Error(`Steam profile ${steamId}: HTTP ${res.status}`)
+  const xml = await res.text()
+  const name = xml.match(/<steamID><!\[CDATA\[([\s\S]*?)\]\]><\/steamID>/)?.[1]
+  const avatarUrl = xml.match(/<avatarFull><!\[CDATA\[([\s\S]*?)\]\]><\/avatarFull>/)?.[1]
+  if (!name || !avatarUrl) throw new Error(`Steam profile ${steamId}: no ${name ? 'avatar' : 'name'} in response`)
+  const info = { steamId, name, avatarUrl }
+  authorInfoCache().set(`authors.${steamId}`, { ...info, fetchedAt: Date.now() })
+  return info
 }
 
 /** EItemState, throws when Steam can't be asked */

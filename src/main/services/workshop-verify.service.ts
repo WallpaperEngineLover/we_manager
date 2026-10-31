@@ -69,7 +69,7 @@ async function within<T>(promise: Promise<T>, ms: number): Promise<T> {
     return await Promise.race([
       promise,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Steam did not answer')), ms)
+        timer = setTimeout(() => { reject(new Error('Steam did not answer')) }, ms)
       })
     ])
   } finally {

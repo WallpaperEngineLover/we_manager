@@ -18,7 +18,7 @@ describe('lweBuildDir', () => {
 
 describe('isOwnDirectory', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wem-builddir-'))
-  afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }))
+  afterAll(() => { fs.rmSync(tmp, { recursive: true, force: true }) })
 
   it('accepts a directory of the user', () => {
     const dir = path.join(tmp, 'mine')

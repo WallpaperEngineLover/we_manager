@@ -1,12 +1,20 @@
-/** "3:05" or "1:02:03", with tenths when the time isn't a whole second */
-export function formatVideoTime(seconds: number): string {
-  const tenths = Math.round(seconds * 10)
-  const whole = Math.floor(tenths / 10)
-  const fraction = tenths % 10 ? `.${tenths % 10}` : ''
+function formatClock(seconds: number, decimals: number): string {
+  const unit = 10 ** decimals
+  const ticks = Math.round(seconds * unit)
+  const whole = Math.floor(ticks / unit)
+  const fraction = ticks % unit ? `.${String(ticks % unit).padStart(decimals, '0').replace(/0+$/, '')}` : ''
   const h = Math.floor(whole / 3600)
   const m = Math.floor((whole % 3600) / 60)
   const s = String(whole % 60).padStart(2, '0') + fraction
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`
+}
+
+export function formatVideoTime(seconds: number): string {
+  return formatClock(seconds, 1)
+}
+
+export function formatVideoTimeExact(seconds: number): string {
+  return formatClock(seconds, 3)
 }
 
 /** Seconds from "90", "1:30" or "0:01:30.5" (what the engine takes too), null for anything else */

@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { BellOff, Download, ExternalLink, Loader2, RefreshCw, RotateCw, X } from 'lucide-react'
-import type { AppInstallKind, AppUpdateProgress, AvailableUpdate, LweInstallProgress, UpdateStatus, UpdateTarget } from '@shared/types'
+import type { AppInstallKind, AppUpdateProgress, AvailableUpdate, UpdateStatus, UpdateTarget } from '@shared/types'
 import type { MessageKey } from '@shared/i18n'
-import { UPDATE_STATUS_KEY, useUpdateStatus } from '../../hooks/queries'
+import { UPDATE_STATUS_KEY, useLweInstallProgress, useUpdateStatus } from '../../hooks/queries'
 import { t } from '../../i18n'
 
 const APP_HINTS: Record<Exclude<AppInstallKind, 'appimage' | 'deb'>, MessageKey> = {
@@ -37,19 +37,19 @@ function UpdateRow({ target, update, message, action }: {
         <RefreshCw size={16} className="shrink-0 text-accent-400" />
         <span className="flex-1">{message}</span>
         {action}
-        <button onClick={() => setShowNotes(!showNotes)} className={SECONDARY}>
+        <button onClick={() => { setShowNotes(!showNotes) }} className={SECONDARY}>
           {t('update.releaseNotes')}
         </button>
-        <button onClick={() => window.electronAPI.shell.openExternal(update.url)} className={SECONDARY}>
+        <button onClick={() => void window.electronAPI.shell.openExternal(update.url)} className={SECONDARY}>
           <ExternalLink size={12} />
           {t('update.releasePage')}
         </button>
-        <button onClick={() => dismiss(true)} className={SECONDARY}>
+        <button onClick={() => void dismiss(true)} className={SECONDARY}>
           <BellOff size={12} />
           {t('update.dontShowAgain')}
         </button>
         <button
-          onClick={() => dismiss(false)}
+          onClick={() => void dismiss(false)}
           title={t('update.dismiss')}
           className="rounded p-1 text-gray-500 hover:bg-fg/5 hover:text-gray-300"
         >
@@ -93,7 +93,7 @@ export function AppAction({ status }: { status: UpdateStatus }) {
     return (
       <>
         <span className="text-xs text-gray-400">{t('update.ready')}</span>
-        <button onClick={() => window.electronAPI.updates.restart()} className={PRIMARY}>
+        <button onClick={() => void window.electronAPI.updates.restart()} className={PRIMARY}>
           <RotateCw size={12} />
           {t('update.restart')}
         </button>
@@ -106,7 +106,7 @@ export function AppAction({ status }: { status: UpdateStatus }) {
         <span className="text-xs text-red-400">{t('update.installFailed', { error: progress.message ?? '' })}</span>
       )}
       <button
-        onClick={async () => queryClient.setQueryData(UPDATE_STATUS_KEY, await window.electronAPI.updates.installApp())}
+        onClick={() => void window.electronAPI.updates.installApp().then((status) => queryClient.setQueryData(UPDATE_STATUS_KEY, status)).catch(console.error)}
         className={PRIMARY}
       >
         <Download size={12} />
@@ -118,13 +118,7 @@ export function AppAction({ status }: { status: UpdateStatus }) {
 
 export function EngineAction({ status }: { status: UpdateStatus }) {
   const queryClient = useQueryClient()
-  // shared with Settings, fed by App.tsx
-  const { data: progress = null } = useQuery<LweInstallProgress | null>({
-    queryKey: ['lwe-install-progress'],
-    queryFn: () => null,
-    staleTime: Infinity,
-    gcTime: Infinity
-  })
+  const { progress, run } = useLweInstallProgress()
   const busy = progress !== null && progress.stage !== 'done' && progress.stage !== 'error'
 
   if (status.engineInstall === 'package') {
@@ -135,21 +129,12 @@ export function EngineAction({ status }: { status: UpdateStatus }) {
   }
 
   async function install() {
-    queryClient.setQueryData(['lwe-install-progress'], {
-      stage: 'downloading',
-      message: t('lwe.startingDownload'),
-      percentage: 0
-    } satisfies LweInstallProgress)
-    try {
-      await window.electronAPI.lwe.installPrebuilt()
-    } catch (err) {
-      queryClient.setQueryData(['lwe-install-progress'], {
-        stage: 'error',
-        message: t('lwe.installFailed', { error: (err as Error).message }),
-        percentage: 0
-      } satisfies LweInstallProgress)
-    }
-    queryClient.invalidateQueries({ queryKey: ['lwe-status'] })
+    await run(
+      { stage: 'downloading', message: t('lwe.startingDownload'), percentage: 0 },
+      () => window.electronAPI.lwe.installPrebuilt(),
+      'lwe.installFailed'
+    )
+    void queryClient.invalidateQueries({ queryKey: ['lwe-status'] })
   }
 
   return (
@@ -161,7 +146,7 @@ export function EngineAction({ status }: { status: UpdateStatus }) {
         </span>
       )}
       {!busy && (
-        <button onClick={install} className={PRIMARY}>
+        <button onClick={() => void install()} className={PRIMARY}>
           <Download size={12} />
           {t('update.update')}
         </button>

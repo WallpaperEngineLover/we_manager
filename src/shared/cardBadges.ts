@@ -10,7 +10,7 @@ export function normalizeCardBadges(value: unknown): CardBadges {
   const raw = (value && typeof value === 'object' ? value : {}) as Partial<Record<CardBadgeKind, unknown>>
   const out = {} as CardBadges
   for (const kind of CARD_BADGE_KINDS) {
-    out[kind] = typeof raw[kind] === 'boolean' ? (raw[kind] as boolean) : DEFAULT_CARD_BADGES[kind]
+    out[kind] = typeof raw[kind] === 'boolean' ? (raw[kind]) : DEFAULT_CARD_BADGES[kind]
   }
   return out
 }

@@ -13,7 +13,7 @@ export function useDisplayTargets(): { targets: ScreenTarget[]; perScreen: boole
 
   useEffect(() => {
     return window.electronAPI.on.displayChanged(() => {
-      queryClient.invalidateQueries({ queryKey: ['display-targets'] })
+      void queryClient.invalidateQueries({ queryKey: ['display-targets'] })
     })
   }, [queryClient])
 
@@ -30,7 +30,7 @@ export function useScreenAssignments() {
 
   useEffect(() => {
     return window.electronAPI.on.displayChanged(() => {
-      queryClient.invalidateQueries({ queryKey: ['screen-assignments'] })
+      void queryClient.invalidateQueries({ queryKey: ['screen-assignments'] })
     })
   }, [queryClient])
 

@@ -14,7 +14,7 @@ export function registerShellHandlers(): void {
     return { ok: !result, error: result || undefined }
   })
 
-  ipcMain.handle(IpcChannels.SHELL_OPEN_IN_FILE_MANAGER, async (_e, folderPath: string) => {
+  ipcMain.handle(IpcChannels.SHELL_OPEN_IN_FILE_MANAGER, (_e, folderPath: string) => {
     const resolved = path.resolve(folderPath)
     if (!fs.existsSync(resolved)) return { ok: false, error: 'Path not found' }
     shell.showItemInFolder(resolved)

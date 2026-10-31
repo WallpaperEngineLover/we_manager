@@ -10,7 +10,7 @@ import * as library from './library.service'
 import { containedPath } from '../utils/contained'
 import { normalizeType, normalizeRating, type ProjectJson } from './library.service'
 
-export function getBackupDir(id: string): string {
+function getBackupDir(id: string): string {
   const backupPath = getConfiguredBackupPath()
   if (!backupPath) throw new Error('Backup path must be configured before backing up')
   return path.join(backupPath, id)
@@ -102,7 +102,7 @@ export async function findFolderProblem(dir: string): Promise<{ code: FolderProb
   return { code: 'missingMainFile', detail: `${pj.file} is missing` }
 }
 
-export async function findBackupProblem(dir: string): Promise<string | null> {
+async function findBackupProblem(dir: string): Promise<string | null> {
   return (await findFolderProblem(dir))?.detail ?? null
 }
 
@@ -118,7 +118,7 @@ function hashFile(filePath: string): Promise<string> {
     const stream = fs.createReadStream(filePath)
     stream.on('error', reject)
     stream.on('data', (chunk) => hash.update(chunk))
-    stream.on('end', () => resolve(hash.digest('hex')))
+    stream.on('end', () => { resolve(hash.digest('hex')) })
   })
 }
 
@@ -174,8 +174,8 @@ function dropPageCache(dir: string): Promise<void> {
         'for f do dd if="$f" iflag=nocache count=0 status=none; done', 'sh', '{}', '+'],
       { stdio: 'ignore' }
     )
-    child.on('error', () => resolve())
-    child.on('close', () => resolve())
+    child.on('error', () => { resolve() })
+    child.on('close', () => { resolve() })
   })
 }
 
@@ -276,8 +276,7 @@ export async function recoverInterruptedCopies(root: string): Promise<void> {
     return
   }
   for (const name of names) {
-    await recoverInterruptedCopy(path.join(root, name)).catch((err) =>
-      console.error(`[Backup] Could not recover ${name} in ${root}:`, err)
+    await recoverInterruptedCopy(path.join(root, name)).catch((err: unknown) => { console.error(`[Backup] Could not recover ${name} in ${root}:`, err) }
     )
   }
 }

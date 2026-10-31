@@ -25,7 +25,7 @@ export function useDislikedIds(): Set<string> {
 }
 
 // updates every view right away instead of waiting for the next sync
-export function useRecordVotes(): (ids: string[], up: boolean) => void {
+function useRecordVotes(): (ids: string[], up: boolean) => void {
   const queryClient = useQueryClient()
   return useCallback(
     (ids: string[], up: boolean) => {

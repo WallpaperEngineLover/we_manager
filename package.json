@@ -1,6 +1,6 @@
 {
   "name": "we-manager",
-  "version": "0.9.8",
+  "version": "0.9.9",
   "type": "module",
   "description": "Wallpaper Engine workshop manager",
   "desktopName": "we-manager.desktop",
@@ -67,6 +67,31 @@
       "category": "Utility",
       "icon": "resources/icons/linux",
       "syncDesktopName": true
+    },
+    "deb": {
+      "synopsis": "Wallpaper Engine workshop manager",
+      "description": "Browse, organise and apply Wallpaper Engine workshop wallpapers on Linux\nwith the linux-wallpaperengine engine. Handles playlists, per-wallpaper\nsettings, backups and engine updates.",
+      "packageCategory": "utils",
+      "fpm": [
+        "packaging/deb/copyright=/usr/share/doc/we-manager/copyright"
+      ],
+      "depends": [
+        "libc6",
+        "libstdc++6",
+        "python3",
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0"
+      ],
+      "recommends": [
+        "libappindicator3-1"
+      ]
     },
     "appImage": {
       "artifactName": "WE-Manager-${version}.${ext}"

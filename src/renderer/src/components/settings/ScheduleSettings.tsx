@@ -52,7 +52,7 @@ export default function ScheduleSettings() {
     let id: ReturnType<typeof setInterval>
     const first = setTimeout(() => {
       setNow(currentTime())
-      id = setInterval(() => setNow(currentTime()), 60_000)
+      id = setInterval(() => { setNow(currentTime()) }, 60_000)
     }, 60_000 - (Date.now() % 60_000))
     return () => {
       clearTimeout(first)
@@ -88,7 +88,7 @@ export default function ScheduleSettings() {
 
   function refresh() {
     setNow(currentTime())
-    queryClient.invalidateQueries({ queryKey: ['schedule'] })
+    void queryClient.invalidateQueries({ queryKey: ['schedule'] })
   }
 
   async function save() {
@@ -151,7 +151,7 @@ export default function ScheduleSettings() {
               key={rule.id}
               className={clsx('flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2', !rule.enabled && 'opacity-50')}
             >
-              <input type="checkbox" checked={rule.enabled} onChange={() => toggle(rule)} className="accent-accent-500" />
+              <input type="checkbox" checked={rule.enabled} onChange={() => void toggle(rule)} className="accent-accent-500" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm text-gray-200">{rule.name}</p>
                 <p className="truncate text-xs text-gray-500">
@@ -160,13 +160,13 @@ export default function ScheduleSettings() {
                   {next && ` · ${t('schedule.next', { time: next.toLocaleString(currentLanguage(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }) })}`}
                 </p>
               </div>
-              <button onClick={() => runNow(rule)} title={t('schedule.runNow')} className="rounded p-1 text-gray-500 hover:text-gray-200">
+              <button onClick={() => void runNow(rule)} title={t('schedule.runNow')} className="rounded p-1 text-gray-500 hover:text-gray-200">
                 <Play size={13} />
               </button>
-              <button onClick={() => setDraft(rule)} title={t('common.edit')} className="rounded p-1 text-gray-500 hover:text-gray-200">
+              <button onClick={() => { setDraft(rule) }} title={t('common.edit')} className="rounded p-1 text-gray-500 hover:text-gray-200">
                 <Pencil size={13} />
               </button>
-              <button onClick={() => remove(rule.id)} title={t('common.delete')} className="rounded p-1 text-gray-500 hover:text-red-400">
+              <button onClick={() => void remove(rule.id)} title={t('common.delete')} className="rounded p-1 text-gray-500 hover:text-red-400">
                 <Trash2 size={13} />
               </button>
             </div>
@@ -176,7 +176,7 @@ export default function ScheduleSettings() {
 
       {!draft ? (
         <button
-          onClick={() => setDraft(EMPTY_DRAFT)}
+          onClick={() => { setDraft(EMPTY_DRAFT) }}
           className="mt-2 flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
         >
           <Plus size={14} />
@@ -186,7 +186,7 @@ export default function ScheduleSettings() {
         <div className="mt-2 space-y-3 rounded-lg border border-fg/10 p-3">
           <input
             value={draft.name}
-            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            onChange={(e) => { setDraft({ ...draft, name: e.target.value }); }}
             placeholder={t('schedule.namePlaceholder')}
             className={`${inputClass} w-full`}
           />
@@ -195,12 +195,11 @@ export default function ScheduleSettings() {
             <CalendarClock size={14} />
             <select
               value={draft.trigger.type === 'time' ? 'time' : draft.trigger.theme}
-              onChange={(e) =>
-                setTrigger(
+              onChange={(e) => { setTrigger(
                   e.target.value === 'time'
                     ? { type: 'time', time: '08:00', days: [] }
                     : { type: 'theme', theme: e.target.value as 'dark' | 'light' }
-                )
+                ); }
               }
               className={inputClass}
             >
@@ -212,7 +211,7 @@ export default function ScheduleSettings() {
               <input
                 type="time"
                 value={draft.trigger.time}
-                onChange={(e) => draft.trigger.type === 'time' && setTrigger({ ...draft.trigger, time: e.target.value })}
+                onChange={(e) => { if (draft.trigger.type === 'time') setTrigger({ ...draft.trigger, time: e.target.value }) }}
                 className={inputClass}
               />
             )}
@@ -227,8 +226,7 @@ export default function ScheduleSettings() {
                 return (
                   <button
                     key={label}
-                    onClick={() =>
-                      setTrigger({ ...trigger, days: on ? trigger.days.filter((d) => d !== day) : [...trigger.days, day] })
+                    onClick={() => { setTrigger({ ...trigger, days: on ? trigger.days.filter((d) => d !== day) : [...trigger.days, day] }) }
                     }
                     className={clsx(
                       'rounded px-2 py-1 text-xs',
@@ -263,14 +261,14 @@ export default function ScheduleSettings() {
               <option value="stop">{t('schedule.stop')}</option>
             </select>
             {perScreen && (
-              <ScreenSelect targets={targets} value={draft.screen} onChange={(screen) => setDraft({ ...draft, screen })} />
+              <ScreenSelect targets={targets} value={draft.screen} onChange={(screen) => { setDraft({ ...draft, screen }); }} />
             )}
           </div>
 
           {draft.action.type === 'playlist' && (
             <select
               value={draft.action.playlistId}
-              onChange={(e) => setAction({ type: 'playlist', playlistId: e.target.value })}
+              onChange={(e) => { setAction({ type: 'playlist', playlistId: e.target.value }); }}
               className={`${inputClass} w-full`}
             >
               {playlists.map((p) => (
@@ -285,13 +283,13 @@ export default function ScheduleSettings() {
             <div className="space-y-1.5">
               <input
                 value={wallpaperFilter}
-                onChange={(e) => setWallpaperFilter(e.target.value)}
+                onChange={(e) => { setWallpaperFilter(e.target.value) }}
                 placeholder={t('schedule.searchLibrary')}
                 className={`${inputClass} w-full`}
               />
               <select
                 value={draft.action.wallpaperId}
-                onChange={(e) => setAction({ type: 'wallpaper', wallpaperId: e.target.value })}
+                onChange={(e) => { setAction({ type: 'wallpaper', wallpaperId: e.target.value }); }}
                 size={6}
                 className={`${inputClass} w-full`}
               >
@@ -305,10 +303,10 @@ export default function ScheduleSettings() {
           )}
 
           <div className="flex gap-2">
-            <button onClick={save} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500">
+            <button onClick={() => void save()} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500">
               {t('common.save')}
             </button>
-            <button onClick={() => setDraft(null)} className="rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10">
+            <button onClick={() => { setDraft(null) }} className="rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10">
               {t('common.cancel')}
             </button>
           </div>

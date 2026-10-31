@@ -8,7 +8,7 @@ export default function StatusBar() {
   const [steamRunning, setSteamRunning] = useState(false)
 
   useEffect(() => {
-    window.electronAPI.steam.isRunning().then(setSteamRunning).catch(() => setSteamRunning(false))
+    window.electronAPI.steam.isRunning().then(setSteamRunning).catch(() => { setSteamRunning(false) })
 
     const unsub = window.electronAPI.on.steamStatus(setSteamRunning)
     return unsub
@@ -43,9 +43,9 @@ export default function StatusBar() {
           {playback.screen !== '*' && <span className="text-gray-600">{t('status.onScreen', { screen: screenLabel(playback.screen) })}</span>}
           <button
             onClick={() =>
-              playback.isPlaying
+              void (playback.isPlaying
                 ? window.electronAPI.playlist.pause(playback.screen)
-                : window.electronAPI.playlist.resume(playback.screen)
+                : window.electronAPI.playlist.resume(playback.screen))
             }
             title={playback.isPlaying ? t('common.pause') : t('common.resume')}
             className="text-gray-400 hover:text-gray-200"
@@ -53,7 +53,7 @@ export default function StatusBar() {
             {playback.isPlaying ? <Pause size={11} /> : <Play size={11} />}
           </button>
           <button
-            onClick={() => window.electronAPI.playlist.next(playback.screen)}
+            onClick={() => void window.electronAPI.playlist.next(playback.screen)}
             title={t('common.next')}
             className="text-gray-400 hover:text-gray-200"
           >

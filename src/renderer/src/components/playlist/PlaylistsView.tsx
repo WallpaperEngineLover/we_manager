@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 import Toggle from '../common/Toggle'
+import ResizableWidth from '../common/ResizableWidth'
+import { Reorderable, useReorder } from '../common/Reorderable'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   ListVideo,
@@ -57,7 +59,13 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; wallpaperId: string } | null>(null)
 
-  const playlists = usePlaylists()
+  const savedPlaylists = usePlaylists()
+  const playlistOrder = useReorder('we-playlist-order', savedPlaylists.map((p) => p.id))
+  const playlists = useMemo(
+    () => playlistOrder.sortItems(savedPlaylists, (p) => p.id),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [savedPlaylists, playlistOrder.order]
+  )
   const wallpapers = useAllWallpapers()
   const wallpaperById = useMemo(() => new Map(wallpapers.map((w) => [w.id, w])), [wallpapers])
   const playbackStates = usePlaybackStates()
@@ -72,7 +80,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
   const favoriteCount = activePlaylist?.items.filter((i) => favoriteIds.has(i.wallpaperId)).length ?? 0
 
   function invalidatePlaylists() {
-    queryClient.invalidateQueries({ queryKey: ['playlists'] })
+    void queryClient.invalidateQueries({ queryKey: ['playlists'] })
   }
 
   async function handleCreate() {
@@ -101,7 +109,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
     await window.electronAPI.playlist.delete(id)
     if (activePlaylistId === id) setActivePlaylistId(null)
     invalidatePlaylists()
-    queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
+    void queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
   }
 
   async function updateSettings(patch: Partial<PlaylistSettings>) {
@@ -165,7 +173,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
     setError(null)
     try {
       await window.electronAPI.playlist.start(activePlaylist.id, screen)
-      queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
+      void queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
     } catch (err) {
       setError((err as Error).message)
     }
@@ -176,13 +184,13 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
     const playingIt = thisStates.filter((s) => s.isPlaying && s.currentItemId === wallpaperId)
     if (playingIt.length > 0) {
       for (const s of playingIt) await window.electronAPI.playlist.pause(s.screen)
-      queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
+      void queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
       return
     }
     setError(null)
     try {
       await window.electronAPI.playlist.playItem(activePlaylist.id, wallpaperId, isThisPlaylistActive ? undefined : screen)
-      queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
+      void queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
     } catch (err) {
       setError((err as Error).message)
     }
@@ -191,7 +199,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
   // controls act on every screen this playlist plays on, narrowed down by the screen picker
   async function forEachScreen(action: (screen: ScreenTarget) => Promise<unknown>) {
     for (const s of thisStates) await action(s.screen)
-    queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
+    void queryClient.invalidateQueries({ queryKey: ['playlist-playback-state'] })
   }
 
   const handlePauseResume = () =>
@@ -215,7 +223,8 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
 
   return (
     <div className="flex h-full">
-      <div className="flex w-56 shrink-0 flex-col border-r border-fg/5 overflow-y-auto">
+      <ResizableWidth storageKey="we-playlist-panel-width" defaultWidth={224} min={160} max={400} edge="right">
+      <div className="flex w-full flex-col border-r border-fg/5 overflow-y-auto">
         <div className="flex items-center justify-between px-3 pt-3 pb-1">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
             {t('nav.playlists')}
@@ -238,10 +247,10 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
             <input
               autoFocus
               value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              onBlur={handleCreate}
+              onChange={(e) => { setNewTitle(e.target.value) }}
+              onBlur={() => void handleCreate()}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreate()
+                if (e.key === 'Enter') void handleCreate()
                 if (e.key === 'Escape') setCreating(false)
               }}
               placeholder={t('playlist.namePlaceholder')}
@@ -257,9 +266,15 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
         )}
 
         {playlists.map((p) => (
-          <button
+          <Reorderable
             key={p.id}
-            onClick={() => setActivePlaylistId(p.id)}
+            group="we-playlist-order"
+            id={p.id}
+            onMove={playlistOrder.move}
+            disabled={renamingId === p.id}
+          >
+          <button
+            onClick={() => { setActivePlaylistId(p.id) }}
             className={clsx(
               'group flex items-center gap-2 px-3 py-2 text-sm',
               activePlaylistId === p.id
@@ -278,13 +293,13 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
               <input
                 autoFocus
                 value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onBlur={() => handleRename(p.id)}
+                onChange={(e) => { setRenameValue(e.target.value) }}
+                onBlur={() => void handleRename(p.id)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleRename(p.id)
+                  if (e.key === 'Enter') void handleRename(p.id)
                   if (e.key === 'Escape') setRenamingId(null)
                 }}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation() }}
                 className="flex-1 bg-transparent text-sm text-gray-200 outline-none"
               />
             ) : (
@@ -304,15 +319,17 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
             <span
               onClick={(e) => {
                 e.stopPropagation()
-                handleDelete(p.id)
+                void handleDelete(p.id)
               }}
               className="hidden rounded p-0.5 text-gray-600 hover:text-red-400 group-hover:block"
             >
               <Trash2 size={11} />
             </span>
           </button>
+          </Reorderable>
         ))}
       </div>
+      </ResizableWidth>
 
       <div className="flex flex-1 overflow-hidden">
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -332,28 +349,28 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                   {isThisPlaylistActive ? (
                     <>
                       <button
-                        onClick={handlePrevious}
+                        onClick={() => void handlePrevious()}
                         title={t('playlist.previous')}
                         className="rounded-lg bg-fg/5 p-2 text-gray-300 hover:bg-fg/10"
                       >
                         <SkipBack size={14} />
                       </button>
                       <button
-                        onClick={handlePauseResume}
+                        onClick={() => void handlePauseResume()}
                         title={isPlaying ? t('common.pause') : t('common.resume')}
                         className="rounded-lg bg-accent-600 p-2 text-white hover:bg-accent-500"
                       >
                         {isPlaying ? <Pause size={14} /> : <Play size={14} />}
                       </button>
                       <button
-                        onClick={handleNext}
+                        onClick={() => void handleNext()}
                         title={t('common.next')}
                         className="rounded-lg bg-fg/5 p-2 text-gray-300 hover:bg-fg/10"
                       >
                         <SkipForward size={14} />
                       </button>
                       <button
-                        onClick={handleStop}
+                        onClick={() => void handleStop()}
                         title={t('playlist.stop')}
                         className="rounded-lg bg-fg/5 p-2 text-gray-300 hover:bg-red-500/20 hover:text-red-400"
                       >
@@ -362,7 +379,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                     </>
                   ) : (
                     <button
-                      onClick={handlePlay}
+                      onClick={() => void handlePlay()}
                       disabled={activePlaylist.items.length === 0}
                       className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
                     >
@@ -381,7 +398,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
 
               <div className="mt-3 flex flex-wrap items-center gap-4">
                 <label className="flex items-center gap-2 text-xs text-gray-400">
-                  <Toggle on={activePlaylist.settings.randomize} onClick={() => updateSettings({ randomize: !activePlaylist.settings.randomize })} />
+                  <Toggle on={activePlaylist.settings.randomize} onClick={() => void updateSettings({ randomize: !activePlaylist.settings.randomize })} />
                   <Shuffle size={12} />
                   {t('playlist.randomize')}
                 </label>
@@ -393,7 +410,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                     <select
                       value={activePlaylist.settings.sortBy}
                       onChange={(e) =>
-                        updateSettings({ sortBy: e.target.value as PlaylistSettings['sortBy'] })
+                        void updateSettings({ sortBy: e.target.value as PlaylistSettings['sortBy'] })
                       }
                       className="rounded bg-fg/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                     >
@@ -413,7 +430,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                     min={1}
                     value={activePlaylist.settings.defaultDurationSec}
                     onChange={(e) =>
-                      updateSettings({ defaultDurationSec: Math.max(1, Number(e.target.value)) })
+                      void updateSettings({ defaultDurationSec: Math.max(1, Number(e.target.value)) })
                     }
                     className="w-20 rounded bg-fg/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                   />
@@ -424,7 +441,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                   className="flex items-center gap-2 text-xs text-gray-400"
                   title={t('playlist.finishVideosHint')}
                 >
-                  <Toggle on={!!activePlaylist.settings.finishVideos} onClick={() => updateSettings({ finishVideos: !activePlaylist.settings.finishVideos })} />
+                  <Toggle on={!!activePlaylist.settings.finishVideos} onClick={() => void updateSettings({ finishVideos: !activePlaylist.settings.finishVideos })} />
                   <Film size={12} />
                   {t('playlist.finishVideos')}
                 </label>
@@ -433,7 +450,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                   className="flex items-center gap-2 text-xs text-gray-400"
                   title={t('playlist.favoritesOnlyHint')}
                 >
-                  <Toggle on={!!activePlaylist.settings.favoritesOnly} onClick={() => updateSettings({ favoritesOnly: !activePlaylist.settings.favoritesOnly })} />
+                  <Toggle on={!!activePlaylist.settings.favoritesOnly} onClick={() => void updateSettings({ favoritesOnly: !activePlaylist.settings.favoritesOnly })} />
                   <Heart size={12} />
                   {t('playlist.favoritesOnly')}
                   {activePlaylist.settings.favoritesOnly && (
@@ -452,7 +469,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                     min={0}
                     max={100}
                     value={activePlaylist.settings.defaultVolume}
-                    onChange={(e) => updateSettings({ defaultVolume: Number(e.target.value) })}
+                    onChange={(e) => void updateSettings({ defaultVolume: Number(e.target.value) })}
                     className="w-24 accent-accent-500"
                   />
                   <span className="w-8 text-gray-300">{activePlaylist.settings.defaultVolume}</span>
@@ -465,7 +482,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                 {t('playlist.count', { count: activePlaylist.items.length })}
               </span>
               <button
-                onClick={() => setPickerOpen(true)}
+                onClick={() => { setPickerOpen(true) }}
                 className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-fg/10"
               >
                 <Plus size={12} />
@@ -489,12 +506,12 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                   isCurrent={currentItemIds.has(item.wallpaperId)}
                   onDragStart={handleDragStart}
                   onDragOver={handleDragOver}
-                  onDrop={handleDrop}
-                  onPlay={() => handlePlayItem(item.wallpaperId)}
-                  onRemove={() => handleRemoveItem(item.wallpaperId)}
-                  onUpdate={(patch) => handleUpdateItem(item.wallpaperId, patch)}
-                  onContextMenu={(e) => openItemCtxMenu(e, item.wallpaperId)}
-                  onOpenDetail={() => setDetailId(item.wallpaperId)}
+                  onDrop={() => void handleDrop()}
+                  onPlay={() => void handlePlayItem(item.wallpaperId)}
+                  onRemove={() => void handleRemoveItem(item.wallpaperId)}
+                  onUpdate={(patch) => void handleUpdateItem(item.wallpaperId, patch)}
+                  onContextMenu={(e) => { openItemCtxMenu(e, item.wallpaperId) }}
+                  onOpenDetail={() => { setDetailId(item.wallpaperId) }}
                   defaultDurationSec={activePlaylist.settings.defaultDurationSec}
                   defaultVolume={activePlaylist.settings.defaultVolume}
                 />
@@ -508,8 +525,8 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
         <DetailSidebar
           id={detailWallpaper.id}
           {...detailSidebarProps(detailWallpaper)}
-          onClose={() => setDetailId(null)}
-          onSubscribe={() => subscribe(detailWallpaper.id)}
+          onClose={() => { setDetailId(null) }}
+          onSubscribe={() => void subscribe(detailWallpaper.id)}
           onUnsubscribe={() => unsubscribe([detailWallpaper.id])}
           onPlay={(target) => applyWallpaper(detailWallpaper.id, target)}
           onBrowseCreator={onBrowseCreator}
@@ -520,8 +537,8 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
       {pickerOpen && activePlaylist && (
         <WallpaperPickerModal
           excludeIds={existingIds}
-          onAdd={handleAddWallpapers}
-          onClose={() => setPickerOpen(false)}
+          onAdd={(wallpaperIds) => void handleAddWallpapers(wallpaperIds)}
+          onClose={() => { setPickerOpen(false) }}
         />
       )}
 
@@ -531,7 +548,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
           y={ctxMenu.y}
           ids={[ctxMenu.wallpaperId]}
           wallpapers={ctxWallpaper ? [ctxWallpaper] : []}
-          onClose={() => setCtxMenu(null)}
+          onClose={() => { setCtxMenu(null) }}
           onBrowseCreator={onBrowseCreator}
         />
       )}

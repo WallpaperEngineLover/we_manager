@@ -11,7 +11,7 @@ export function useApplyWallpaper(): (id: string, screen?: ScreenTarget) => Prom
   return async (id, screen) => {
     try {
       await window.electronAPI.wallpaper.apply({ wallpaperId: id, screen })
-      queryClient.invalidateQueries({ queryKey: ['library'] })
+      void queryClient.invalidateQueries({ queryKey: ['library'] })
     } catch (err) {
       showToast((err as Error).message)
     }
@@ -22,7 +22,7 @@ export function useSubscribe(): (id: string) => Promise<void> {
   const queryClient = useQueryClient()
   return async (id) => {
     await window.electronAPI.steam.subscribe(id)
-    queryClient.invalidateQueries({ queryKey: ['library'] })
+    void queryClient.invalidateQueries({ queryKey: ['library'] })
   }
 }
 
@@ -31,16 +31,16 @@ export function useUnsubscribe(): (ids: string[]) => Promise<void> {
   const queryClient = useQueryClient()
   return async (ids) => {
     await forEachIgnoringErrors(ids, (id) => window.electronAPI.steam.unsubscribe(id))
-    queryClient.invalidateQueries({ queryKey: ['library'] })
-    queryClient.invalidateQueries({ queryKey: ['folders'] })
+    void queryClient.invalidateQueries({ queryKey: ['library'] })
+    void queryClient.invalidateQueries({ queryKey: ['folders'] })
   }
 }
 
-export function useRepairFiles(): (ids: string[], onStatus: (text: string) => void) => Promise<string> {
+function useRepairFiles(): (ids: string[], onStatus: (text: string) => void) => Promise<string> {
   const queryClient = useQueryClient()
   return async (ids, onStatus) => {
     onStatus(t('verify.starting', { count: ids.length }))
-    queryClient.invalidateQueries({ queryKey: ['library'] })
+    void queryClient.invalidateQueries({ queryKey: ['library'] })
     let latest: { done: number; total: number } | null = null
     const off = window.electronAPI.on.repairProgress(({ done, total }) => {
       latest = { done, total }
@@ -64,7 +64,7 @@ export function useRepairFiles(): (ids: string[], onStatus: (text: string) => vo
       off()
       return (err as Error).message
     } finally {
-      queryClient.invalidateQueries({ queryKey: ['library'] })
+      void queryClient.invalidateQueries({ queryKey: ['library'] })
     }
   }
 }
@@ -74,7 +74,7 @@ export function useVerifyFiles(): (ids: string[] | undefined, onStatus: (text: s
   const queryClient = useQueryClient()
   const repairFiles = useRepairFiles()
   return async (ids, onStatus) => {
-    const off = window.electronAPI.on.verifyProgress(({ done, total }) => onStatus(t('verify.progress', { done, total })))
+    const off = window.electronAPI.on.verifyProgress(({ done, total }) => { onStatus(t('verify.progress', { done, total })) })
     let result
     try {
       result = await window.electronAPI.steam.verify(ids)
@@ -82,7 +82,7 @@ export function useVerifyFiles(): (ids: string[] | undefined, onStatus: (text: s
       return (err as Error).message
     } finally {
       off()
-      queryClient.invalidateQueries({ queryKey: ['library'] })
+      void queryClient.invalidateQueries({ queryKey: ['library'] })
     }
     const { checked, skipped, damaged } = result
     const parts = [

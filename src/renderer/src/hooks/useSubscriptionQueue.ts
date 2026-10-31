@@ -70,7 +70,7 @@ export function useSubscriptionQueue(onSettled?: () => void) {
         }
         finish(progress.status)
       })
-      const timer = setTimeout(() => finish('error'), SETTLE_TIMEOUT_MS)
+      const timer = setTimeout(() => { finish('error') }, SETTLE_TIMEOUT_MS)
     })
   }, [setEntry])
 
@@ -98,7 +98,7 @@ export function useSubscriptionQueue(onSettled?: () => void) {
         await window.electronAPI.steam.subscribe(id)
         setEntry(id, { state: 'download-queued' })
         downloadQueueRef.current.push(id)
-        processDownloadQueue()
+        void processDownloadQueue()
       } catch {
         setEntry(id, { state: 'subscribe-error' })
         activeRef.current.delete(id)
@@ -118,7 +118,7 @@ export function useSubscriptionQueue(onSettled?: () => void) {
         setEntry(id, { state: 'queued' })
         added = true
       }
-      if (added) processSubscribeQueue()
+      if (added) void processSubscribeQueue()
     },
     [processSubscribeQueue, setEntry]
   )

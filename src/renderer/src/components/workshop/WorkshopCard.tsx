@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import clsx from 'clsx'
 import { Download, Check, Loader2, Clock, AlertTriangle } from 'lucide-react'
 import type { WorkshopItem } from '@shared/types'
 import type { CardBorders } from '@shared/cardBorders'
 import type { CardSteamState } from '../../hooks/useCardBorders'
 import { isSubscribedState, type SubscribeState } from '../../hooks/useSubscriptionQueue'
+import type { PreviewSize } from '../../hooks/usePreviewSize'
 import { formatFileSize } from '../../utils/format'
 import { CardPreview, CornerBadge, GridCard, LikeAction, PlayButton, ProgressBar, SteamAction } from '../common/GridCard'
 import { t, formatNumber } from '../../i18n'
@@ -19,6 +21,7 @@ interface WorkshopCardProps {
   lweInstalled: boolean
   subscribeState?: SubscribeState
   downloadPercentage?: number
+  previewSize: PreviewSize
   onSelect: (e: React.MouseEvent) => void
   onContextMenu: (e: React.MouseEvent) => void
   onPlay: () => Promise<void>
@@ -38,6 +41,7 @@ export default function WorkshopCard({
   lweInstalled,
   subscribeState,
   downloadPercentage,
+  previewSize,
   onSelect,
   onContextMenu,
   onPlay,
@@ -45,6 +49,7 @@ export default function WorkshopCard({
 }: WorkshopCardProps) {
   const [isApplying, setIsApplying] = useState(false)
   const fileSizeLabel = formatFileSize(item.fileSize)
+  const tiny = previewSize === 'small'
   const subscribed = item.isSubscribed || isSubscribedState(subscribeState)
 
   function handleSubscribe(e: React.MouseEvent) {
@@ -60,6 +65,85 @@ export default function WorkshopCard({
     } finally {
       setIsApplying(false)
     }
+  }
+
+  const controls = (
+    <>
+    {canPlay && (
+      <PlayButton
+        busy={isApplying}
+        ready={lweInstalled}
+        disabled={isApplying || !lweInstalled}
+        title={lweInstalled ? t('play.wallpaper') : t('play.installFirst')}
+        onClick={() => void handlePlay()}
+      />
+    )}
+    {subscribed ? (
+      <div className={`${STATUS_CLASS} bg-green-600/80 text-white`} title={t('subscribe.subscribed')}>
+        <Check size={14} />
+      </div>
+    ) : subscribeState === 'queued' ? (
+      <div className={`${STATUS_CLASS} bg-black/60 text-gray-300`} title={t('subscribe.queued')}>
+        <Clock size={14} />
+      </div>
+    ) : subscribeState === 'subscribing' ? (
+      <div className={`${STATUS_CLASS} bg-black/60 text-accent-300`} title={t('subscribe.subscribing')}>
+        <Loader2 size={14} className="animate-spin" />
+      </div>
+    ) : subscribeState === 'subscribe-error' ? (
+      <button
+        onClick={handleSubscribe}
+        title={t('subscribe.failedRetry')}
+        className={`${STATUS_CLASS} bg-red-600/80 text-white hover:bg-red-600`}
+      >
+        <AlertTriangle size={14} />
+      </button>
+    ) : (
+      <button
+        onClick={handleSubscribe}
+        className={`${STATUS_CLASS} bg-black/60 text-white opacity-0 transition-opacity hover:bg-accent-600 group-hover:opacity-100`}
+      >
+        <Download size={14} />
+      </button>
+    )}
+    </>
+  )
+
+  if (previewSize === 'list') {
+    return (
+      <GridCard
+        row
+        data-workshop-id={item.publishedFileId}
+        selected={selected}
+        isDetailOpen={isDetailOpen}
+        steam={steam}
+        borders={borders}
+        onContextMenu={onContextMenu}
+        onClick={onSelect}
+      >
+        <div className="relative w-20 shrink-0">
+          <CardPreview src={item.previewUrl} alt={item.title} dimmed={ignored} />
+          {subscribeState === 'downloading' && downloadPercentage != null && (
+            <ProgressBar percentage={downloadPercentage} className="absolute bottom-0 left-0 right-0 h-1 bg-black/40" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1 px-3 py-1">
+          <h3 className="truncate text-sm font-medium text-gray-200" title={item.title}>
+            {item.title}
+          </h3>
+          <p className="truncate text-[11px] text-gray-500">
+            {t('workshop.subscribers', { count: item.subscriptions, formatted: formatNumber(item.subscriptions) })}
+            {fileSizeLabel ? ` · ${fileSizeLabel}` : ''}
+            {ignored ? ` · ${t('workshop.ignored')}` : ''}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5 pr-3" onClick={(e) => { e.stopPropagation() }}>
+          <LikeAction id={item.publishedFileId} isLiked={steam.isLiked} compact />
+          <SteamAction id={item.publishedFileId} compact />
+          {controls}
+        </div>
+      </GridCard>
+    )
   }
 
   return (
@@ -104,58 +188,24 @@ export default function WorkshopCard({
         )}
       </CardPreview>
 
-      <div className="p-3">
-        <h3 className="truncate text-sm font-medium text-gray-200" title={item.title}>
+      <div className={tiny ? 'p-2' : 'p-3'}>
+        <h3 className={clsx('truncate font-medium text-gray-200', tiny ? 'text-xs' : 'text-sm')} title={item.title}>
           {item.title}
         </h3>
-        <p className="mt-1 text-xs text-gray-500">
-          {t('workshop.subscribers', { count: item.subscriptions, formatted: formatNumber(item.subscriptions) })}
-          {fileSizeLabel ? ` · ${fileSizeLabel}` : ''}
-        </p>
-        <div className="mt-2 flex items-center gap-1.5">
-          <LikeAction id={item.publishedFileId} isLiked={steam.isLiked} />
-          <SteamAction id={item.publishedFileId} />
+        {!tiny && (
+          <p className="mt-1 text-xs text-gray-500">
+            {t('workshop.subscribers', { count: item.subscriptions, formatted: formatNumber(item.subscriptions) })}
+            {fileSizeLabel ? ` · ${fileSizeLabel}` : ''}
+          </p>
+        )}
+        <div className={clsx('flex items-center justify-center gap-1.5', tiny ? 'mt-1.5' : 'mt-2')}>
+          <LikeAction id={item.publishedFileId} isLiked={steam.isLiked} compact={tiny} />
+          <SteamAction id={item.publishedFileId} compact={tiny} />
         </div>
       </div>
 
-      <div className="absolute right-2 top-2 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-        {canPlay && (
-          <PlayButton
-            busy={isApplying}
-            ready={lweInstalled}
-            disabled={isApplying || !lweInstalled}
-            title={lweInstalled ? t('play.wallpaper') : t('play.installFirst')}
-            onClick={handlePlay}
-          />
-        )}
-        {subscribed ? (
-          <div className={`${STATUS_CLASS} bg-green-600/80 text-white`} title={t('subscribe.subscribed')}>
-            <Check size={14} />
-          </div>
-        ) : subscribeState === 'queued' ? (
-          <div className={`${STATUS_CLASS} bg-black/60 text-gray-300`} title={t('subscribe.queued')}>
-            <Clock size={14} />
-          </div>
-        ) : subscribeState === 'subscribing' ? (
-          <div className={`${STATUS_CLASS} bg-black/60 text-accent-300`} title={t('subscribe.subscribing')}>
-            <Loader2 size={14} className="animate-spin" />
-          </div>
-        ) : subscribeState === 'subscribe-error' ? (
-          <button
-            onClick={handleSubscribe}
-            title={t('subscribe.failedRetry')}
-            className={`${STATUS_CLASS} bg-red-600/80 text-white hover:bg-red-600`}
-          >
-            <AlertTriangle size={14} />
-          </button>
-        ) : (
-          <button
-            onClick={handleSubscribe}
-            className={`${STATUS_CLASS} bg-black/60 text-white opacity-0 transition-opacity hover:bg-accent-600 group-hover:opacity-100`}
-          >
-            <Download size={14} />
-          </button>
-        )}
+      <div className="absolute right-2 top-2 flex items-center gap-1.5" onClick={(e) => { e.stopPropagation() }}>
+        {controls}
       </div>
     </GridCard>
   )

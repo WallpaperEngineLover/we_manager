@@ -47,12 +47,12 @@ export default function UpdateSettings() {
 
       <div className="mt-3 space-y-3">
         <label className="flex cursor-pointer items-center gap-3">
-          <Toggle on={checks.app} onClick={() => setChecks({ ...checks, app: !checks.app })} />
+          <Toggle on={checks.app} onClick={() => void setChecks({ ...checks, app: !checks.app })} />
           <span className="text-sm text-gray-300">{t('update.checkApp')}</span>
         </label>
         {engineCheckable && (
           <label className="flex cursor-pointer items-center gap-3">
-            <Toggle on={checks.engine} onClick={() => setChecks({ ...checks, engine: !checks.engine })} />
+            <Toggle on={checks.engine} onClick={() => void setChecks({ ...checks, engine: !checks.engine })} />
             <span className="text-sm text-gray-300">{t('update.checkEngine')}</span>
           </label>
         )}
@@ -79,7 +79,7 @@ export default function UpdateSettings() {
       {engineCheckable && <VersionPicker target="engine" status={status} />}
 
       <button
-        onClick={checkNow}
+        onClick={() => void checkNow()}
         disabled={status.checking}
         className="mt-4 flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
       >

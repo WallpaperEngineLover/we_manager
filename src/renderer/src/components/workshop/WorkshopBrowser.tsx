@@ -22,6 +22,7 @@ import {
   SearchInput
 } from '../common/GridControls'
 import { CheckGroup, CheckItem, FilterPanel, FilterSection, ResolutionFilterSection, TagFilterSection } from '../common/FilterPanel'
+import { ReorderableSections } from '../common/Reorderable'
 import type { WorkshopQueryType } from '@shared/types'
 import clsx from 'clsx'
 import {
@@ -157,7 +158,7 @@ export default function WorkshopBrowser({
 }: WorkshopBrowserProps) {
   const queryClient = useQueryClient()
   const { entries: subscribeEntries, enqueue: enqueueSubscribe, clear: clearSubscribeEntries } =
-    useSubscriptionQueue(() => queryClient.invalidateQueries({ queryKey: ['library'] }))
+    useSubscriptionQueue(() => void queryClient.invalidateQueries({ queryKey: ['library'] }))
   const [searchText, setSearchText] = useSessionState(`we-workshop-search:${creatorFilter ?? ''}`, '')
   const searchQuery = useMemo(() => parseSearchQuery(searchText), [searchText])
   const steamSearchText = searchQuery.steamText
@@ -238,7 +239,7 @@ export default function WorkshopBrowser({
         searchText: steamSearchText || undefined,
         queryType,
         tags: steamTags.length > 0 ? steamTags : undefined,
-        page: pageParam as number
+        page: pageParam
       }
       return creatorFilter
         ? window.electronAPI.workshop.queryByCreator(creatorFilter, params)
@@ -295,7 +296,7 @@ export default function WorkshopBrowser({
     } else {
       await window.electronAPI.config.ignoreCreator(creatorSteamId)
     }
-    queryClient.invalidateQueries({ queryKey: ['ignored-creators'] })
+    void queryClient.invalidateQueries({ queryKey: ['ignored-creators'] })
   }
 
   const tagFiltered = useMemo(() => {
@@ -377,7 +378,7 @@ export default function WorkshopBrowser({
   const needMore = totalFiltered < page * pageSize && allItems.length < totalResults
   useEffect(() => {
     if (needMore && hasNextPage && !isFetchingNextPage) {
-      fetchNextPage()
+      void fetchNextPage()
     }
   }, [needMore, hasNextPage, isFetchingNextPage, fetchNextPage])
 
@@ -399,7 +400,7 @@ export default function WorkshopBrowser({
     const menuSize = downloadSize(menu.ids)
 
     return (
-      <ContextMenu x={menu.x} y={menu.y} onClose={() => setCtxMenu(null)} className="min-w-[180px]">
+      <ContextMenu x={menu.x} y={menu.y} onClose={() => { setCtxMenu(null) }} className="min-w-[180px]">
         <MenuSelectionCount count={menu.ids.length} />
         {single && playableSet.has(single.publishedFileId) && (
           <>
@@ -409,21 +410,21 @@ export default function WorkshopBrowser({
             <MenuSeparator />
           </>
         )}
-        <MenuItem onClick={run(() => enqueueSubscribe(menu.ids))}>
+        <MenuItem onClick={run(() => { enqueueSubscribe(menu.ids) })}>
           <span title={menuSize?.title}>
             {t('subscribe.subscribe')}{menuSize && <span className="ml-1.5 text-xs text-gray-500">{menuSize.label}</span>}
           </span>
         </MenuItem>
         <MenuItem onClick={run(() => unsubscribeIds(menu.ids))}>{t('subscribe.unsubscribe')}</MenuItem>
         <MenuSeparator />
-        <VoteMenuItems onVote={(up) => run(() => batchVote(menu.ids, up))()} />
+        <VoteMenuItems onVote={(up) => { run(() => batchVote(menu.ids, up))() }} />
         <FavoriteMenuItems
           ids={menu.ids}
           favorites={favoriteSet}
-          onFavorite={(ids, add) => run(() => batchFavorite(ids, add))()}
+          onFavorite={(ids, add) => { run(() => batchFavorite(ids, add))() }}
         />
         <MenuSeparator />
-        <MenuItem icon={ExternalLink} onClick={run(() => menu.ids.forEach(openWorkshopPage))}>
+        <MenuItem icon={ExternalLink} onClick={run(() => { menu.ids.forEach(openWorkshopPage) })}>
           {t('menu.openWorkshop')}
         </MenuItem>
         {single && (
@@ -437,7 +438,7 @@ export default function WorkshopBrowser({
             <FolderMenuItems
               moveTargets={moveTargets}
               hasFolder={hasFolder}
-              onMove={(folderId) => run(() => moveToFolder(folderId, libraryIds))()}
+              onMove={(folderId) => { run(() => moveToFolder(folderId, libraryIds))() }}
               onRemove={run(() => removeFromFolders(menu.ids))}
             />
           </>
@@ -457,7 +458,7 @@ export default function WorkshopBrowser({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-fg/5 px-4 py-3">
-        <FiltersToggle open={showFilters} activeCount={activeCount} onClick={() => setShowFilters((v) => !v)} />
+        <FiltersToggle open={showFilters} activeCount={activeCount} onClick={() => { setShowFilters((v) => !v) }} />
         <SearchInput
           value={searchText}
           placeholder={t('workshop.searchPlaceholder')}
@@ -466,7 +467,7 @@ export default function WorkshopBrowser({
         />
         <select
           value={queryType}
-          onChange={(e) => setQueryType(e.target.value as WorkshopQueryType)}
+          onChange={(e) => { setQueryType(e.target.value as WorkshopQueryType) }}
           className="rounded-lg bg-card px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
         >
           <option value="RankedByVote">{t('workshop.sortTop')}</option>
@@ -481,7 +482,7 @@ export default function WorkshopBrowser({
           <>
             <span className="text-xs text-gray-500">{t('picker.selected', { count: selection.size })}</span>
             <button
-              onClick={() => enqueueSubscribe([...selection])}
+              onClick={() => { enqueueSubscribe([...selection]) }}
               title={selectionSize?.title ?? t('workshop.allQueued')}
               className="flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-2 text-sm text-white hover:bg-accent-500"
             >
@@ -497,7 +498,7 @@ export default function WorkshopBrowser({
           <User size={12} />
           <span>{t('workshop.creatorFilter')}</span>
           <button
-            onClick={() => openProfilePage(creatorFilter)}
+            onClick={() => { openProfilePage(creatorFilter) }}
             className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10"
           >
             <ExternalLink size={11} /> {t('workshop.viewProfile')}
@@ -520,7 +521,7 @@ export default function WorkshopBrowser({
                 {(['or', 'and'] as const).map((mode) => (
                   <button
                     key={mode}
-                    onClick={() => setFilter('filterMode', mode)}
+                    onClick={() => { setFilter('filterMode', mode) }}
                     className={clsx(
                       'px-2.5 py-1 transition-colors',
                       filters.filterMode === mode
@@ -533,133 +534,157 @@ export default function WorkshopBrowser({
                 ))}
               </div>
             </div>
-
-            <FilterSection
-              title={t('filters.status')}
-              activeCount={statusFilterCount}
-            >
-              <CheckItem
-                label={t('filters.notDownloaded')}
-                checked={filters.notDownloaded}
-                onChange={() => setFilter('notDownloaded', !filters.notDownloaded)}
-              />
-              <CheckItem
-                label={t('filters.notRated')}
-                title={t('filters.notRatedHint')}
-                checked={filters.notLiked && filters.notDisliked}
-                indeterminate={filters.notLiked !== filters.notDisliked}
-                onChange={() => {
-                  const on = !(filters.notLiked && filters.notDisliked)
-                  setFilters((prev) => ({ ...prev, notLiked: on, notDisliked: on }))
-                }}
-              />
-              <CheckGroup>
-                <CheckItem
-                  nested
-                  label={t('filters.notLiked')}
-                  checked={filters.notLiked}
-                  onChange={() => setFilter('notLiked', !filters.notLiked)}
-                />
-                <CheckItem
-                  nested
-                  label={t('filters.notDisliked')}
-                  checked={filters.notDisliked}
-                  onChange={() => setFilter('notDisliked', !filters.notDisliked)}
-                />
-              </CheckGroup>
-              <CheckItem
-                label={t('filters.notFavorited')}
-                checked={filters.notFavorited}
-                onChange={() => setFilter('notFavorited', !filters.notFavorited)}
-              />
-            </FilterSection>
-            <FilterSection title={t('filters.fileSize')} activeCount={filters.sizeFilterMode !== 'none' ? 1 : 0}>
-              <select
-                value={filters.sizeFilterMode}
-                onChange={(e) => setFilter('sizeFilterMode', e.target.value as WorkshopFilterState['sizeFilterMode'])}
-                className="w-full rounded bg-card px-1.5 py-1 text-xs text-gray-300 outline-none"
-              >
-                <option value="none">{t('filters.anySize')}</option>
-                <option value="lt">{t('filters.lessThan')}</option>
-                <option value="gt">{t('filters.moreThan')}</option>
-              </select>
-              {filters.sizeFilterMode !== 'none' && (
-                <div className="mt-1 flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    min={0}
-                    value={filters.sizeFilterMb}
-                    onChange={(e) => setFilter('sizeFilterMb', Math.max(0, Number(e.target.value) || 0))}
-                    className="w-16 rounded bg-card px-1.5 py-1 text-xs text-gray-300 outline-none focus:ring-1 focus:ring-accent-500"
+            <ReorderableSections
+              storageKey="we-workshop-filter-order"
+              sections={[
+                { id: 'status', node: (
+                <FilterSection
+                  title={t('filters.status')}
+                  activeCount={statusFilterCount}
+                >
+                  <CheckItem
+                    label={t('filters.notDownloaded')}
+                    checked={filters.notDownloaded}
+                    onChange={() => { setFilter('notDownloaded', !filters.notDownloaded) }}
                   />
-                  <span className="text-xs text-gray-500">MB</span>
-                </div>
-              )}
-            </FilterSection>
-            <TagFilterSection
-              title={t('filters.showOnly')}
-              defaultOpen={false}
-              options={WE_SHOW_ONLY}
-              selected={filters.showOnly}
-              activeCount={filters.showOnly.length}
-              onChange={(tags) => setFilter('showOnly', tags)}
-            />
-            <TagFilterSection
-              title={t('filters.type')}
-              options={WE_TYPES}
-              selected={filters.types}
-              activeCount={effective.types.length}
-              onChange={(tags) => setFilter('types', tags)}
-            />
-            {assetSelected && (
-              <TagFilterSection
-                title={t('filters.assetType')}
-                options={WE_ASSET_TYPES}
-                selected={filters.assetTypes}
-                activeCount={effective.assetTypes.length}
-                onChange={(tags) => setFilter('assetTypes', tags)}
-              />
-            )}
-            {assetSelected && (
-              <TagFilterSection
-                title={t('filters.assetGenre')}
-                defaultOpen={false}
-                options={WE_ASSET_GENRES}
-                selected={filters.assetGenres}
-                activeCount={effective.assetGenres.length}
-                onChange={(tags) => setFilter('assetGenres', tags)}
-              />
-            )}
-            {assetSelected && (
-              <TagFilterSection
-                title={t('filters.scriptType')}
-                defaultOpen={false}
-                options={WE_SCRIPT_TYPES}
-                selected={filters.scriptTypes}
-                activeCount={effective.scriptTypes.length}
-                onChange={(tags) => setFilter('scriptTypes', tags)}
-              />
-            )}
-            <TagFilterSection
-              title={t('filters.ageRating')}
-              options={WE_AGE_RATINGS}
-              selected={filters.ageRatings}
-              activeCount={effective.ageRatings.length}
-              onChange={(tags) => setFilter('ageRatings', tags)}
-            />
-            <ResolutionFilterSection
-              selected={filters.resolutions}
-              allTags={ALL_RESOLUTION_TAGS}
-              activeCount={effective.resolutions.length}
-              onChange={(tags) => setFilter('resolutions', tags)}
-            />
-            <TagFilterSection
-              title={t('filters.genre')}
-              defaultOpen={false}
-              options={WE_GENRES}
-              selected={filters.genres}
-              activeCount={effective.genres.length}
-              onChange={(tags) => setFilter('genres', tags)}
+                  <CheckItem
+                    label={t('filters.notRated')}
+                    title={t('filters.notRatedHint')}
+                    checked={filters.notLiked && filters.notDisliked}
+                    indeterminate={filters.notLiked !== filters.notDisliked}
+                    onChange={() => {
+                      const on = !(filters.notLiked && filters.notDisliked)
+                      setFilters((prev) => ({ ...prev, notLiked: on, notDisliked: on }))
+                    }}
+                  />
+                  <CheckGroup>
+                    <CheckItem
+                      nested
+                      label={t('filters.notLiked')}
+                      checked={filters.notLiked}
+                      onChange={() => { setFilter('notLiked', !filters.notLiked) }}
+                    />
+                    <CheckItem
+                      nested
+                      label={t('filters.notDisliked')}
+                      checked={filters.notDisliked}
+                      onChange={() => { setFilter('notDisliked', !filters.notDisliked) }}
+                    />
+                  </CheckGroup>
+                  <CheckItem
+                    label={t('filters.notFavorited')}
+                    checked={filters.notFavorited}
+                    onChange={() => { setFilter('notFavorited', !filters.notFavorited) }}
+                  />
+                </FilterSection>
+                ) },
+                { id: 'fileSize', node: (
+                <FilterSection title={t('filters.fileSize')} activeCount={filters.sizeFilterMode !== 'none' ? 1 : 0}>
+                  <select
+                    value={filters.sizeFilterMode}
+                    onChange={(e) => { setFilter('sizeFilterMode', e.target.value as WorkshopFilterState['sizeFilterMode']) }}
+                    className="w-full rounded bg-card px-1.5 py-1 text-xs text-gray-300 outline-none"
+                  >
+                    <option value="none">{t('filters.anySize')}</option>
+                    <option value="lt">{t('filters.lessThan')}</option>
+                    <option value="gt">{t('filters.moreThan')}</option>
+                  </select>
+                  {filters.sizeFilterMode !== 'none' && (
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={0}
+                        value={filters.sizeFilterMb}
+                        onChange={(e) => { setFilter('sizeFilterMb', Math.max(0, Number(e.target.value) || 0)) }}
+                        className="w-16 rounded bg-card px-1.5 py-1 text-xs text-gray-300 outline-none focus:ring-1 focus:ring-accent-500"
+                      />
+                      <span className="text-xs text-gray-500">MB</span>
+                    </div>
+                  )}
+                </FilterSection>
+                ) },
+                { id: 'showOnly', node: (
+                <TagFilterSection
+                  title={t('filters.showOnly')}
+                  defaultOpen={false}
+                  options={WE_SHOW_ONLY}
+                  selected={filters.showOnly}
+                  activeCount={filters.showOnly.length}
+                  onChange={(tags) => { setFilter('showOnly', tags) }}
+                />
+                ) },
+                { id: 'type', node: (
+                <TagFilterSection
+                  title={t('filters.type')}
+                  options={WE_TYPES}
+                  selected={filters.types}
+                  activeCount={effective.types.length}
+                  onChange={(tags) => { setFilter('types', tags) }}
+                />
+                ) },
+                { id: 'assetType', node:
+                assetSelected && (
+                  <TagFilterSection
+                    title={t('filters.assetType')}
+                    options={WE_ASSET_TYPES}
+                    selected={filters.assetTypes}
+                    activeCount={effective.assetTypes.length}
+                    onChange={(tags) => { setFilter('assetTypes', tags) }}
+                  />
+                )
+                },
+                { id: 'assetGenre', node:
+                assetSelected && (
+                  <TagFilterSection
+                    title={t('filters.assetGenre')}
+                    defaultOpen={false}
+                    options={WE_ASSET_GENRES}
+                    selected={filters.assetGenres}
+                    activeCount={effective.assetGenres.length}
+                    onChange={(tags) => { setFilter('assetGenres', tags) }}
+                  />
+                )
+                },
+                { id: 'scriptType', node:
+                assetSelected && (
+                  <TagFilterSection
+                    title={t('filters.scriptType')}
+                    defaultOpen={false}
+                    options={WE_SCRIPT_TYPES}
+                    selected={filters.scriptTypes}
+                    activeCount={effective.scriptTypes.length}
+                    onChange={(tags) => { setFilter('scriptTypes', tags) }}
+                  />
+                )
+                },
+                { id: 'ageRating', node: (
+                <TagFilterSection
+                  title={t('filters.ageRating')}
+                  options={WE_AGE_RATINGS}
+                  selected={filters.ageRatings}
+                  activeCount={effective.ageRatings.length}
+                  onChange={(tags) => { setFilter('ageRatings', tags) }}
+                />
+                ) },
+                { id: 'resolution', node: (
+                <ResolutionFilterSection
+                  selected={filters.resolutions}
+                  allTags={ALL_RESOLUTION_TAGS}
+                  activeCount={effective.resolutions.length}
+                  onChange={(tags) => { setFilter('resolutions', tags) }}
+                />
+                ) },
+                { id: 'genre', node: (
+                <TagFilterSection
+                  title={t('filters.genre')}
+                  defaultOpen={false}
+                  options={WE_GENRES}
+                  selected={filters.genres}
+                  activeCount={effective.genres.length}
+                  onChange={(tags) => { setFilter('genres', tags) }}
+                />
+                ) },
+              ]}
             />
           </FilterPanel>
         )}
@@ -669,8 +694,8 @@ export default function WorkshopBrowser({
           {error && (
             <div className="rounded-lg bg-red-900/20 p-4 text-sm text-red-400">
               <p className="font-medium">{t('workshop.loadFailed')}</p>
-              <p className="mt-1 opacity-75">{(error as Error).message}</p>
-              {(error as Error).message.includes('Steam') && (
+              <p className="mt-1 opacity-75">{(error).message}</p>
+              {(error).message.includes('Steam') && (
                 <p className="mt-2 text-xs opacity-60">
                   {t('workshop.loadFailedHint')}
                 </p>
@@ -696,10 +721,11 @@ export default function WorkshopBrowser({
                 lweInstalled={lweInstalled}
                 subscribeState={subscribeEntries.get(item.publishedFileId)?.state}
                 downloadPercentage={subscribeEntries.get(item.publishedFileId)?.percentage}
-                onSelect={(e) => handleCardSelect(item.publishedFileId, e)}
-                onContextMenu={(e) => openCtxMenu(e, item.publishedFileId)}
+                previewSize={previewSize}
+                onSelect={(e) => { handleCardSelect(item.publishedFileId, e) }}
+                onContextMenu={(e) => { openCtxMenu(e, item.publishedFileId) }}
                 onPlay={() => applyWallpaper(item.publishedFileId)}
-                onSubscribe={() => enqueueSubscribe([item.publishedFileId])}
+                onSubscribe={() => { enqueueSubscribe([item.publishedFileId]) }}
               />
             ))}
           </div>
@@ -715,7 +741,7 @@ export default function WorkshopBrowser({
                 {t('workshop.ignoredOnPage', { count: pageIgnoredItems.length })}
               </span>
               <button
-                onClick={() => setShowIgnored((v) => !v)}
+                onClick={() => { setShowIgnored((v) => !v) }}
                 className="rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10"
               >
                 {showIgnored ? t('workshop.hideIgnored') : t('workshop.showIgnored')}
@@ -728,7 +754,7 @@ export default function WorkshopBrowser({
                 <span>{t('pagination.perPage')}</span>
                 <select
                   value={pageSize}
-                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  onChange={(e) => { setPageSize(Number(e.target.value)) }}
                   className="rounded bg-card px-2 py-1 text-gray-300 outline-none"
                 >
                   <option value={50}>50</option>
@@ -760,8 +786,8 @@ export default function WorkshopBrowser({
             fallbackAuthorSteamId={detailItem.creatorSteamId}
             isSubscribed={detailItem.isSubscribed || isSubscribedState(subscribeEntries.get(detailId)?.state)}
             canPlay={playableSet.has(detailId)}
-            onClose={() => setDetailId(null)}
-            onSubscribe={() => enqueueSubscribe([detailId])}
+            onClose={() => { setDetailId(null) }}
+            onSubscribe={() => { enqueueSubscribe([detailId]) }}
             onUnsubscribe={() => unsubscribeIds([detailId])}
             onPlay={(screen) => applyWallpaper(detailId, screen)}
             onBrowseCreator={onBrowseCreator}

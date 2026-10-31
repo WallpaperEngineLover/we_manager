@@ -33,10 +33,11 @@ export default function CardBorderSettings() {
     setDraft(next)
     queryClient.setQueryData(['config'], (old: object | undefined) => (old ? { ...old, cardBorders: next } : old))
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(async () => {
-      await window.electronAPI.config.setCardBorders(next)
-      setDraft(null)
-      queryClient.invalidateQueries({ queryKey: ['config'] })
+    saveTimer.current = setTimeout(() => {
+      void window.electronAPI.config.setCardBorders(next).then(() => {
+        setDraft(null)
+        void queryClient.invalidateQueries({ queryKey: ['config'] })
+      }).catch(console.error)
     }, SAVE_DELAY_MS)
   }
 
@@ -54,7 +55,7 @@ export default function CardBorderSettings() {
           const isDefaultColor = border.color === DEFAULT_CARD_BORDERS[kind].color
           return (
             <div key={kind} className="flex items-start gap-3">
-              <Toggle on={border.enabled} onClick={() => change(kind, { enabled: !border.enabled })} />
+              <Toggle on={border.enabled} onClick={() => { change(kind, { enabled: !border.enabled }); }} />
               <div className="min-w-0 flex-1">
                 <span className="flex items-center gap-2 text-sm text-gray-300">
                   <Icon size={14} />
@@ -65,7 +66,7 @@ export default function CardBorderSettings() {
               <div className="flex items-center gap-1.5">
                 {!isDefaultColor && (
                   <button
-                    onClick={() => change(kind, { color: DEFAULT_CARD_BORDERS[kind].color })}
+                    onClick={() => { change(kind, { color: DEFAULT_CARD_BORDERS[kind].color }); }}
                     title={t('borders.resetColor')}
                     className="rounded p-1 text-gray-500 hover:bg-fg/10 hover:text-gray-300"
                   >
@@ -80,7 +81,7 @@ export default function CardBorderSettings() {
                   <input
                     type="color"
                     value={border.color}
-                    onChange={(e) => change(kind, { color: e.target.value })}
+                    onChange={(e) => { change(kind, { color: e.target.value }); }}
                     className="absolute inset-0 cursor-pointer opacity-0"
                     aria-label={t('borders.color', { kind: label })}
                   />

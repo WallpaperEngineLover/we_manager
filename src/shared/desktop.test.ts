@@ -26,6 +26,18 @@ describe('parseDesktopEnv', () => {
   })
 })
 
+describe('parseDesktopEnv order', () => {
+  it('prefers the name over sockets and the first listed name over later ones', () => {
+    expect(parseDesktopEnv('gnome:kde')).toBe('gnome')
+    expect(parseDesktopEnv('Pop:GNOME', { SWAYSOCK: '/s' })).toBe('gnome')
+    expect(parseDesktopEnv(undefined, { HYPRLAND_INSTANCE_SIGNATURE: 'a', SWAYSOCK: '/s', NIRI_SOCKET: '/n' })).toBe(
+      'hyprland'
+    )
+    expect(parseDesktopEnv(undefined, { SWAYSOCK: '/s', NIRI_SOCKET: '/n' })).toBe('sway')
+    expect(parseDesktopEnv(undefined, { HYPRLAND_INSTANCE_SIGNATURE: '', NIRI_SOCKET: '/n' })).toBe('niri')
+  })
+})
+
 describe('isWlrootsStyle', () => {
   it('covers the layer-shell compositors without a shell of their own', () => {
     for (const env of ['hyprland', 'sway', 'niri', 'river', 'labwc', 'wayfire'] as const) {
@@ -65,6 +77,24 @@ describe('compositorAutostartLine', () => {
     expect(compositorAutostartLine('niri', flatpak)).toBe(
       'spawn-at-startup "flatpak" "run" "io.github.WallpaperEngineLover.we_manager" "--minimized"'
     )
+  })
+
+  it('leaves harmless characters alone and quotes the rest', () => {
+    const line = (exe: string) => compositorAutostartLine('sway', exe)
+    expect(line('/a/b_c-d.e@f%g+h=i:j,k')).toBe('exec /a/b_c-d.e@f%g+h=i:j,k --minimized')
+    expect(line('/a$b')).toBe(`exec '/a$b' --minimized`)
+    expect(line('/a;b')).toBe(`exec '/a;b' --minimized`)
+    expect(line('a b')).toBe(`exec 'a b' --minimized`)
+    expect(line('')).toBe(`exec '' --minimized`)
+  })
+
+  it('escapes quotes and backslashes for KDL', () => {
+    expect(compositorAutostartLine('niri', 'a"b\\c')).toBe('spawn-at-startup "a\\"b\\\\c" "--minimized"')
+  })
+
+  it('gives labwc and wayfire the bare command', () => {
+    expect(compositorAutostartLine('labwc', ['/x y', 'z'])).toBe(`'/x y' z --minimized`)
+    expect(compositorAutostartLine('wayfire', '/x')).toBe('/x --minimized')
   })
 
   it('has nothing for sessions that run the autostart entry themselves', () => {

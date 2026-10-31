@@ -58,8 +58,8 @@ export function windowAppearanceOptions(): Pick<BrowserWindowConstructorOptions,
 
 export function attachAppearance(win: BrowserWindow): void {
   mainWindow = win
-  win.once('ready-to-show', () => updateBlur(getAppearance()))
-  win.on('show', () => updateBlur(getAppearance()))
+  win.once('ready-to-show', () => { updateBlur(getAppearance()) })
+  win.on('show', () => { updateBlur(getAppearance()) })
 }
 
 export function applyLiveAppearance(appearance: Appearance): void {

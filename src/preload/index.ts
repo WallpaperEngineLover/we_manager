@@ -4,14 +4,14 @@ import type { Appearance } from '../shared/appearance'
 import type { Language, LanguagePreference } from '../shared/i18n'
 import type { CardBorders } from '../shared/cardBorders'
 import type { CardBadges } from '../shared/cardBadges'
-import type { DesktopEnvironment } from '../shared/desktop'
 import type {
+  AppConfigSnapshot,
+  HotswapSettings,
   WorkshopQueryParams,
   WorkshopQueryResult,
   WorkshopItem,
   CreatorWorkshopQueryParams,
   WallpaperMeta,
-  XrayMode,
   WallpaperFolder,
   LibraryFilters,
   WorkshopAuthorInfo,
@@ -39,9 +39,9 @@ import type {
   PlaylistPlaybackState,
   SteamIdentity,
   LedSettings,
+  LoaderSettings,
   ExtraLibrary,
   EngineFlags,
-  ImageAdjustments,
   EngineFlagPreset,
   DisplayMode,
   ScreenTarget,
@@ -57,7 +57,6 @@ import type {
   GraphicsWarning,
   UpdateTarget
 } from '../shared/types'
-import type { VideoSegment } from '../shared/videoTrim'
 
 const api = {
   workshop: {
@@ -106,7 +105,7 @@ const api = {
       ipcRenderer.invoke(IpcChannels.STEAM_GET_FAVORITE_IDS),
     getFavoriteStatus: (): Promise<FavoriteStatus> =>
       ipcRenderer.invoke(IpcChannels.STEAM_GET_FAVORITE_STATUS),
-    getAuthorInfo: (steamId: string): Promise<WorkshopAuthorInfo | null> =>
+    getAuthorInfo: (steamId: string): Promise<WorkshopAuthorInfo> =>
       ipcRenderer.invoke(IpcChannels.STEAM_GET_AUTHOR_INFO, steamId)
   },
 
@@ -143,55 +142,13 @@ const api = {
   },
 
   config: {
-    get: (): Promise<{
-      workshopPath: string | null
-      defaultWorkshopPath: string
-      extraLibraries: ExtraLibrary[]
-      isConfigured: boolean
-      defaultFps: number | null
-      recommendedFpsEnabled: boolean
-      recommendedWebFpsEnabled: boolean
-      lweRepoUrl: string | null
-      lweRepoBranch: string | null
-      lweCmakeArgs: string | null
-      defaultLweRepoUrl: string
-      backupPath: string | null
-      isBackupConfigured: boolean
-      autoUnsubscribeAfterBackup: boolean
-      trayEnabled: boolean
-      autostartSupported: boolean
-      autostartCompositorLine: string | null
-      autostartEnabled: boolean
-      autostartMinimized: boolean
-      autostartPlaylistId: string | null
-      killLweOnQuit: boolean
-      cardBorders: CardBorders
-      cardBadges: CardBadges
-      audioScreen: string | null
-      ambientVolume: number | null
-      defaultAudioSensitivity: number
-      disablePuppetAnimation: boolean
-      scriptLimits: boolean
-      leds: LedSettings
-      disableAnimations: boolean
-      steamIdentity: SteamIdentity
-      ignoredCreators: string[]
-      engineFlags: EngineFlags
-      engineFlagPresets: EngineFlagPreset[]
-      displayMode: DisplayMode
-      disabledScreens: string[]
-      splitScreens: Record<string, SplitScreen>
-      appearance: Appearance
-      language: LanguagePreference
-      uiLanguage: Language
-      appearanceRestartNeeded: boolean
-      windowTranslucent: boolean
-      desktopEnv: DesktopEnvironment
-    }> => ipcRenderer.invoke(IpcChannels.CONFIG_GET),
+    get: (): Promise<AppConfigSnapshot> => ipcRenderer.invoke(IpcChannels.CONFIG_GET),
     setEngineFlags: (flags: EngineFlags): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_ENGINE_FLAGS, flags),
     setEnginePresets: (presets: EngineFlagPreset[]): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_ENGINE_PRESETS, presets),
+    resetEngineSettings: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_RESET_ENGINE_SETTINGS),
     setDisabledScreens: (screens: string[]): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DISABLED_SCREENS, screens),
     setDisplayMode: (mode: DisplayMode): Promise<{ ok: boolean }> =>
@@ -226,6 +183,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_TRAY_ENABLED, enabled),
     setKillLweOnQuit: (enabled: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_KILL_LWE_ON_QUIT, enabled),
+    setSkipPlaylistResume: (enabled: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_SKIP_PLAYLIST_RESUME, enabled),
     setCardBorders: (borders: CardBorders): Promise<CardBorders> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_CARD_BORDERS, borders),
     setCardBadges: (badges: CardBadges): Promise<CardBadges> =>
@@ -252,6 +211,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_DISABLE_PUPPET_ANIMATION, disabled),
     setScriptLimits: (enabled: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_SCRIPT_LIMITS, enabled),
+    setLoader: (loader: LoaderSettings): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_LOADER, loader),
     setLeds: (leds: LedSettings): Promise<{ ok: boolean }> => ipcRenderer.invoke(IpcChannels.CONFIG_SET_LEDS, leds),
     setSteamIdentity: (identity: SteamIdentity): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_STEAM_IDENTITY, identity),
@@ -377,29 +338,7 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LWE_KILL_ALL),
     listObjects: (wallpaperPath: string): Promise<LweSceneObject[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_OBJECTS, wallpaperPath),
-    hotswapSettings: (options: {
-      disabledObjects?: string[]
-      enabledObjects?: string[]
-      volume?: number
-      xray?: XrayMode
-      scaling?: string
-      zoom?: number
-      offsetX?: number
-      offsetY?: number
-      disableParallax?: boolean
-      expandCanvas?: boolean
-      repairAssets?: boolean
-      cornerColor?: string
-      imageAdjustments?: ImageAdjustments
-      speed?: number
-      videoSegments?: VideoSegment[]
-      videoSeek?: number
-      propertyOverrides?: Record<string, string>
-      audioScreen?: string
-      ambientVolume?: number
-      audioSensitivity?: Record<string, number>
-      soundVolume?: Record<string, number>
-    }, wallpaperPath?: string): Promise<{ ok: boolean }> =>
+    hotswapSettings: (options: HotswapSettings, wallpaperPath?: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.LWE_HOTSWAP_SETTINGS, options, wallpaperPath),
     listProperties: (wallpaperPath: string): Promise<LweProperty[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_PROPERTIES, wallpaperPath),
@@ -517,92 +456,92 @@ const api = {
 
   on: {
     downloadProgress: (cb: (info: DownloadProgressEvent) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, info: DownloadProgressEvent) => cb(info)
+      const listener = (_: Electron.IpcRendererEvent, info: DownloadProgressEvent) => { cb(info) }
       ipcRenderer.on(IpcChannels.EVENT_DOWNLOAD_PROGRESS, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_DOWNLOAD_PROGRESS, listener)
     },
     wallpaperImported: (cb: (meta: WallpaperMeta) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, meta: WallpaperMeta) => cb(meta)
+      const listener = (_: Electron.IpcRendererEvent, meta: WallpaperMeta) => { cb(meta) }
       ipcRenderer.on(IpcChannels.EVENT_WALLPAPER_IMPORTED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_WALLPAPER_IMPORTED, listener)
     },
     steamStatus: (cb: (running: boolean) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, running: boolean) => cb(running)
+      const listener = (_: Electron.IpcRendererEvent, running: boolean) => { cb(running) }
       ipcRenderer.on(IpcChannels.EVENT_STEAM_STATUS, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_STEAM_STATUS, listener)
     },
     lweInstallProgress: (cb: (progress: LweInstallProgress) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, progress: LweInstallProgress) => cb(progress)
+      const listener = (_: Electron.IpcRendererEvent, progress: LweInstallProgress) => { cb(progress) }
       ipcRenderer.on(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_LWE_INSTALL_PROGRESS, listener)
     },
     verifyProgress: (cb: (progress: VerifyProgressEvent) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, progress: VerifyProgressEvent) => cb(progress)
+      const listener = (_: Electron.IpcRendererEvent, progress: VerifyProgressEvent) => { cb(progress) }
       ipcRenderer.on(IpcChannels.EVENT_VERIFY_PROGRESS, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_VERIFY_PROGRESS, listener)
     },
     repairProgress: (cb: (progress: VerifyProgressEvent) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, progress: VerifyProgressEvent) => cb(progress)
+      const listener = (_: Electron.IpcRendererEvent, progress: VerifyProgressEvent) => { cb(progress) }
       ipcRenderer.on(IpcChannels.EVENT_REPAIR_PROGRESS, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_REPAIR_PROGRESS, listener)
     },
     backupProgress: (cb: (progress: BackupProgressEvent) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, progress: BackupProgressEvent) => cb(progress)
+      const listener = (_: Electron.IpcRendererEvent, progress: BackupProgressEvent) => { cb(progress) }
       ipcRenderer.on(IpcChannels.EVENT_BACKUP_PROGRESS, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_BACKUP_PROGRESS, listener)
     },
     playlistStateChanged: (cb: (states: PlaylistPlaybackState[]) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, states: PlaylistPlaybackState[]) => cb(states)
+      const listener = (_: Electron.IpcRendererEvent, states: PlaylistPlaybackState[]) => { cb(states) }
       ipcRenderer.on(IpcChannels.EVENT_PLAYLIST_STATE_CHANGED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_PLAYLIST_STATE_CHANGED, listener)
     },
     votedIdsChanged: (cb: (ids: string[]) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, ids: string[]) => cb(ids)
+      const listener = (_: Electron.IpcRendererEvent, ids: string[]) => { cb(ids) }
       ipcRenderer.on(IpcChannels.EVENT_VOTED_IDS_CHANGED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_VOTED_IDS_CHANGED, listener)
     },
     dislikedIdsChanged: (cb: (ids: string[]) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, ids: string[]) => cb(ids)
+      const listener = (_: Electron.IpcRendererEvent, ids: string[]) => { cb(ids) }
       ipcRenderer.on(IpcChannels.EVENT_DISLIKED_IDS_CHANGED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_DISLIKED_IDS_CHANGED, listener)
     },
     favoriteIdsChanged: (cb: (ids: string[]) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, ids: string[]) => cb(ids)
+      const listener = (_: Electron.IpcRendererEvent, ids: string[]) => { cb(ids) }
       ipcRenderer.on(IpcChannels.EVENT_FAVORITE_IDS_CHANGED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_FAVORITE_IDS_CHANGED, listener)
     },
     favoriteStatusChanged: (cb: (status: FavoriteStatus) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, status: FavoriteStatus) => cb(status)
+      const listener = (_: Electron.IpcRendererEvent, status: FavoriteStatus) => { cb(status) }
       ipcRenderer.on(IpcChannels.EVENT_FAVORITE_STATUS_CHANGED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_FAVORITE_STATUS_CHANGED, listener)
     },
     failedVotesChanged: (cb: (failed: Record<string, string>) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, failed: Record<string, string>) => cb(failed)
+      const listener = (_: Electron.IpcRendererEvent, failed: Record<string, string>) => { cb(failed) }
       ipcRenderer.on(IpcChannels.EVENT_FAILED_VOTES_CHANGED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_FAILED_VOTES_CHANGED, listener)
     },
     libraryChanged: (cb: () => void): (() => void) => {
-      const listener = () => cb()
+      const listener = () => { cb() }
       ipcRenderer.on(IpcChannels.EVENT_LIBRARY_CHANGED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_LIBRARY_CHANGED, listener)
     },
     displayChanged: (cb: () => void): (() => void) => {
-      const listener = () => cb()
+      const listener = () => { cb() }
       ipcRenderer.on(IpcChannels.EVENT_DISPLAY_CHANGED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_DISPLAY_CHANGED, listener)
     },
     wallpaperCrashed: (cb: (event: CrashEvent) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, event: CrashEvent) => cb(event)
+      const listener = (_: Electron.IpcRendererEvent, event: CrashEvent) => { cb(event) }
       ipcRenderer.on(IpcChannels.EVENT_WALLPAPER_CRASHED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_WALLPAPER_CRASHED, listener)
     },
     scheduleFired: (cb: (ruleName: string) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, ruleName: string) => cb(ruleName)
+      const listener = (_: Electron.IpcRendererEvent, ruleName: string) => { cb(ruleName) }
       ipcRenderer.on(IpcChannels.EVENT_SCHEDULE_FIRED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_SCHEDULE_FIRED, listener)
     },
     updateStatus: (cb: (status: UpdateStatus) => void): (() => void) => {
-      const listener = (_: Electron.IpcRendererEvent, status: UpdateStatus) => cb(status)
+      const listener = (_: Electron.IpcRendererEvent, status: UpdateStatus) => { cb(status) }
       ipcRenderer.on(IpcChannels.EVENT_UPDATE_STATUS, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_UPDATE_STATUS, listener)
     }

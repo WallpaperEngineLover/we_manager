@@ -36,7 +36,7 @@ export default function ThumbnailSection({ wallpaper, canGenerate, onUpdated }: 
   return (
     <div className="border-t border-fg/5 pt-3">
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setOpen((v) => !v) }}
         className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -56,7 +56,7 @@ export default function ThumbnailSection({ wallpaper, canGenerate, onUpdated }: 
               ].map(({ label, original }) => (
                 <button
                   key={label}
-                  onClick={() => showOriginal(original)}
+                  onClick={() => void showOriginal(original)}
                   disabled={busy !== null || usingCustom === !original}
                   className={clsx(
                     'flex-1 py-1',
@@ -72,7 +72,7 @@ export default function ThumbnailSection({ wallpaper, canGenerate, onUpdated }: 
           <div className="flex flex-wrap gap-1.5">
             {canGenerate && (
               <button
-                onClick={() => run('generate', () => window.electronAPI.wallpaper.generateThumbnail(wallpaper.id))}
+                onClick={() => void run('generate', () => window.electronAPI.wallpaper.generateThumbnail(wallpaper.id))}
                 disabled={busy !== null}
                 title={t('thumb.captureHint')}
                 className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10 disabled:opacity-50"
@@ -82,7 +82,7 @@ export default function ThumbnailSection({ wallpaper, canGenerate, onUpdated }: 
               </button>
             )}
             <button
-              onClick={() => run('pick', () => window.electronAPI.wallpaper.pickThumbnail(wallpaper.id))}
+              onClick={() => void run('pick', () => window.electronAPI.wallpaper.pickThumbnail(wallpaper.id))}
               disabled={busy !== null}
               className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10 disabled:opacity-50"
             >
@@ -91,7 +91,7 @@ export default function ThumbnailSection({ wallpaper, canGenerate, onUpdated }: 
             </button>
             {hasCustom && (
               <button
-                onClick={() => run('delete', () => window.electronAPI.wallpaper.deleteThumbnail(wallpaper.id))}
+                onClick={() => void run('delete', () => window.electronAPI.wallpaper.deleteThumbnail(wallpaper.id))}
                 disabled={busy !== null}
                 className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-red-500/20 hover:text-red-400 disabled:opacity-50"
               >

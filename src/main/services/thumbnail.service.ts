@@ -33,7 +33,7 @@ function requireWallpaper(id: string): WallpaperMeta {
 function setThumbnail(wallpaper: WallpaperMeta, file: string): WallpaperMeta {
   removeOwnThumbnail(wallpaper)
   updateWallpaper(wallpaper.id, { customPreview: file, useOriginalPreview: false })
-  return getWallpaper(wallpaper.id)!
+  return requireWallpaper(wallpaper.id)
 }
 
 export async function generateThumbnail(id: string): Promise<WallpaperMeta> {
@@ -60,5 +60,5 @@ export function deleteThumbnail(id: string): WallpaperMeta {
   const wallpaper = requireWallpaper(id)
   removeOwnThumbnail(wallpaper)
   updateWallpaper(id, { customPreview: undefined, useOriginalPreview: false })
-  return getWallpaper(id)!
+  return requireWallpaper(id)
 }

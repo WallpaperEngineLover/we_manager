@@ -54,7 +54,7 @@ function buildMenu(): Menu {
     { type: 'separator' },
     {
       label: t('tray.quit'),
-      click: () => app.quit()
+      click: () => { app.quit() }
     }
   ])
 }
@@ -87,8 +87,4 @@ export function destroyTray(): void {
   }
   unsubscribePlayback?.()
   unsubscribePlayback = null
-}
-
-export function isTrayActive(): boolean {
-  return tray !== null
 }

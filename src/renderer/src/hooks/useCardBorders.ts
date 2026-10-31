@@ -14,7 +14,7 @@ export function useCardBadges(): CardBadges {
   return useConfig()?.cardBadges ?? DEFAULT_CARD_BADGES
 }
 
-export function useFailedVotes(): Record<string, string> {
+function useFailedVotes(): Record<string, string> {
   const { data } = useQuery({
     queryKey: ['steam-failed-votes'],
     queryFn: () => window.electronAPI.steam.getFailedVotes()

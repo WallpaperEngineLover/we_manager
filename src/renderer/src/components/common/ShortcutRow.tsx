@@ -100,7 +100,7 @@ export function ShortcutRow({
           <span className="truncate">{current ? describe(current, apps) : t('shortcut.notAssigned')}</span>
         </span>
         <button
-          onClick={() => setDraft(draft ? null : (current ?? { type: 'application', file: '', arguments: '' }))}
+          onClick={() => { setDraft(draft ? null : (current ?? { type: 'application', file: '', arguments: '' })); }}
           title={current ? t('shortcut.change') : t('shortcut.assign')}
           className="rounded p-0.5 text-gray-400 hover:bg-fg/10 hover:text-gray-200 disabled:opacity-40"
         >
@@ -108,7 +108,7 @@ export function ShortcutRow({
         </button>
         {current && (
           <button
-            onClick={() => onCommit('')}
+            onClick={() => { onCommit('') }}
             title={t('shortcut.remove')}
             className="rounded p-0.5 text-gray-400 hover:bg-fg/10 hover:text-gray-200 disabled:opacity-40"
           >
@@ -123,7 +123,7 @@ export function ShortcutRow({
             {TYPES.map(({ type, label: typeLabel, icon: Icon }) => (
               <button
                 key={type}
-                onClick={() => setDraft({ type, file: '', arguments: '' })}
+                onClick={() => { setDraft({ type, file: '', arguments: '' }); }}
                 className={clsx(
                   'flex flex-1 items-center justify-center gap-1 rounded px-1 py-0.5',
                   draft.type === type ? 'bg-accent-500/30 text-accent-200' : 'text-gray-400 hover:bg-fg/5'
@@ -139,7 +139,7 @@ export function ShortcutRow({
             <>
               <input
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value) }}
                 placeholder={t('shortcut.searchApps')}
                 className="w-full rounded bg-black/20 px-1.5 py-0.5 text-gray-200 outline-none"
               />
@@ -147,7 +147,7 @@ export function ShortcutRow({
                 {filteredApps.map((app) => (
                   <button
                     key={app.file}
-                    onClick={() => setDraft({ ...draft, file: app.file })}
+                    onClick={() => { setDraft({ ...draft, file: app.file }); }}
                     title={app.file}
                     className={clsx(
                       'block w-full truncate rounded px-1.5 py-0.5 text-left',
@@ -165,12 +165,12 @@ export function ShortcutRow({
             <div className="flex gap-1">
               <input
                 value={draft.file}
-                onChange={(e) => setDraft({ ...draft, file: e.target.value })}
+                onChange={(e) => { setDraft({ ...draft, file: e.target.value }); }}
                 placeholder={draft.type === 'directory' ? t('shortcut.folderPlaceholder') : t('shortcut.filePlaceholder')}
                 className="min-w-0 flex-1 rounded bg-black/20 px-1.5 py-0.5 text-gray-200 outline-none"
               />
               <button
-                onClick={() => pick(draft.type === 'directory' ? 'directory' : 'file')}
+                onClick={() => void pick(draft.type === 'directory' ? 'directory' : 'file')}
                 className="rounded bg-fg/5 px-1.5 text-gray-300 hover:bg-fg/10"
               >
                 {t('common.browse')}
@@ -181,7 +181,7 @@ export function ShortcutRow({
           {draft.type === 'web' && (
             <input
               value={draft.file}
-              onChange={(e) => setDraft({ ...draft, file: e.target.value })}
+              onChange={(e) => { setDraft({ ...draft, file: e.target.value }); }}
               placeholder="https://"
               className="w-full rounded bg-black/20 px-1.5 py-0.5 text-gray-200 outline-none"
             />
@@ -191,7 +191,7 @@ export function ShortcutRow({
             <>
               <input
                 value={draft.file}
-                onChange={(e) => setDraft({ ...draft, file: e.target.value })}
+                onChange={(e) => { setDraft({ ...draft, file: e.target.value }); }}
                 placeholder={t('shortcut.command')}
                 className="w-full rounded bg-black/20 px-1.5 py-0.5 font-mono text-gray-200 outline-none"
               />
@@ -202,7 +202,7 @@ export function ShortcutRow({
           )}
 
           <div className="flex justify-end gap-1">
-            <button onClick={() => setDraft(null)} className="rounded px-2 py-0.5 text-gray-400 hover:bg-fg/5">
+            <button onClick={() => { setDraft(null) }} className="rounded px-2 py-0.5 text-gray-400 hover:bg-fg/5">
               {t('common.cancel')}
             </button>
             <button

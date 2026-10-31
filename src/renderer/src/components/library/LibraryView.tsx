@@ -17,6 +17,7 @@ import {
   ChevronLeft
 } from 'lucide-react'
 import WallpaperCard from './WallpaperCard'
+import ResizableWidth from '../common/ResizableWidth'
 import PreviewSizeToggle from '../common/PreviewSizeToggle'
 import DetailSidebar from '../common/DetailSidebar'
 import WallpaperContextMenu from '../common/WallpaperContextMenu'
@@ -32,6 +33,7 @@ import {
   ToolbarButton
 } from '../common/GridControls'
 import { CheckItem, FilterPanel, FilterSection, ResolutionFilterSection, TagFilterSection } from '../common/FilterPanel'
+import { Reorderable, ReorderableSections, useReorder } from '../common/Reorderable'
 import { useToast } from '../common/Toast'
 import type { BackupProgressEvent, LibraryFilters, WallpaperFolder } from '@shared/types'
 import clsx from 'clsx'
@@ -146,7 +148,7 @@ function TagsFilterSection({
         type="text"
         placeholder={t('filters.searchTags')}
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        onChange={(e) => { setSearch(e.target.value) }}
         className="mb-1 w-full rounded bg-fg/5 px-2 py-1 text-xs text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
       />
       <div className="max-h-64 overflow-y-auto">
@@ -156,7 +158,7 @@ function TagsFilterSection({
             key={tag}
             label={tagLabel(tag)}
             checked={selected.includes(tag)}
-            onChange={() => onChange(toggle(selected, tag))}
+            onChange={() => { onChange(toggle(selected, tag)) }}
           />
         ))}
       </div>
@@ -219,7 +221,13 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   const cardBadges = useCardBadges()
   const lweInstalled = useLweInstalled()
   const isBackupConfigured = useConfig()?.isBackupConfigured ?? false
-  const { folders, foldersLoaded, refetchFolders, moveToFolder } = useFolders()
+  const { folders: savedFolders, foldersLoaded, refetchFolders, moveToFolder } = useFolders()
+  const folderOrder = useReorder('we-library-folder-order', savedFolders.map((f) => f.id))
+  const folders = useMemo(
+    () => folderOrder.sortItems(savedFolders, (f) => f.id),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [savedFolders, folderOrder.order]
+  )
 
   useEffect(() => {
     if (foldersLoaded && activeFolder && !folders.some((f) => f.id === activeFolder)) setActiveFolder(null)
@@ -273,7 +281,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     const off = window.electronAPI.on.downloadProgress((progress) => {
       if (progress.status === 'completed' || progress.status === 'error') {
         clearTimeout(timer)
-        timer = setTimeout(() => queryClient.invalidateQueries({ queryKey: ['library'] }), 500)
+        timer = setTimeout(() => void queryClient.invalidateQueries({ queryKey: ['library'] }), 500)
       }
     })
     return () => {
@@ -449,7 +457,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   async function addToCurrentPlaylist(ids: string[]) {
     if (!currentPlaylistId || ids.length === 0) return
     await window.electronAPI.playlist.addItems(currentPlaylistId, ids)
-    queryClient.invalidateQueries({ queryKey: ['playlists'] })
+    void queryClient.invalidateQueries({ queryKey: ['playlists'] })
     showToast(t('playlist.addedToCurrent'))
   }
 
@@ -492,8 +500,8 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   useEffect(() => {
     if (liveProgress || backupTaskRunning) return
-    const timer = setTimeout(() => setLingeringProgress(null), 1500)
-    return () => clearTimeout(timer)
+    const timer = setTimeout(() => { setLingeringProgress(null) }, 1500)
+    return () => { clearTimeout(timer) }
   }, [liveProgress, backupTaskRunning])
 
   const statusLine =
@@ -511,7 +519,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
         next.delete(task)
         return next
       })
-      queryClient.invalidateQueries({ queryKey: ['library'] })
+      void queryClient.invalidateQueries({ queryKey: ['library'] })
     }
   }
 
@@ -565,8 +573,8 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     const result = await window.electronAPI.library.scan()
     setScanResult(result)
     setScanning(false)
-    queryClient.invalidateQueries({ queryKey: ['library'] })
-    queryClient.invalidateQueries({ queryKey: ['library-tags'] })
+    void queryClient.invalidateQueries({ queryKey: ['library'] })
+    void queryClient.invalidateQueries({ queryKey: ['library-tags'] })
   }
 
   const [creatingFolder, setCreatingFolder] = useState(false)
@@ -581,7 +589,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     await window.electronAPI.folders.create(newFolderName.trim())
     setNewFolderName('')
     setCreatingFolder(false)
-    refetchFolders()
+    void refetchFolders()
   }
 
   async function handleImportWEConfig() {
@@ -589,8 +597,8 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       const filePath = await window.electronAPI.config.pickFile()
       if (!filePath) return
       const result = await window.electronAPI.config.importWE(filePath)
-      refetchFolders()
-      queryClient.invalidateQueries({ queryKey: ['library'] })
+      void refetchFolders()
+      void queryClient.invalidateQueries({ queryKey: ['library'] })
       setImportStatus(t('library.importedConfig', { folders: result.folders, playlists: result.playlists }))
     } catch (err) {
       setImportStatus(t('setup.importFailed', { error: (err as Error).message }))
@@ -599,7 +607,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
 
   async function handleCleanupFolders() {
     const { removed } = await window.electronAPI.folders.cleanup()
-    refetchFolders()
+    void refetchFolders()
     setImportStatus(
       removed > 0
         ? t('library.cleanedUp', { count: removed })
@@ -611,14 +619,14 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     if (!renameValue.trim()) return
     await window.electronAPI.folders.rename(id, renameValue.trim())
     setRenamingId(null)
-    refetchFolders()
+    void refetchFolders()
   }
 
   async function handleDeleteFolder(id: string) {
     await window.electronAPI.folders.delete(id)
     if (activeFolder === id) setActiveFolder(null)
     setFolderMenu(null)
-    refetchFolders()
+    void refetchFolders()
   }
 
   // dragging a selected card moves the whole selection
@@ -641,11 +649,11 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === '+' && selectedIds.size > 0 && !isEditingText()) {
-        addToCurrentPlaylist([...selectedIds])
+        void addToCurrentPlaylist([...selectedIds])
       }
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    return () => { window.removeEventListener('keydown', onKeyDown) }
   })
 
   function openWallpaperCtxMenu(e: React.MouseEvent, wallpaperId: string) {
@@ -660,12 +668,12 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-wrap items-center gap-3 border-b border-fg/5 px-4 py-3">
-        <FiltersToggle open={showFilters} activeCount={activeCount} onClick={() => setShowFilters((v) => !v)} />
-        <PanelToggle icon={Folder} label={t('library.folders')} open={showFolders} onClick={() => setShowFolders((v) => !v)} />
+        <FiltersToggle open={showFilters} activeCount={activeCount} onClick={() => { setShowFilters((v) => !v) }} />
+        <PanelToggle icon={Folder} label={t('library.folders')} open={showFolders} onClick={() => { setShowFolders((v) => !v) }} />
         <SearchInput value={search} placeholder={t('picker.search')} onChange={setSearch} />
         <select
           value={sort.sortBy ?? 'updatedAt'}
-          onChange={(e) => setSort((prev) => ({ ...prev, sortBy: e.target.value as LibraryFilters['sortBy'] }))}
+          onChange={(e) => { setSort((prev) => ({ ...prev, sortBy: e.target.value as LibraryFilters['sortBy'] })); }}
           className="rounded-lg bg-card px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
         >
           <option value="title">{t('library.sortName')}</option>
@@ -676,7 +684,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
           <option value="appliedCount">{t('library.sortMostApplied')}</option>
         </select>
         <button
-          onClick={() => setSort((prev) => ({ ...prev, sortDir: prev.sortDir === 'asc' ? 'desc' : 'asc' }))}
+          onClick={() => { setSort((prev) => ({ ...prev, sortDir: prev.sortDir === 'asc' ? 'desc' : 'asc' })); }}
           title={sort.sortDir === 'asc' ? t('library.ascending') : t('library.descending')}
           className="rounded-lg bg-fg/5 px-2 py-2 text-sm text-gray-300 hover:bg-fg/10"
         >
@@ -684,7 +692,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
         </button>
         <select
           value={pageSize}
-          onChange={(e) => setPageSize(Number(e.target.value))}
+          onChange={(e) => { setPageSize(Number(e.target.value)) }}
           className="rounded-lg bg-card px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
         >
           <option value={50}>{t('library.perPage', { count: 50 })}</option>
@@ -692,14 +700,14 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
           <option value={200}>{t('library.perPage', { count: 200 })}</option>
         </select>
         <PreviewSizeToggle value={previewSize} onChange={setPreviewSize} />
-        {activeCount > 0 && <ResetFiltersButton onClick={() => setFilterState(DEFAULT_STATE)} />}
+        {activeCount > 0 && <ResetFiltersButton onClick={() => { setFilterState(DEFAULT_STATE) }} />}
         <div className="ml-auto" />
         <ToolbarButton
           icon={<RefreshCw size={14} />}
           busy={scanning}
           disabled={scanning}
           title={t('library.scanHint')}
-          onClick={handleScan}
+          onClick={() => void handleScan()}
         >
           {t('library.scan')}
         </ToolbarButton>
@@ -796,136 +804,158 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
       <div className="flex flex-1 overflow-hidden">
         {showFilters && (
           <FilterPanel>
-            <FilterSection title={t('filters.status')} activeCount={flagCount}>
-              <CheckItem
-                label={t('subscribe.downloadFailed')}
-                title={t('filters.failedHint')}
-                count={statusCounts.failed}
-                checked={filterState.failedOnly}
-                onChange={() => toggleFlag('failedOnly')}
-              />
-              <CheckItem
-                label={t('vote.liked')}
-                title={t('filters.likedHint')}
-                count={statusCounts.liked}
-                checked={filterState.likedOnly}
-                onChange={() => toggleFlag('likedOnly')}
-              />
-              <CheckItem
-                label={t('borders.disliked')}
-                title={t('filters.dislikedHint')}
-                count={statusCounts.disliked}
-                checked={filterState.dislikedOnly}
-                onChange={() => toggleFlag('dislikedOnly')}
-              />
-              <CheckItem
-                label={t('filters.favorites')}
-                title={t('filters.favoritesHint')}
-                count={statusCounts.favorites}
-                checked={filterState.favoritesOnly}
-                onChange={() => toggleFlag('favoritesOnly')}
-              />
-              <CheckItem
-                label={t('filters.unavailable')}
-                title={
-                  unavailableNotBackedUp.length > 0
-                    ? t('filters.unavailableHintBackup', { count: unavailableNotBackedUp.length })
-                    : t('filters.unavailableHint')
-                }
-                count={statusCounts.unavailable}
-                checked={filterState.unavailableOnly}
-                onChange={() => toggleFlag('unavailableOnly')}
-              />
-              <CheckItem
-                label={t('filters.outdatedBackup')}
-                title={t('filters.outdatedBackupHint')}
-                count={statusCounts.outdatedBackup}
-                checked={filterState.outdatedBackupOnly}
-                onChange={() => toggleFlag('outdatedBackupOnly')}
-              />
-              <CheckItem
-                label={t('verify.damaged')}
-                title={t('verify.damagedHint')}
-                count={statusCounts.damaged}
-                checked={filterState.damagedOnly}
-                onChange={() => toggleFlag('damagedOnly')}
-              />
-            </FilterSection>
-            <FilterSection title={t('filters.features')} activeCount={featureCount}>
-              <CheckItem
-                label="HDR"
-                title={t('filters.hdrHint')}
-                count={statusCounts.hdr}
-                checked={filterState.hdrOnly}
-                onChange={() => toggleFlag('hdrOnly')}
-              />
-              <CheckItem
-                label="HRTF"
-                title={t('filters.hrtfHint')}
-                count={statusCounts.hrtf}
-                checked={filterState.hrtfOnly}
-                onChange={() => toggleFlag('hrtfOnly')}
-              />
-            </FilterSection>
-            <FilterSection title={t('filters.showOnly')} defaultOpen={false} activeCount={filterState.showOnly.length}>
-              {WE_SHOW_ONLY.map((item) => (
-                <CheckItem
-                  key={item.tag}
-                  label={tagLabel(item.label)}
-                  count={showOnlyCounts.get(item.tag) ?? 0}
-                  checked={filterState.showOnly.includes(item.tag)}
-                  onChange={() => setFilter('showOnly', toggle(filterState.showOnly, item.tag))}
+            <ReorderableSections
+              storageKey="we-library-filter-order"
+              sections={[
+                { id: 'status', node: (
+                <FilterSection title={t('filters.status')} activeCount={flagCount}>
+                  <CheckItem
+                    label={t('subscribe.downloadFailed')}
+                    title={t('filters.failedHint')}
+                    count={statusCounts.failed}
+                    checked={filterState.failedOnly}
+                    onChange={() => { toggleFlag('failedOnly') }}
+                  />
+                  <CheckItem
+                    label={t('vote.liked')}
+                    title={t('filters.likedHint')}
+                    count={statusCounts.liked}
+                    checked={filterState.likedOnly}
+                    onChange={() => { toggleFlag('likedOnly') }}
+                  />
+                  <CheckItem
+                    label={t('borders.disliked')}
+                    title={t('filters.dislikedHint')}
+                    count={statusCounts.disliked}
+                    checked={filterState.dislikedOnly}
+                    onChange={() => { toggleFlag('dislikedOnly') }}
+                  />
+                  <CheckItem
+                    label={t('filters.favorites')}
+                    title={t('filters.favoritesHint')}
+                    count={statusCounts.favorites}
+                    checked={filterState.favoritesOnly}
+                    onChange={() => { toggleFlag('favoritesOnly') }}
+                  />
+                  <CheckItem
+                    label={t('filters.unavailable')}
+                    title={
+                      unavailableNotBackedUp.length > 0
+                        ? t('filters.unavailableHintBackup', { count: unavailableNotBackedUp.length })
+                        : t('filters.unavailableHint')
+                    }
+                    count={statusCounts.unavailable}
+                    checked={filterState.unavailableOnly}
+                    onChange={() => { toggleFlag('unavailableOnly') }}
+                  />
+                  <CheckItem
+                    label={t('filters.outdatedBackup')}
+                    title={t('filters.outdatedBackupHint')}
+                    count={statusCounts.outdatedBackup}
+                    checked={filterState.outdatedBackupOnly}
+                    onChange={() => { toggleFlag('outdatedBackupOnly') }}
+                  />
+                  <CheckItem
+                    label={t('verify.damaged')}
+                    title={t('verify.damagedHint')}
+                    count={statusCounts.damaged}
+                    checked={filterState.damagedOnly}
+                    onChange={() => { toggleFlag('damagedOnly') }}
+                  />
+                </FilterSection>
+                ) },
+                { id: 'features', node: (
+                <FilterSection title={t('filters.features')} activeCount={featureCount}>
+                  <CheckItem
+                    label="HDR"
+                    title={t('filters.hdrHint')}
+                    count={statusCounts.hdr}
+                    checked={filterState.hdrOnly}
+                    onChange={() => { toggleFlag('hdrOnly') }}
+                  />
+                  <CheckItem
+                    label="HRTF"
+                    title={t('filters.hrtfHint')}
+                    count={statusCounts.hrtf}
+                    checked={filterState.hrtfOnly}
+                    onChange={() => { toggleFlag('hrtfOnly') }}
+                  />
+                </FilterSection>
+                ) },
+                { id: 'showOnly', node: (
+                <FilterSection title={t('filters.showOnly')} defaultOpen={false} activeCount={filterState.showOnly.length}>
+                  {WE_SHOW_ONLY.map((item) => (
+                    <CheckItem
+                      key={item.tag}
+                      label={tagLabel(item.label)}
+                      count={showOnlyCounts.get(item.tag) ?? 0}
+                      checked={filterState.showOnly.includes(item.tag)}
+                      onChange={() => { setFilter('showOnly', toggle(filterState.showOnly, item.tag)) }}
+                    />
+                  ))}
+                </FilterSection>
+                ) },
+                { id: 'type', node: (
+                <TagFilterSection
+                  title={t('filters.type')}
+                  options={LIBRARY_TYPES}
+                  selected={filterState.types}
+                  onChange={(tags) => { setFilter('types', tags) }}
                 />
-              ))}
-            </FilterSection>
-            <TagFilterSection
-              title={t('filters.type')}
-              options={LIBRARY_TYPES}
-              selected={filterState.types}
-              onChange={(tags) => setFilter('types', tags)}
-            />
-            <TagFilterSection
-              title={t('filters.ageRating')}
-              options={WE_LIBRARY_AGE_RATINGS}
-              selected={filterState.ageRatings}
-              onChange={(tags) => setFilter('ageRatings', tags)}
-            />
-            <TagFilterSection
-              title={t('filters.source')}
-              options={SOURCES}
-              selected={filterState.sources}
-              onChange={(tags) => setFilter('sources', tags)}
-            />
-            <ResolutionFilterSection
-              selected={filterState.resolutions}
-              allTags={ALL_RESOLUTION_TAGS}
-              counts={resolutionCounts}
-              onChange={(resolutions) => setFilter('resolutions', resolutions)}
-            />
-            <TagsFilterSection
-              available={availableTags}
-              selected={filterState.genres}
-              onChange={(tags) => setFilter('genres', tags)}
+                ) },
+                { id: 'ageRating', node: (
+                <TagFilterSection
+                  title={t('filters.ageRating')}
+                  options={WE_LIBRARY_AGE_RATINGS}
+                  selected={filterState.ageRatings}
+                  onChange={(tags) => { setFilter('ageRatings', tags) }}
+                />
+                ) },
+                { id: 'source', node: (
+                <TagFilterSection
+                  title={t('filters.source')}
+                  options={SOURCES}
+                  selected={filterState.sources}
+                  onChange={(tags) => { setFilter('sources', tags) }}
+                />
+                ) },
+                { id: 'resolution', node: (
+                <ResolutionFilterSection
+                  selected={filterState.resolutions}
+                  allTags={ALL_RESOLUTION_TAGS}
+                  counts={resolutionCounts}
+                  onChange={(resolutions) => { setFilter('resolutions', resolutions) }}
+                />
+                ) },
+                { id: 'tags', node: (
+                <TagsFilterSection
+                  available={availableTags}
+                  selected={filterState.genres}
+                  onChange={(tags) => { setFilter('genres', tags) }}
+                />
+                ) },
+              ]}
             />
           </FilterPanel>
         )}
 
         {showFolders && (
-        <div className="flex w-48 flex-shrink-0 flex-col border-r border-fg/5 overflow-y-auto">
+        <ResizableWidth storageKey="we-folder-panel-width" defaultWidth={192} min={140} max={360} edge="right">
+        <div className="flex w-full flex-col border-r border-fg/5 overflow-y-auto">
           <div className="flex items-center justify-between px-3 pt-3 pb-1">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
               {t('library.folders')}
             </span>
             <div className="flex gap-1">
               <button
-                onClick={handleImportWEConfig}
+                onClick={() => void handleImportWEConfig()}
                 title={t('library.importConfig')}
                 className="rounded p-0.5 text-gray-600 hover:text-gray-300"
               >
                 <Upload size={12} />
               </button>
               <button
-                onClick={handleCleanupFolders}
+                onClick={() => void handleCleanupFolders()}
                 title={t('library.cleanup')}
                 className="rounded p-0.5 text-gray-600 hover:text-gray-300"
               >
@@ -947,7 +977,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
             </div>
           )}
 
-          <button onClick={() => setActiveFolder(null)} className={folderRowClass(activeFolder === null)}>
+          <button onClick={() => { setActiveFolder(null) }} className={folderRowClass(activeFolder === null)}>
             <Folder size={14} />
             <span className="flex-1 text-left truncate">{t('library.defaultFolder')}</span>
             <span className="text-gray-600">{unsorted.length}</span>
@@ -959,10 +989,10 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
               <input
                 autoFocus
                 value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                onBlur={handleCreateFolderSubmit}
+                onChange={(e) => { setNewFolderName(e.target.value) }}
+                onBlur={() => void handleCreateFolderSubmit()}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleCreateFolderSubmit()
+                  if (e.key === 'Enter') void handleCreateFolderSubmit()
                   if (e.key === 'Escape') setCreatingFolder(false)
                 }}
                 placeholder={t('library.folderName')}
@@ -972,12 +1002,18 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
           )}
 
           {folders.map((folder) => (
-            <button
+            <Reorderable
               key={folder.id}
-              onClick={() => setActiveFolder(folder.id)}
-              onContextMenu={(e) => openFolderMenu(e, folder)}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => handleDrop(folder.id, dropWallpaperId(e))}
+              group="we-library-folder-order"
+              id={folder.id}
+              onMove={folderOrder.move}
+              disabled={renamingId === folder.id}
+            >
+            <button
+              onClick={() => { setActiveFolder(folder.id) }}
+              onContextMenu={(e) => { openFolderMenu(e, folder) }}
+              onDragOver={(e) => { e.preventDefault() }}
+              onDrop={(e) => { handleDrop(folder.id, dropWallpaperId(e)) }}
               className={folderRowClass(activeFolder === folder.id)}
             >
               {activeFolder === folder.id ? <FolderOpen size={14} /> : <Folder size={14} />}
@@ -985,13 +1021,13 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 <input
                   autoFocus
                   value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onBlur={() => handleRename(folder.id)}
+                  onChange={(e) => { setRenameValue(e.target.value) }}
+                  onBlur={() => void handleRename(folder.id)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleRename(folder.id)
+                    if (e.key === 'Enter') void handleRename(folder.id)
                     if (e.key === 'Escape') setRenamingId(null)
                   }}
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation() }}
                   className="flex-1 bg-transparent text-xs text-gray-200 outline-none"
                 />
               ) : (
@@ -999,15 +1035,17 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
               )}
               <span className="text-gray-600">{folderCounts.get(folder.id) ?? 0}</span>
             </button>
+            </Reorderable>
           ))}
         </div>
+        </ResizableWidth>
         )}
 
         <div {...containerProps} className="relative flex-1 overflow-y-auto p-4 select-none">
           {!showFolders && activeFolderTitle && (
             <div className="mb-3 flex items-center gap-1.5 text-xs text-gray-400">
               <button
-                onClick={() => setActiveFolder(null)}
+                onClick={() => { setActiveFolder(null) }}
                 className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10"
               >
                 <ChevronLeft size={12} /> {t('library.defaultFolder')}
@@ -1038,8 +1076,8 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
               {folders.map((folder) => (
                 <div
                   key={folder.id}
-                  onClick={() => setActiveFolder(folder.id)}
-                  onContextMenu={(e) => openFolderMenu(e, folder)}
+                  onClick={() => { setActiveFolder(folder.id) }}
+                  onContextMenu={(e) => { openFolderMenu(e, folder) }}
                   onDragOver={(e) => {
                     e.preventDefault()
                     e.currentTarget.classList.add('ring-2', 'ring-accent-500')
@@ -1082,8 +1120,8 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
                 previewSize={previewSize}
                 isInCurrentPlaylist={currentPlaylistItemIds.has(wallpaper.id)}
                 backupProgress={backupProgress.get(wallpaper.id) ?? null}
-                onSelect={(e) => handleCardSelect(wallpaper.id, e)}
-                onContextMenu={(e) => openWallpaperCtxMenu(e, wallpaper.id)}
+                onSelect={(e) => { handleCardSelect(wallpaper.id, e) }}
+                onContextMenu={(e) => { openWallpaperCtxMenu(e, wallpaper.id) }}
               />
             ))}
           </div>
@@ -1103,8 +1141,8 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
           <DetailSidebar
             id={detailId}
             {...detailSidebarProps(detailWallpaper)}
-            onClose={() => setDetailId(null)}
-            onSubscribe={() => subscribe(detailId)}
+            onClose={() => { setDetailId(null) }}
+            onSubscribe={() => void subscribe(detailId)}
             onUnsubscribe={() => unsubscribe([detailId])}
             onPlay={(screen) => applyWallpaper(detailId, screen)}
             onBrowseCreator={onBrowseCreator}
@@ -1116,7 +1154,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
         <ContextMenu
           x={folderMenu.x}
           y={folderMenu.y}
-          onClose={() => setFolderMenu(null)}
+          onClose={() => { setFolderMenu(null) }}
           className="min-w-[140px]"
         >
           <MenuItem
@@ -1129,7 +1167,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
           >
             {t('common.rename')}
           </MenuItem>
-          <MenuItem icon={Trash2} danger onClick={() => handleDeleteFolder(folderMenu.folder.id)}>
+          <MenuItem icon={Trash2} danger onClick={() => void handleDeleteFolder(folderMenu.folder.id)}>
             {t('common.delete')}
           </MenuItem>
         </ContextMenu>
@@ -1141,7 +1179,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
           y={ctxMenu.y}
           ids={ctxMenu.ids}
           wallpapers={ctxWallpapers}
-          onClose={() => setCtxMenu(null)}
+          onClose={() => { setCtxMenu(null) }}
           onBrowseCreator={onBrowseCreator}
         />
       )}

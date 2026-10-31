@@ -21,7 +21,7 @@ export default function LanguageSelect() {
       <Languages size={14} className="text-gray-500" />
       <select
         value={preference}
-        onChange={(e) => change(e.target.value as LanguagePreference)}
+        onChange={(e) => void change(e.target.value as LanguagePreference)}
         title={t('language.title')}
         className="rounded-lg bg-fg/5 px-2 py-1.5 text-sm text-gray-200 outline-none"
       >

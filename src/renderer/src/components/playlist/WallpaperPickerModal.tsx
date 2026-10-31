@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Search, X, Plus, Check } from 'lucide-react'
-import { getPreviewSrc } from '../../utils/preview'
-import PreviewImage from '../common/PreviewImage'
+import { Plus } from 'lucide-react'
+import { PickerCard, PickerFrame, PickerGrid, PickerSearch } from '../common/PickerParts'
 import { t } from '../../i18n'
 
 interface WallpaperPickerModalProps {
@@ -50,83 +49,38 @@ export default function WallpaperPickerModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-8">
-      <div className="flex h-full max-h-[600px] w-full max-w-2xl flex-col rounded-xl border border-fg/10 bg-popup shadow-2xl">
-        <div className="flex items-center justify-between border-b border-fg/5 px-4 py-3">
-          <h3 className="text-sm font-semibold text-gray-100">{t('picker.title')}</h3>
-          <button
-            onClick={onClose}
-            className="rounded p-1 text-gray-500 hover:bg-fg/5 hover:text-gray-300"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="border-b border-fg/5 px-4 py-2">
-          <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
-            <input
-              autoFocus
-              type="text"
-              placeholder={t('picker.search')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-lg bg-fg/5 py-1.5 pl-8 pr-3 text-sm text-gray-200 placeholder-gray-500 outline-none focus:ring-1 focus:ring-accent-500"
-            />
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-3">
-          {isLoading && <p className="p-4 text-center text-xs text-gray-500">{t('common.loading')}</p>}
-          {!isLoading && filtered.length === 0 && (
-            <p className="p-4 text-center text-xs text-gray-500">{t('picker.empty')}</p>
-          )}
-          <div className="grid grid-cols-3 gap-2">
-            {filtered.map((w) => {
-              const isSelected = selected.has(w.id)
-              const previewSrc = getPreviewSrc(w)
-              return (
-                <button
-                  key={w.id}
-                  onClick={() => toggle(w.id)}
-                  data-preview-hover=""
-                  className={`group relative overflow-hidden rounded-xl bg-card text-left transition-all ${
-                    isSelected ? 'ring-2 ring-accent-500' : 'hover:ring-1 hover:ring-accent-500/50'
-                  }`}
-                >
-                  <div className="aspect-video bg-sunken">
-                    {previewSrc ? (
-                      <PreviewImage src={previewSrc} alt={w.title} />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-xs text-gray-600">
-                        {t('card.noPreview')}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between gap-1 p-2">
-                    <span className="truncate text-xs text-gray-300" title={w.title}>
-                      {w.title}
-                    </span>
-                    {isSelected && <Check size={12} className="shrink-0 text-accent-400" />}
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between border-t border-fg/5 px-4 py-3">
-          <span className="text-xs text-gray-500">{t('picker.selected', { count: selected.size })}</span>
-          <button
-            onClick={handleAdd}
-            disabled={selected.size === 0}
-            className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
-          >
-            <Plus size={14} />
-            {t('picker.add')}
-          </button>
-        </div>
+    <PickerFrame title={t('picker.title')} onClose={onClose}>
+      <div className="flex border-b border-fg/5 px-4 py-2">
+        <PickerSearch value={search} onChange={setSearch} />
       </div>
-    </div>
+
+      <PickerGrid loading={isLoading} empty={filtered.length === 0}>
+        {filtered.map((w) => (
+          <PickerCard
+            key={w.id}
+            wallpaper={w}
+            selected={selected.has(w.id)}
+            onClick={() => { toggle(w.id) }}
+            label={
+              <span className="truncate text-xs text-gray-300" title={w.title}>
+                {w.title}
+              </span>
+            }
+          />
+        ))}
+      </PickerGrid>
+
+      <div className="flex items-center justify-between border-t border-fg/5 px-4 py-3">
+        <span className="text-xs text-gray-500">{t('picker.selected', { count: selected.size })}</span>
+        <button
+          onClick={handleAdd}
+          disabled={selected.size === 0}
+          className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+        >
+          <Plus size={14} />
+          {t('picker.add')}
+        </button>
+      </div>
+    </PickerFrame>
   )
 }

@@ -78,7 +78,7 @@ export async function runRule(rule: ScheduleRule): Promise<void> {
 // one after another, a later rule for a single screen has to land after an earlier one for all of them
 async function runAll(rules: ScheduleRule[]): Promise<void> {
   for (const rule of rules) {
-    await runRule(rule).catch((err) => console.error(`[Schedule] "${rule.name}" failed:`, err.message))
+    await runRule(rule).catch((err: unknown) => { console.error(`[Schedule] "${rule.name}" failed:`, err) })
   }
 }
 

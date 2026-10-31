@@ -68,7 +68,7 @@ function startDownloadPoll(win: BrowserWindow, itemId: string, intervalMs = 1000
 
       clearInterval(pollInterval)
       activePolls--
-      library.importWallpaperById(itemId).catch((err) => {
+      library.importWallpaperById(itemId).catch((err: unknown) => {
         console.error(`[Steam] Import of ${itemId} failed:`, err)
         return null
       }).then((meta) => {
@@ -82,7 +82,7 @@ function startDownloadPoll(win: BrowserWindow, itemId: string, intervalMs = 1000
           percentage: success ? 100 : 0,
           status: success ? 'completed' : 'error'
         })
-      })
+      }).catch((err: unknown) => { console.error(`[Steam] Finishing import of ${itemId} failed:`, err) })
     }, intervalMs)
   })
 }
@@ -205,7 +205,7 @@ async function startRepair(win: BrowserWindow, itemId: string): Promise<{ done: 
       library.updateWallpaper(itemId, { verifyProblem: check.problem ?? undefined })
       notifyLibrary()
     })
-    .catch((err) => console.error(`[Steam] Repair of ${itemId} failed:`, err))
+    .catch((err: unknown) => { console.error(`[Steam] Repair of ${itemId} failed:`, err) })
   return { done }
 }
 

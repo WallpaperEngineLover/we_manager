@@ -57,7 +57,7 @@ export default function GnomeExtensionNotice() {
       </span>
       {canInstall && (
         <button
-          onClick={install}
+          onClick={() => void install()}
           disabled={busy}
           className="rounded bg-accent-600 px-3 py-1 text-xs font-medium text-white hover:bg-accent-500 disabled:opacity-50"
         >
@@ -65,7 +65,7 @@ export default function GnomeExtensionNotice() {
         </button>
       )}
       {commands && (
-        <button onClick={recheck} className="rounded bg-fg/10 px-3 py-1 text-xs hover:bg-fg/20">
+        <button onClick={() => void recheck()} className="rounded bg-fg/10 px-3 py-1 text-xs hover:bg-fg/20">
           {t('gnome.checkAgain')}
         </button>
       )}

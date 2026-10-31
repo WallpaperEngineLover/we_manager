@@ -64,7 +64,7 @@ const window = {
 } as never
 
 async function untilRequest(host: FakeHost, method: string): Promise<{ id: number }> {
-  await vi.waitFor(() => expect(host.requests.some((r) => r.method === method)).toBe(true))
+  await vi.waitFor(() => { expect(host.requests.some((r) => r.method === method)).toBe(true) })
   return host.requests.find((r) => r.method === method)!
 }
 
@@ -79,7 +79,7 @@ describe('a Steam request that never answers', () => {
 
   it('drops the host that did not answer and starts a new one for the next request', async () => {
     const first = steam.getLocalAccountId()
-    await vi.waitFor(() => expect(hosts).toHaveLength(1))
+    await vi.waitFor(() => { expect(hosts).toHaveLength(1) })
     hosts[0].answer((await untilRequest(hosts[0], 'init')).id, null)
     await untilRequest(hosts[0], 'workshop.getSubscribedItems').catch(() => undefined)
     await untilRequest(hosts[0], 'localplayer.getSteamId')
@@ -90,7 +90,7 @@ describe('a Steam request that never answers', () => {
     expect(hosts[0].kill).toHaveBeenCalledTimes(1)
 
     const second = steam.getLocalAccountId()
-    await vi.waitFor(() => expect(hosts).toHaveLength(2))
+    await vi.waitFor(() => { expect(hosts).toHaveLength(2) })
     hosts[1].answer((await untilRequest(hosts[1], 'init')).id, null)
     const request = await untilRequest(hosts[1], 'localplayer.getSteamId')
     hosts[1].answer(request.id, { accountId: 7 })

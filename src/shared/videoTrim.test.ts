@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatVideoSegments,
   formatVideoTime,
+  formatVideoTimeExact,
   normalizeVideoSegments,
   parseVideoTime,
   trimmedVideoLength,
@@ -18,6 +19,15 @@ describe('formatVideoTime', () => {
   it('keeps tenths of a second', () => {
     expect(formatVideoTime(65.5)).toBe('1:05.5')
     expect(formatVideoTime(59.96)).toBe('1:00')
+  })
+})
+
+describe('formatVideoTimeExact', () => {
+  it('keeps milliseconds', () => {
+    expect(formatVideoTimeExact(65.5)).toBe('1:05.5')
+    expect(formatVideoTimeExact(0.05)).toBe('0:00.05')
+    expect(formatVideoTimeExact(204.917)).toBe('3:24.917')
+    expect(formatVideoTimeExact(59.9996)).toBe('1:00')
   })
 })
 

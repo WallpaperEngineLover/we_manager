@@ -82,7 +82,7 @@ function loadFirstFrame(src: string): Promise<StillSource> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.decoding = 'async'
-    img.addEventListener('load', () => resolve({ source: img, width: img.naturalWidth, height: img.naturalHeight }))
+    img.addEventListener('load', () => { resolve({ source: img, width: img.naturalWidth, height: img.naturalHeight }) })
     img.addEventListener('error', reject)
     img.src = src
   })
@@ -122,7 +122,7 @@ function HoverAnimatedImage({ src, alt, className }: { src: string; alt: string;
       { rootMargin: '300px' }
     )
     observer.observe(el)
-    return () => observer.disconnect()
+    return () => { observer.disconnect() }
   }, [])
 
   useEffect(() => {
@@ -140,7 +140,7 @@ function HoverAnimatedImage({ src, alt, className }: { src: string; alt: string;
           return
         }
         drawCover(canvas, still)
-        resize = new ResizeObserver(() => drawCover(canvas, still))
+        resize = new ResizeObserver(() => { drawCover(canvas, still) })
         resize.observe(canvas)
       })
       .catch(() => {
@@ -165,7 +165,7 @@ function HoverAnimatedImage({ src, alt, className }: { src: string; alt: string;
     }
     const enter = (): void => {
       if (timer) clearTimeout(timer)
-      timer = setTimeout(() => setLive(true), HOVER_DELAY_MS)
+      timer = setTimeout(() => { setLive(true) }, HOVER_DELAY_MS)
     }
     const visibility = (): void => {
       if (document.hidden) stop()
@@ -189,7 +189,7 @@ function HoverAnimatedImage({ src, alt, className }: { src: string; alt: string;
           src={src}
           alt=""
           draggable={false}
-          onLoad={() => setLiveLoaded(true)}
+          onLoad={() => { setLiveLoaded(true) }}
           className={clsx(
             'absolute inset-0 h-full w-full object-cover transition-opacity duration-150',
             liveLoaded ? 'opacity-100' : 'opacity-0'

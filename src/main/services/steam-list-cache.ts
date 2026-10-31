@@ -67,7 +67,7 @@ export class SteamListCache {
     this.pending = new Map(
       Object.entries(this.store.get('pending')).filter(([, v]) => Date.now() - v.at <= PENDING_TTL_MS)
     )
-    app.on('will-quit', () => this.flush())
+    app.on('will-quit', () => { this.flush() })
   }
 
   has(id: string): boolean {
@@ -141,7 +141,7 @@ export class SteamListCache {
   private persist(): void {
     this.persistDirty = true
     if (this.persistTimer) return
-    this.persistTimer = setTimeout(() => this.flush(), PERSIST_DELAY_MS)
+    this.persistTimer = setTimeout(() => { this.flush() }, PERSIST_DELAY_MS)
   }
 
   private flush(): void {
@@ -214,9 +214,9 @@ export class SteamListCache {
     this.syncInFlight = true
     this.lastCrawlStart = Date.now()
     this.runFullSync()
-      .catch((err) => {
+      .catch((err: unknown) => {
         this.lastSyncFailure = Date.now()
-        console.warn(`[Steam] ${this.label} sync failed, will retry later:`, err?.message ?? err)
+        console.warn(`[Steam] ${this.label} sync failed, will retry later:`, err instanceof Error ? err.message : err)
       })
       .finally(() => {
         this.syncInFlight = false
@@ -235,14 +235,14 @@ export class SteamListCache {
       const step = VERIFY_STEPS_MS.find((s) => at + s > this.lastCrawlStart)
       due = Math.min(due, step === undefined ? this.lastCrawlStart + VERIFY_RETRY_MS : at + step)
     }
-    this.verifyTimer = setTimeout(() => this.verifyNow(), Math.max(0, due - Date.now()))
+    this.verifyTimer = setTimeout(() => { this.verifyNow() }, Math.max(0, due - Date.now()))
   }
 
   private verifyNow(): void {
     this.verifyTimer = null
     if (this.syncInFlight) return
     if (!this.source.canSync()) {
-      this.verifyTimer = setTimeout(() => this.verifyNow(), VERIFY_RETRY_MS)
+      this.verifyTimer = setTimeout(() => { this.verifyNow() }, VERIFY_RETRY_MS)
       return
     }
     this.startSync()

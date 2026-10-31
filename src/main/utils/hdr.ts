@@ -11,7 +11,7 @@ const execFileAsync = promisify(execFile)
 // .pkg files can be huge, read only the entry table (64KB covers most) and one entry
 const PKG_HEADER_CHUNK = 64 * 1024
 
-export function parsePkgHeader(buf: Buffer): { dataStart: number; entries: Map<string, { offset: number; length: number }> } | undefined {
+function parsePkgHeader(buf: Buffer): { dataStart: number; entries: Map<string, { offset: number; length: number }> } | undefined {
   let pos = 0
   const u32 = (): number => {
     if (pos + 4 > buf.length) throw new RangeError('short pkg header')
@@ -97,7 +97,7 @@ interface Project {
 
 async function readProject(localPath: string): Promise<Project | undefined> {
   try {
-    return JSON.parse(await fs.promises.readFile(path.join(localPath, 'project.json'), 'utf8'))
+    return JSON.parse(await fs.promises.readFile(path.join(localPath, 'project.json'), 'utf8')) as Project
   } catch {
     return undefined
   }

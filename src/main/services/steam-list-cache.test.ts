@@ -36,7 +36,7 @@ function source(lists: string[][], accountIds: number[] = [1]): ListSource & { s
 async function sync(cache: SteamListCache): Promise<void> {
   ;(cache as unknown as { store: { set: (k: string, v: number) => void } }).store.set('lastFullSync', 0)
   cache.maybeSync()
-  await vi.waitFor(() => expect((cache as unknown as { syncInFlight: boolean }).syncInFlight).toBe(false))
+  await vi.waitFor(() => { expect((cache as unknown as { syncInFlight: boolean }).syncInFlight).toBe(false) })
 }
 
 describe('SteamListCache', () => {

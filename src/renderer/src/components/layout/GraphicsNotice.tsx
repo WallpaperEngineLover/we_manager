@@ -66,7 +66,7 @@ export default function GraphicsNotice() {
         <span className="flex-1">{t(MESSAGES[warning.kind], { renderer: warning.renderer ?? '' })}</span>
         {warning.kind === 'flatpak-nvidia' && warning.extension && (
           <button
-            onClick={install}
+            onClick={() => void install()}
             disabled={installing}
             className="flex items-center gap-1.5 rounded bg-accent-600 px-3 py-1 text-xs font-medium text-white hover:bg-accent-500 disabled:opacity-50"
           >

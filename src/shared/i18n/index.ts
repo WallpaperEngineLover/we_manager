@@ -103,7 +103,7 @@ function lookup(messages: Messages, key: string, language: Language, count: unkn
   return messages[key]
 }
 
-export function interpolate(template: string, params?: Params): string {
+function interpolate(template: string, params?: Params): string {
   if (!params) return template
   return template.replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match))
 }
@@ -122,8 +122,3 @@ export function translateIfKnown(language: Language, key: string): string | unde
   return CATALOGS[language][key] ?? en[key as keyof typeof en]
 }
 
-export type Translator = (key: MessageKey, params?: Params) => string
-
-export function translator(language: Language): Translator {
-  return (key, params) => translate(language, key, params)
-}

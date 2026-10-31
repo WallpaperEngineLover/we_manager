@@ -251,8 +251,7 @@ async function handleExit(info: LweExitInfo): Promise<void> {
 
     if (!(await relaunchFresh(wallpaper, info.screen))) return
     notifyCrash(wallpaper, info.screen, 'hotswap', t('crash.hotswapTesting'))
-    watchLaunch(wallpaper.id, info.screen, () =>
-      notifyCrash(wallpaper, info.screen, 'hotswap', t('crash.hotswapFreshWorks'))
+    watchLaunch(wallpaper.id, info.screen, () => { notifyCrash(wallpaper, info.screen, 'hotswap', t('crash.hotswapFreshWorks')) }
     )
     return
   }
@@ -292,8 +291,7 @@ export async function testFreshLaunch(wallpaperId: string, screen?: ScreenTarget
   await applyWallpaperMeta(wallpaper, { screen: target, forceFresh: true })
   setAssignment(target, wallpaper.id)
   send(IpcChannels.EVENT_DISPLAY_CHANGED)
-  watchLaunch(wallpaper.id, target, () =>
-    notifyCrash(getWallpaper(wallpaper.id) ?? wallpaper, target, 'launch', t('crash.testPassed'))
+  watchLaunch(wallpaper.id, target, () => { notifyCrash(getWallpaper(wallpaper.id) ?? wallpaper, target, 'launch', t('crash.testPassed')) }
   )
 }
 
@@ -307,6 +305,6 @@ export async function resetDisplays(): Promise<void> {
 export function initDisplay(window: BrowserWindow): void {
   win = window
   onLweExit((info) => {
-    void handleExit(info).catch((err) => console.error('[Display] Crash handling failed:', err))
+    void handleExit(info).catch((err: unknown) => { console.error('[Display] Crash handling failed:', err) })
   })
 }

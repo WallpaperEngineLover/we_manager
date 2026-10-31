@@ -1,7 +1,7 @@
 import { execFileSync } from 'child_process'
 import { isCommandAvailable } from './platform'
 
-export type PackageManager = 'pacman' | 'rpm' | 'dpkg'
+type PackageManager = 'pacman' | 'rpm' | 'dpkg'
 
 export interface OwningPackage {
   manager: PackageManager

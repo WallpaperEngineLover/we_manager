@@ -1,6 +1,10 @@
 import type { ImageAdjustments } from './imageAdjustments'
 import type { VideoSegment } from './videoTrim'
 import type { DesktopEnvironment } from './desktop'
+import type { Appearance } from './appearance'
+import type { Language, LanguagePreference } from './i18n'
+import type { CardBorders } from './cardBorders'
+import type { CardBadges } from './cardBadges'
 
 export type { ImageAdjustments } from './imageAdjustments'
 
@@ -40,6 +44,13 @@ export interface LedSettings {
   brightness: number
   boost: boolean
   reduceFps: boolean
+}
+
+export interface LoaderSettings {
+  textures: boolean
+  shaders: boolean
+  /** worker threads, 0 lets the engine pick */
+  threads: number
 }
 
 /** See getSteamIdentity() */
@@ -168,22 +179,22 @@ export interface WallpaperMeta {
 export type FullscreenPauseMode = 'default' | 'off' | 'active-only'
 
 /** "ultra" turns on HDR for scenes that ask for it */
-export type PostProcessingQuality = 'enabled' | 'ultra'
+type PostProcessingQuality = 'enabled' | 'ultra'
 
-export type LightingQuality = 'disabled' | 'low' | 'medium' | 'high' | 'ultra'
+type LightingQuality = 'disabled' | 'low' | 'medium' | 'high' | 'ultra'
 
 /** Only scenes with 3D models use it */
-export type MsaaQuality = 'none' | 'x2' | 'x4' | 'x8'
+type MsaaQuality = 'none' | 'x2' | 'x4' | 'x8'
 
 /** Per axis */
-export type SsaaQuality = 'none' | 'x2' | 'x3' | 'x4'
+type SsaaQuality = 'none' | 'x2' | 'x3' | 'x4'
 
 export type HwdecBackend = 'auto' | 'no' | 'vaapi' | 'vaapi-copy' | 'nvdec' | 'nvdec-copy' | 'vulkan'
 
 /** How web wallpapers hand their frames to the engine: shared GPU buffers or a copy through memory */
-export type WebFramesMode = 'auto' | 'shm' | 'dmabuf'
+type WebFramesMode = 'auto' | 'shm' | 'dmabuf'
 
-export type FrameLimiter = 'budget' | 'fixed'
+type FrameLimiter = 'budget' | 'fixed'
 
 /** auto = while the default output is headphones */
 export type HrtfMode = 'auto' | 'on' | 'off'
@@ -248,7 +259,7 @@ export interface EngineFlagPreset {
 
 export type CrashPhase = 'launch' | 'hotswap' | 'runtime'
 
-export interface WallpaperCrash {
+interface WallpaperCrash {
   at: number
   phase: CrashPhase
   screen: string
@@ -286,7 +297,7 @@ export interface ScreenAssignment {
 /** How the slots of a split screen share it, see the engine's --split-layout */
 export type SplitLayout = 'aspect' | 'equal' | 'center'
 
-export interface SplitSlot {
+interface SplitSlot {
   wallpaperId: string
   /** this slot's --scaling, the wallpaper's own when unset */
   scalingMode?: ScalingMode
@@ -644,4 +655,77 @@ export interface GraphicsWarning {
   renderer?: string
   /** flatpak-nvidia: the NVIDIA GL extension for the host's driver, when the version could be read */
   extension?: string
+}
+
+export interface AppConfigSnapshot {
+  workshopPath: string | null
+  defaultWorkshopPath: string
+  extraLibraries: ExtraLibrary[]
+  isConfigured: boolean
+  defaultFps: number | null
+  recommendedFpsEnabled: boolean
+  recommendedWebFpsEnabled: boolean
+  lweRepoUrl: string | null
+  lweRepoBranch: string | null
+  lweCmakeArgs: string | null
+  defaultLweRepoUrl: string
+  backupPath: string | null
+  isBackupConfigured: boolean
+  autoUnsubscribeAfterBackup: boolean
+  trayEnabled: boolean
+  autostartSupported: boolean
+  autostartCompositorLine: string | null
+  autostartEnabled: boolean
+  autostartMinimized: boolean
+  autostartPlaylistId: string | null
+  killLweOnQuit: boolean
+  skipPlaylistResume: boolean
+  cardBorders: CardBorders
+  cardBadges: CardBadges
+  audioScreen: string | null
+  ambientVolume: number | null
+  defaultAudioSensitivity: number
+  disablePuppetAnimation: boolean
+  scriptLimits: boolean
+  leds: LedSettings
+  loader: LoaderSettings
+  disableAnimations: boolean
+  steamIdentity: SteamIdentity
+  ignoredCreators: string[]
+  engineFlags: EngineFlags
+  engineFlagPresets: EngineFlagPreset[]
+  displayMode: DisplayMode
+  disabledScreens: string[]
+  splitScreens: Record<string, SplitScreen>
+  appearance: Appearance
+  language: LanguagePreference
+  uiLanguage: Language
+  appearanceRestartNeeded: boolean
+  windowTranslucent: boolean
+  desktopEnv: DesktopEnvironment
+}
+
+export interface HotswapSettings {
+  disabledObjects?: string[]
+  enabledObjects?: string[]
+  volume?: number
+  xray?: XrayMode
+  scaling?: string
+  zoom?: number
+  offsetX?: number
+  offsetY?: number
+  disableParallax?: boolean
+  expandCanvas?: boolean
+  repairAssets?: boolean
+  cornerColor?: string
+  imageAdjustments?: ImageAdjustments
+  speed?: number
+  videoSegments?: VideoSegment[]
+  videoSeek?: number
+  propertyOverrides?: Record<string, string>
+  /** Empty string = every screen can produce audio */
+  audioScreen?: string
+  ambientVolume?: number
+  audioSensitivity?: Record<string, number>
+  soundVolume?: Record<string, number>
 }

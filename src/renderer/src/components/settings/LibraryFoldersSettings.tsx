@@ -32,8 +32,8 @@ export default function LibraryFoldersSettings() {
       setStatus(t('folders.scanFailed', { error: (err as Error).message }))
     } finally {
       setScanning(false)
-      queryClient.invalidateQueries({ queryKey: ['library'] })
-      queryClient.invalidateQueries({ queryKey: ['library-tags'] })
+      void queryClient.invalidateQueries({ queryKey: ['library'] })
+      void queryClient.invalidateQueries({ queryKey: ['library-tags'] })
     }
   }
 
@@ -70,8 +70,8 @@ export default function LibraryFoldersSettings() {
               <input
                 type="text"
                 value={names[l.path] ?? l.name}
-                onChange={(e) => setNames((prev) => ({ ...prev, [l.path]: e.target.value }))}
-                onBlur={() => handleRename(l)}
+                onChange={(e) => { setNames((prev) => ({ ...prev, [l.path]: e.target.value })); }}
+                onBlur={() => void handleRename(l)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') e.currentTarget.blur()
                 }}
@@ -82,7 +82,7 @@ export default function LibraryFoldersSettings() {
                 {l.path}
               </span>
               <button
-                onClick={() => saveAndScan(libraries.filter((x) => x.path !== l.path))}
+                onClick={() => void saveAndScan(libraries.filter((x) => x.path !== l.path))}
                 disabled={scanning}
                 title={t('folders.remove')}
                 className="rounded p-0.5 text-gray-500 hover:bg-fg/10 hover:text-gray-200 disabled:opacity-50"
@@ -94,7 +94,7 @@ export default function LibraryFoldersSettings() {
         </ul>
       )}
       <button
-        onClick={handleAdd}
+        onClick={() => void handleAdd()}
         disabled={scanning}
         className="mt-3 flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
       >

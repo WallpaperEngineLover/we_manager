@@ -11,6 +11,6 @@ export function useClickOutside(
       if (ref.current && !ref.current.contains(e.target as Node)) onOutside()
     }
     document.addEventListener('mousedown', onMouseDown)
-    return () => document.removeEventListener('mousedown', onMouseDown)
+    return () => { document.removeEventListener('mousedown', onMouseDown) }
   }, [active, onOutside, ref])
 }

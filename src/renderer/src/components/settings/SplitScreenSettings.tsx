@@ -70,7 +70,7 @@ export default function SplitScreenSettings() {
 
   async function save(next: SplitScreen) {
     await window.electronAPI.wallpaper.setSplit(screen, next)
-    queryClient.invalidateQueries({ queryKey: ['config'] })
+    void queryClient.invalidateQueries({ queryKey: ['config'] })
   }
 
   function move(index: number, by: number) {
@@ -100,7 +100,7 @@ export default function SplitScreenSettings() {
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <select
           value={screen}
-          onChange={(e) => setChosen(e.target.value)}
+          onChange={(e) => { setChosen(e.target.value) }}
           className="rounded bg-fg/5 px-2 py-1.5 text-xs text-gray-200 outline-none"
         >
           {screens.map((target) => (
@@ -113,7 +113,7 @@ export default function SplitScreenSettings() {
           {LAYOUTS.map(({ layout, label }) => (
             <button
               key={layout}
-              onClick={() => save({ ...split, layout })}
+              onClick={() => void save({ ...split, layout })}
               className={`px-3 py-1.5 transition-colors ${
                 split.layout === layout ? 'bg-accent-600 text-white' : 'bg-fg/5 text-gray-400 hover:text-gray-200'
               }`}
@@ -180,7 +180,7 @@ export default function SplitScreenSettings() {
                 ))}
               </select>
               <button
-                onClick={() => move(index, -1)}
+                onClick={() => { move(index, -1) }}
                 disabled={index === 0}
                 className="rounded p-1 text-gray-400 hover:bg-fg/10 disabled:opacity-30"
                 title={t('split.moveEarlier')}
@@ -188,7 +188,7 @@ export default function SplitScreenSettings() {
                 <ChevronLeft size={14} />
               </button>
               <button
-                onClick={() => move(index, 1)}
+                onClick={() => { move(index, 1) }}
                 disabled={index === split.slots.length - 1}
                 className="rounded p-1 text-gray-400 hover:bg-fg/10 disabled:opacity-30"
                 title={t('split.moveLater')}
@@ -196,7 +196,7 @@ export default function SplitScreenSettings() {
                 <ChevronRight size={14} />
               </button>
               <button
-                onClick={() => save({ ...split, slots: split.slots.filter((_, i) => i !== index) })}
+                onClick={() => void save({ ...split, slots: split.slots.filter((_, i) => i !== index) })}
                 className="rounded p-1 text-gray-400 hover:bg-fg/10 hover:text-red-400"
                 title={t('split.remove')}
               >
@@ -209,14 +209,14 @@ export default function SplitScreenSettings() {
 
       <div className="mt-3 flex flex-wrap gap-2">
         <button
-          onClick={() => setPicking(true)}
+          onClick={() => { setPicking(true) }}
           className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-fg/10"
         >
           <Plus size={14} />
           {t('split.add')}
         </button>
         <button
-          onClick={show}
+          onClick={() => void show()}
           disabled={showing || split.slots.length === 0}
           className="flex items-center gap-2 rounded-lg bg-accent-600 px-3 py-1.5 text-xs text-white hover:bg-accent-500 disabled:opacity-50"
         >
@@ -225,7 +225,7 @@ export default function SplitScreenSettings() {
         </button>
         {split.slots.length > 0 && (
           <button
-            onClick={() => save({ ...split, slots: [] })}
+            onClick={() => void save({ ...split, slots: [] })}
             className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-1.5 text-xs text-gray-400 hover:bg-fg/10"
           >
             <Trash2 size={14} />
@@ -242,7 +242,7 @@ export default function SplitScreenSettings() {
             setPicking(false)
             void save({ ...split, slots: [...split.slots, ...ids.map((wallpaperId) => ({ wallpaperId }))] })
           }}
-          onClose={() => setPicking(false)}
+          onClose={() => { setPicking(false) }}
         />
       )}
     </div>

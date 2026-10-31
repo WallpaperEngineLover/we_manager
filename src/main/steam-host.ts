@@ -103,7 +103,7 @@ async function call(method: string, args: unknown[]): Promise<unknown> {
 process.parentPort.on('message', (e) => {
   const req = decodeBigInts(e.data) as SteamHostRequest
   call(req.method, req.args).then(
-    (result) => process.parentPort.postMessage(encodeBigInts({ id: req.id, result } satisfies SteamHostResponse)),
-    (err) => process.parentPort.postMessage({ id: req.id, error: (err as Error)?.message ?? String(err) } satisfies SteamHostResponse)
+    (result) => { process.parentPort.postMessage(encodeBigInts({ id: req.id, result } satisfies SteamHostResponse)) },
+    (err: unknown) => { process.parentPort.postMessage({ id: req.id, error: err instanceof Error ? err.message : String(err) } satisfies SteamHostResponse) }
   )
 })

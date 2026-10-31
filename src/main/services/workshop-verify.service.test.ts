@@ -86,7 +86,7 @@ beforeEach(() => {
   subscribed = []
 })
 
-afterEach(() => fs.rmSync(dir, { recursive: true, force: true }))
+afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }) })
 
 describe('checkItem', () => {
   it('passes an intact install, extra files included', async () => {
@@ -254,7 +254,7 @@ describe('settleRepairStash', () => {
       hostRequested = false
 
       const settled = verify.settleRepairStash(item, stash)
-      await vi.waitFor(() => expect(hostRequested).toBe(true))
+      await vi.waitFor(() => { expect(hostRequested).toBe(true) })
       await vi.advanceTimersByTimeAsync(5000)
 
       expect(await settled).toBe(false)

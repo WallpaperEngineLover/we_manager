@@ -8,6 +8,7 @@ import { normalizeCardBorders, type CardBorders } from '@shared/cardBorders'
 import { normalizeCardBadges, type CardBadges } from '@shared/cardBadges'
 import { normalizeLanguagePreference, type LanguagePreference } from '@shared/i18n'
 import { normalizeUpdateChecks } from '@shared/updates'
+import { DEFAULT_LOADER, normalizeLoader } from '@shared/loader'
 import type {
   DisplayMode,
   EngineFlagPreset,
@@ -16,6 +17,7 @@ import type {
   SplitScreen,
   SteamIdentity,
   LedSettings,
+  LoaderSettings,
   UpdateChecks,
   UpdateTarget
 } from '@shared/types'
@@ -35,6 +37,7 @@ interface AppConfig {
   autostartMinimized: boolean
   autostartPlaylistId: string | null
   killLweOnQuit: boolean
+  skipPlaylistResume: boolean
   /** Legacy, only read to migrate into cardBorders */
   voteBorders: boolean
   cardBorders: CardBorders | null
@@ -48,6 +51,7 @@ interface AppConfig {
   disablePuppetAnimation: boolean
   scriptLimits: boolean
   leds: LedSettings
+  loader: LoaderSettings
   disableAnimations: boolean
   steamIdentity: SteamIdentity
   /** steamId64s hidden from browsing */
@@ -65,6 +69,8 @@ interface AppConfig {
   updateChecks: UpdateChecks | null
   dismissedUpdates: Partial<Record<UpdateTarget, string>>
 }
+
+export const DEFAULT_DISPLAY_MODE: DisplayMode = 'shared'
 
 const store = openStore<AppConfig>({
   name: 'config',
@@ -84,6 +90,7 @@ const store = openStore<AppConfig>({
     autostartMinimized: false,
     autostartPlaylistId: null,
     killLweOnQuit: false,
+    skipPlaylistResume: false,
     voteBorders: true,
     cardBorders: null,
     cardBadges: null,
@@ -93,12 +100,13 @@ const store = openStore<AppConfig>({
     disablePuppetAnimation: false,
     scriptLimits: false,
     leds: { enabled: false, server: '127.0.0.1:6742', brightness: 100, boost: true, reduceFps: false },
+    loader: DEFAULT_LOADER,
     disableAnimations: false,
     steamIdentity: 'wallpaper-engine',
     ignoredCreators: [],
     engineFlags: {},
     engineFlagPresets: [],
-    displayMode: 'shared',
+    displayMode: DEFAULT_DISPLAY_MODE,
     disabledScreens: [],
     splitScreens: {},
     appearance: normalizeAppearance(undefined),
@@ -185,6 +193,14 @@ export function getKillLweOnQuit(): boolean {
 
 export function setKillLweOnQuit(enabled: boolean): void {
   store.set('killLweOnQuit', enabled)
+}
+
+export function getSkipPlaylistResume(): boolean {
+  return store.get('skipPlaylistResume')
+}
+
+export function setSkipPlaylistResume(enabled: boolean): void {
+  store.set('skipPlaylistResume', enabled)
 }
 
 export function getAppearance(): Appearance {
@@ -330,6 +346,14 @@ export function setLeds(leds: LedSettings): void {
   store.set('leds', leds)
 }
 
+export function getLoader(): LoaderSettings {
+  return normalizeLoader(store.get('loader'))
+}
+
+export function setLoader(loader: LoaderSettings): void {
+  store.set('loader', normalizeLoader(loader))
+}
+
 export function getDisableAnimations(): boolean {
   return store.get('disableAnimations')
 }
@@ -350,6 +374,54 @@ export function getEngineFlagPresets(): EngineFlagPreset[] {
 
 export function setEngineFlagPresets(presets: EngineFlagPreset[]): void {
   store.set('engineFlagPresets', presets.filter((p) => !p.builtIn))
+}
+
+const RESETS_WITH_ENGINE_SETTINGS: Record<keyof AppConfig, boolean> = {
+  workshopPath: false,
+  extraLibraryPaths: false,
+  defaultFps: true,
+  lweRepoUrl: false,
+  lweRepoBranch: false,
+  lweCmakeArgs: false,
+  backupPath: false,
+  autoUnsubscribeAfterBackup: false,
+  trayEnabled: false,
+  autostartEnabled: false,
+  autostartMinimized: false,
+  autostartPlaylistId: false,
+  killLweOnQuit: false,
+  skipPlaylistResume: false,
+  voteBorders: false,
+  cardBorders: false,
+  cardBadges: false,
+  recommendedFpsEnabled: true,
+  recommendedWebFpsEnabled: true,
+  audioScreen: true,
+  ambientVolume: true,
+  defaultAudioSensitivity: true,
+  disablePuppetAnimation: true,
+  scriptLimits: true,
+  leds: true,
+  loader: true,
+  disableAnimations: true,
+  steamIdentity: false,
+  ignoredCreators: false,
+  engineFlags: true,
+  engineFlagPresets: false,
+  displayMode: true,
+  disabledScreens: true,
+  splitScreens: true,
+  appearance: false,
+  language: false,
+  updateChecks: false,
+  dismissedUpdates: false
+}
+
+export function resetEngineSettings(): void {
+  const keys = (Object.keys(RESETS_WITH_ENGINE_SETTINGS) as (keyof AppConfig)[]).filter(
+    (key) => RESETS_WITH_ENGINE_SETTINGS[key]
+  )
+  store.reset(...keys)
 }
 
 export function getDisplayMode(): DisplayMode {
@@ -411,7 +483,7 @@ export function setLweCmakeArgs(args: string | null): void {
   store.set('lweCmakeArgs', args?.trim() || null)
 }
 
-export function getWeConfigPath(): string {
+function getWeConfigPath(): string {
   return path.join(app.getPath('userData'), 'we-config.json')
 }
 

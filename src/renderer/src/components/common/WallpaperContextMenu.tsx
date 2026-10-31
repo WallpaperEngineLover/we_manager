@@ -99,7 +99,7 @@ export default function WallpaperContextMenu({
     } catch (err) {
       showToast(t('backup.failed', { error: (err as Error).message }))
     }
-    queryClient.invalidateQueries({ queryKey: ['library'] })
+    void queryClient.invalidateQueries({ queryKey: ['library'] })
   }
 
   async function removeBackup() {
@@ -121,8 +121,8 @@ export default function WallpaperContextMenu({
     if (result.keptDirs.length > 0) summary += ' ' + t('backup.keptOutside', { count: result.keptDirs.length })
     if (result.failed > 0) summary += ', ' + t('common.failedCount', { count: result.failed })
     showToast(summary)
-    queryClient.invalidateQueries({ queryKey: ['library'] })
-    queryClient.invalidateQueries({ queryKey: ['folders'] })
+    void queryClient.invalidateQueries({ queryKey: ['library'] })
+    void queryClient.invalidateQueries({ queryKey: ['folders'] })
   }
 
   async function transfer(library: ExtraLibrary, mode: 'copy' | 'move') {
@@ -145,14 +145,14 @@ export default function WallpaperContextMenu({
     } catch (err) {
       showToast(t(mode === 'copy' ? 'transfer.copyFailed' : 'transfer.moveFailed', { error: (err as Error).message }))
     }
-    queryClient.invalidateQueries({ queryKey: ['library'] })
+    void queryClient.invalidateQueries({ queryKey: ['library'] })
   }
 
   async function addToSplit(screen: string) {
     const split = config?.splitScreens?.[screen] ?? { layout: 'aspect' as const, slots: [] }
     const slots = [...split.slots, ...splittable.map((w) => ({ wallpaperId: w.id }))]
     await window.electronAPI.wallpaper.setSplit(screen, { ...split, slots })
-    queryClient.invalidateQueries({ queryKey: ['config'] })
+    void queryClient.invalidateQueries({ queryKey: ['config'] })
     showToast(t('split.added', { count: splittable.length, screen }))
   }
 
@@ -183,7 +183,7 @@ export default function WallpaperContextMenu({
         </MenuItem>
       )}
       {backupable.length > 0 && (
-        <MenuItem icon={ShieldCheck} onClick={run(async () => showToast(await verifyFiles(backupable.map((w) => w.id), () => {})))}>
+        <MenuItem icon={ShieldCheck} onClick={run(async () => { showToast(await verifyFiles(backupable.map((w) => w.id), () => {})); })}>
           {t('verify.action')}
         </MenuItem>
       )}
@@ -192,15 +192,15 @@ export default function WallpaperContextMenu({
       </MenuItem>
 
       <MenuSeparator />
-      <VoteMenuItems onVote={(up) => run(() => batchVote(ids, up))()} />
+      <VoteMenuItems onVote={(up) => { run(() => batchVote(ids, up))() }} />
       <FavoriteMenuItems
         ids={ids.filter(isWorkshopId)}
         favorites={favoriteIds}
-        onFavorite={(favIds, add) => run(() => batchFavorite(favIds, add))()}
+        onFavorite={(favIds, add) => { run(() => batchFavorite(favIds, add))() }}
       />
 
       <MenuSeparator />
-      <MenuItem icon={ExternalLink} onClick={run(() => ids.forEach(openWorkshopPage))}>
+      <MenuItem icon={ExternalLink} onClick={run(() => { ids.forEach(openWorkshopPage) })}>
         {t('menu.openWorkshop')}
       </MenuItem>
       <MenuItem icon={FolderOpen} onClick={run(openLocally)}>
@@ -252,7 +252,7 @@ export default function WallpaperContextMenu({
       <FolderMenuItems
         moveTargets={moveTargets}
         hasFolder={hasFolder}
-        onMove={(folderId) => run(() => moveToFolder(folderId, ids))()}
+        onMove={(folderId) => { run(() => moveToFolder(folderId, ids))() }}
         onRemove={run(() => removeFromFolders(ids))}
       />
     </ContextMenu>

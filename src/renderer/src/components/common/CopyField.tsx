@@ -17,7 +17,7 @@ export default function CopyField({ text, label }: Props) {
       return
     }
     setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+    setTimeout(() => { setCopied(false) }, 1500)
   }
 
   return (
@@ -27,7 +27,7 @@ export default function CopyField({ text, label }: Props) {
         {text}
       </code>
       <button
-        onClick={copy}
+        onClick={() => void copy()}
         title={t('common.copy')}
         className="shrink-0 rounded p-1.5 text-gray-500 hover:bg-fg/5 hover:text-gray-200"
       >

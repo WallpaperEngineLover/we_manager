@@ -1,0 +1,3 @@
+addFilter(r"spelling-error .*(wallpaperengine|kde)")
+# Chromium's own setuid helper, not ours
+addFilter(r"missing-call-to-setgroups-before-setuid .*/chrome-sandbox")

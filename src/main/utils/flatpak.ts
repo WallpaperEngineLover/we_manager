@@ -119,7 +119,7 @@ export function hostProcessCommandLine(hostPid: number): string | null | undefin
 export function hostProcessCommandLineAsync(hostPid: number): Promise<string | null | undefined> {
   return new Promise((resolve) => {
     execFile('flatpak-spawn', ['--host', 'sh', '-c', HOST_CMDLINE_SCRIPT, 'sh', String(hostPid)], { timeout: 5000 },
-      (err, stdout) => resolve(err ? undefined : parseHostCommandLine(stdout)))
+      (err, stdout) => { resolve(err ? undefined : parseHostCommandLine(stdout)) })
   })
 }
 

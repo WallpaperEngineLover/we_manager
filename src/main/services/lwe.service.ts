@@ -10,6 +10,7 @@ import type {
   LweStatus,
   LweInstallProgress,
   LinuxDistro,
+  HotswapSettings,
   LweSceneObject,
   LweProperty,
   LweAudioObject,
@@ -58,6 +59,7 @@ import {
   getAudioScreen,
   getAmbientVolume,
   getLeds,
+  getLoader,
   getDefaultAudioSensitivity,
   getDisablePuppetAnimation,
   getScriptLimits,
@@ -77,6 +79,13 @@ const execFileAsync = promisify(execFile)
 const APPIMAGE_MOUNT = /^\/tmp\/\.mount_[^/]+(\/|$)/
 
 const DEFAULT_LED_SERVER = '127.0.0.1:6742'
+
+const LOCAL_SOURCE_EXCLUDES = [
+  '/.git', '/build', '/build-*', '/cmake-build-*', '/.cache', '/result', '/result-*', '/.idea', '/.vscode', '/.zed',
+  '__pycache__'
+]
+const tarExclude = (pattern: string): string =>
+  `--exclude=${pattern.startsWith('/') ? `.${pattern}` : pattern}`
 
 function validLedServer(value: string): string {
   const server = value.trim()
@@ -185,7 +194,7 @@ function findLweBinary(): string | undefined {
 
 export function readPrebuiltRelease(): { tag: string; asset: string } | undefined {
   try {
-    return JSON.parse(fs.readFileSync(path.join(getLwePrebuiltDir(), '.release'), 'utf8'))
+    return JSON.parse(fs.readFileSync(path.join(getLwePrebuiltDir(), '.release'), 'utf8')) as { tag: string; asset: string }
   } catch {
     return undefined
   }
@@ -339,7 +348,7 @@ const DEPS_SUSE = [
  * Tumbleweed carries several FFmpeg versions side by side. The engine has to link the one libmpv uses, two FFmpeg
  * ABIs in one process resolve each other's symbols. Needs mpv-devel installed (it pulls libmpv2); null if unreadable.
  */
-export function suseFfmpegDevel(): string[] | null {
+function suseFfmpegDevel(): string[] | null {
   try {
     const requires = execFileSync('rpm', ['-q', '--requires', 'libmpv2'], { encoding: 'utf8', timeout: 10_000 })
     const soname = /libavcodec\.so\.\d+/.exec(requires)?.[0]
@@ -546,16 +555,19 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       // copy the working tree so uncommitted edits are built
       send({ stage: 'cloning', message: t('lwe.copyingSource', { repo }), percentage: 5 })
       if (isCommandAvailable('rsync')) {
-        // --no-times: old source mtimes could make make skip a changed file in a reused dir
+        // --no-times: old source mtimes could make make skip a changed file in a reused dir. --checksum: without it
+        // every file differs in mtime from its copy and is transferred again, which made every file newer than its
+        // object. Now only the files whose content changed are written (and get a fresh mtime), the rest stays old
         await execFileAsync('rsync', [
-          '-a', '--no-times', '--delete', '--exclude=/.git', '--exclude=/build',
+          '-a', '--no-times', '--checksum', '--delete', ...LOCAL_SOURCE_EXCLUDES.map((e) => `--exclude=${e}`),
           `${repo}/`, `${BUILD_DIR}/`
         ], { timeout: 120_000, maxBuffer: 10 * 1024 * 1024 })
       } else {
         // -m, same reason as --no-times
         await execFileAsync('bash', [
           '-c',
-          `tar -C ${JSON.stringify(repo)} --exclude=.git --exclude=build -cf - . | tar -C ${JSON.stringify(BUILD_DIR)} -xmf -`
+          'tar -C "$1" "${@:3}" -cf - . | tar -C "$2" -xmf -',
+          'bash', repo, BUILD_DIR, ...LOCAL_SOURCE_EXCLUDES.map(tarExclude)
         ], { timeout: 120_000, maxBuffer: 10 * 1024 * 1024 })
       }
       fs.writeFileSync(sourceMarker, repo, 'utf8')
@@ -602,8 +614,15 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
       encoding: 'utf8'
     })
 
-    // make's mtime check shipped a stale binary once; keeps the CEF SDK
-    if (canReuseBuildCache) {
+    // the copy above only touches files whose content changed, so make's mtime check is right for them. Everything
+    // else a reused build dir depends on (the cmake options, the compiler) is tied to a signature: when it changes
+    // the objects are thrown away (the CEF SDK stays)
+    const buildSignature = JSON.stringify([getLweCmakeArgs() ?? '', buildEnv.CC ?? '', buildEnv.CXX ?? '', process.arch])
+    const signatureFile = path.join(cmakeBuild, '.lwe-build-signature')
+    const previousSignature = (() => {
+      try { return fs.readFileSync(signatureFile, 'utf8') } catch { return null }
+    })()
+    if (canReuseBuildCache && previousSignature !== buildSignature) {
       await execFileAsync('make', ['clean'], {
         cwd: cmakeBuild,
         env: buildEnv,
@@ -612,6 +631,7 @@ export async function installLwe(win: BrowserWindow): Promise<void> {
         encoding: 'utf8'
       }).catch(() => { })
     }
+    fs.writeFileSync(signatureFile, buildSignature, 'utf8')
 
     send({ stage: 'building', message: t('lwe.compiling'), percentage: 40 })
     const cores = Math.max(1, os.cpus().length - 1)
@@ -840,7 +860,7 @@ function getLweBinaryPath(): string {
   }
 }
 
-function buildLweEnvVars(): string[] {
+export function buildLweEnvVars(): string[] {
   const vars: string[] = []
   // a Nix build brings its own libraries
   const fromNix = getLweBinaryPath().startsWith('/nix/store/')
@@ -873,6 +893,11 @@ function buildLweEnvVars(): string[] {
   if (diagnosticStats) vars.push('LWE_FRAME_STATS=1')
 
   if (getScriptLimits()) vars.push('LWE_SCRIPT_TIMEOUT_MS=5000', 'LWE_SCRIPT_HEAP_MB=512', 'LWE_SCRIPT_BUFFER_MB=512')
+
+  const loader = getLoader()
+  if (!loader.textures) vars.push('LWE_NO_TEXTURE_PREFETCH=1')
+  if (!loader.shaders) vars.push('LWE_NO_SHADER_WARM=1')
+  if (loader.threads > 0) vars.push(`LWE_PREFETCH_THREADS=${loader.threads}`)
 
   return vars
 }
@@ -1540,6 +1565,11 @@ function launchKey(options: LweLaunchOptions): string {
     disabledEffects: supportsEffectHotswap() ? [] : (options.disabledEffects ?? []),
     enabledEffects: supportsEffectHotswap() ? [] : (options.enabledEffects ?? []),
     disableAnimations: supportsAnimationHotswap() ? false : !!flags.disableAnimations,
+    // read when the process starts, a hotswap can't change them
+    scriptLimits: getScriptLimits(),
+    loader: getLoader(),
+    leds: getLeds(),
+    disablePuppetAnimation: getDisablePuppetAnimation(),
     flags: engineFlagArgs({
       ...flags,
       ...(supportsHwdecHotswap() ? { hwdec: undefined } : {}),
@@ -1550,34 +1580,9 @@ function launchKey(options: LweLaunchOptions): string {
   })
 }
 
-export interface HotswapOptions {
+export interface HotswapOptions extends HotswapSettings {
   path?: string
-  disabledObjects?: string[]
-  enabledObjects?: string[]
-  volume?: number
   fps?: number
-  xray?: XrayMode
-  scaling?: string
-  zoom?: number
-  offsetX?: number
-  offsetY?: number
-  disableParallax?: boolean
-  expandCanvas?: boolean
-  repairAssets?: boolean
-  cornerColor?: string
-  imageAdjustments?: ImageAdjustments
-  speed?: number
-  videoSegments?: VideoSegment[]
-  /** Video seek in seconds */
-  videoSeek?: number
-  propertyOverrides?: Record<string, string>
-  /** Empty string = every screen can produce audio */
-  audioScreen?: string
-  ambientVolume?: number
-  /** Object id or "*" -> multiplier */
-  audioSensitivity?: Record<string, number>
-  /** Sound object id -> volume (0-1) */
-  soundVolume?: Record<string, number>
   /** Either being present replaces the engine's effect lists */
   disabledEffects?: string[]
   enabledEffects?: string[]
@@ -1907,31 +1912,39 @@ function parseLweObjectList(output: string): LweSceneObject[] {
   return objects
 }
 
-export async function listLweObjects(wallpaperPath: string): Promise<LweSceneObject[]> {
+async function runLweList<T>(
+  wallpaperPath: string,
+  flag: string,
+  supported: (() => boolean) | null,
+  parse: (output: string) => T[],
+  label: string
+): Promise<T[]> {
   const status = getLweStatus()
   if (!status.installed) throw new Error('linux-wallpaperengine is not installed.')
   // older builds ignore unknown flags and render instead of exiting
-  if (!supportsObjectFlags()) return []
+  if (supported && !supported()) return []
 
-  const binaryPath = getLweBinaryPath()
-  const args = ['--list-objects']
+  const args = [flag]
   const assetsDir = findWeAssetsDir()
   if (assetsDir) args.push('--assets-dir', assetsDir)
   args.push(wallpaperPath)
 
-  const envVars = buildLweEnvVars()
   try {
-    const { stdout } = await execFileAsync('env', [...envVars, binaryPath, ...args], {
+    const { stdout } = await execFileAsync('env', [...buildLweEnvVars(), getLweBinaryPath(), ...args], {
       timeout: 15_000,
       maxBuffer: 5 * 1024 * 1024,
       encoding: 'utf8'
     })
-    return parseLweObjectList(stdout)
+    return parse(stdout)
   } catch (err) {
     const e = err as Error & { stdout?: string; stderr?: string }
     const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
-    throw new Error(`Failed to list wallpaper objects: ${msg}`, { cause: err })
+    throw new Error(`Failed to list ${label}: ${msg}`, { cause: err })
   }
+}
+
+export function listLweObjects(wallpaperPath: string): Promise<LweSceneObject[]> {
+  return runLweList(wallpaperPath, '--list-objects', () => supportsObjectFlags(), parseLweObjectList, 'wallpaper objects')
 }
 
 export async function listLweFonts(wallpaperPath: string): Promise<LweFontNeed[]> {
@@ -1965,31 +1978,8 @@ function parseLweEffectList(output: string): LweSceneEffect[] {
   return effects
 }
 
-export async function listLweEffects(wallpaperPath: string): Promise<LweSceneEffect[]> {
-  const status = getLweStatus()
-  if (!status.installed) throw new Error('linux-wallpaperengine is not installed.')
-  // older builds ignore unknown flags and render the wallpaper instead of exiting
-  if (!supportsEffectFlags()) return []
-
-  const binaryPath = getLweBinaryPath()
-  const args = ['--list-effects']
-  const assetsDir = findWeAssetsDir()
-  if (assetsDir) args.push('--assets-dir', assetsDir)
-  args.push(wallpaperPath)
-
-  const envVars = buildLweEnvVars()
-  try {
-    const { stdout } = await execFileAsync('env', [...envVars, binaryPath, ...args], {
-      timeout: 15_000,
-      maxBuffer: 5 * 1024 * 1024,
-      encoding: 'utf8'
-    })
-    return parseLweEffectList(stdout)
-  } catch (err) {
-    const e = err as Error & { stdout?: string; stderr?: string }
-    const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
-    throw new Error(`Failed to list wallpaper effects: ${msg}`, { cause: err })
-  }
+export function listLweEffects(wallpaperPath: string): Promise<LweSceneEffect[]> {
+  return runLweList(wallpaperPath, '--list-effects', () => supportsEffectFlags(), parseLweEffectList, 'wallpaper effects')
 }
 
 // "  24 - transbig (scale): minvalue=0.9 maxvalue=1.1 frequency=0 smoothing=10"
@@ -2015,31 +2005,8 @@ function parseLweAudioObjectList(output: string): LweAudioObject[] {
   return objects
 }
 
-export async function listLweAudioObjects(wallpaperPath: string): Promise<LweAudioObject[]> {
-  const status = getLweStatus()
-  if (!status.installed) throw new Error('linux-wallpaperengine is not installed.')
-  // older builds ignore unknown flags and render instead of exiting
-  if (!supportsAudioSensitivity()) return []
-
-  const binaryPath = getLweBinaryPath()
-  const args = ['--list-audio-objects']
-  const assetsDir = findWeAssetsDir()
-  if (assetsDir) args.push('--assets-dir', assetsDir)
-  args.push(wallpaperPath)
-
-  const envVars = buildLweEnvVars()
-  try {
-    const { stdout } = await execFileAsync('env', [...envVars, binaryPath, ...args], {
-      timeout: 15_000,
-      maxBuffer: 5 * 1024 * 1024,
-      encoding: 'utf8'
-    })
-    return parseLweAudioObjectList(stdout)
-  } catch (err) {
-    const e = err as Error & { stdout?: string; stderr?: string }
-    const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
-    throw new Error(`Failed to list audio-reactive objects: ${msg}`, { cause: err })
-  }
+export function listLweAudioObjects(wallpaperPath: string): Promise<LweAudioObject[]> {
+  return runLweList(wallpaperPath, '--list-audio-objects', () => supportsAudioSensitivity(), parseLweAudioObjectList, 'audio-reactive objects')
 }
 
 // --list-properties output:
@@ -2090,29 +2057,8 @@ function parseLweProperties(output: string): LweProperty[] {
   return properties
 }
 
-export async function listLweProperties(wallpaperPath: string): Promise<LweProperty[]> {
-  const status = getLweStatus()
-  if (!status.installed) throw new Error('linux-wallpaperengine is not installed.')
-
-  const binaryPath = getLweBinaryPath()
-  const args = ['--list-properties']
-  const assetsDir = findWeAssetsDir()
-  if (assetsDir) args.push('--assets-dir', assetsDir)
-  args.push(wallpaperPath)
-
-  const envVars = buildLweEnvVars()
-  try {
-    const { stdout } = await execFileAsync('env', [...envVars, binaryPath, ...args], {
-      timeout: 15_000,
-      maxBuffer: 5 * 1024 * 1024,
-      encoding: 'utf8'
-    })
-    return parseLweProperties(stdout)
-  } catch (err) {
-    const e = err as Error & { stdout?: string; stderr?: string }
-    const msg = (e.stderr || e.stdout || e.message || String(err)).trim().split('\n').slice(0, 3).join('\n')
-    throw new Error(`Failed to list wallpaper properties: ${msg}`, { cause: err })
-  }
+export function listLweProperties(wallpaperPath: string): Promise<LweProperty[]> {
+  return runLweList(wallpaperPath, '--list-properties', null, parseLweProperties, 'wallpaper properties')
 }
 
 type EngineProcess = Pick<LweInstance, 'pid' | 'sandbox' | 'hostPid'>

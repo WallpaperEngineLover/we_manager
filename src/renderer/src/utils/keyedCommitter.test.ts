@@ -12,7 +12,7 @@ describe('createKeyedCommitter', () => {
     const save = vi.fn<(changes: Record<string, string>) => Promise<void>>(async () => {})
     const settled = vi.fn<(keys: string[], idle: boolean) => void>()
     createKeyedCommitter<string>(save, settled).commit('a', '1')
-    await vi.waitFor(() => expect(settled).toHaveBeenCalled())
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalled() })
     expect(save).toHaveBeenCalledWith({ a: '1' })
     expect(settled).toHaveBeenCalledWith(['a'], true)
   })
@@ -27,13 +27,13 @@ describe('createKeyedCommitter', () => {
     }, settled)
 
     committer.commit('a', '1')
-    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    await vi.waitFor(() => { expect(calls).toHaveLength(1) })
     committer.commit('b', '2')
     expect(committer.hasPending('b')).toBe(true)
     expect(calls).toHaveLength(1)
 
     first.open()
-    await vi.waitFor(() => expect(settled).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(2) })
     expect(calls).toEqual([{ a: '1' }, { b: '2' }])
     expect(settled).toHaveBeenNthCalledWith(1, ['a'], false)
     expect(settled).toHaveBeenNthCalledWith(2, ['b'], true)
@@ -49,12 +49,12 @@ describe('createKeyedCommitter', () => {
     }, settled)
 
     committer.commit('slider', 10)
-    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    await vi.waitFor(() => { expect(calls).toHaveLength(1) })
     committer.commit('slider', 20)
     committer.commit('slider', 30)
     committer.commit('other', 5)
     first.open()
-    await vi.waitFor(() => expect(settled).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(2) })
     expect(calls).toEqual([{ slider: 10 }, { slider: 30, other: 5 }])
   })
 
@@ -68,10 +68,10 @@ describe('createKeyedCommitter', () => {
     }, settled)
 
     committer.commit('slider', 70)
-    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    await vi.waitFor(() => { expect(calls).toHaveLength(1) })
     committer.commit('slider', 30)
     first.open()
-    await vi.waitFor(() => expect(settled).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(2) })
 
     expect(settled).toHaveBeenNthCalledWith(1, [], false)
     expect(settled).toHaveBeenNthCalledWith(2, ['slider'], true)
@@ -92,7 +92,7 @@ describe('createKeyedCommitter', () => {
       committer.commit(`k${i}`, i)
       await new Promise((resolve) => setTimeout(resolve, 1))
     }
-    await vi.waitFor(() => expect(settled).toHaveBeenLastCalledWith(expect.anything(), true))
+    await vi.waitFor(() => { expect(settled).toHaveBeenLastCalledWith(expect.anything(), true) })
     expect(most).toBe(1)
   })
 
@@ -107,7 +107,7 @@ describe('createKeyedCommitter', () => {
 
     committer.commit('a', '1')
     committer.commit('b', '2')
-    await vi.waitFor(() => expect(settled).toHaveBeenLastCalledWith(expect.anything(), true))
+    await vi.waitFor(() => { expect(settled).toHaveBeenLastCalledWith(expect.anything(), true) })
     expect(calls).toEqual(['a', 'b'])
     expect(error).toHaveBeenCalled()
     error.mockRestore()

@@ -110,11 +110,11 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
                 <input
                   type="text"
                   value={selectedPath}
-                  onChange={(e) => setSelectedPath(e.target.value)}
+                  onChange={(e) => { setSelectedPath(e.target.value) }}
                   className="flex-1 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                 />
                 <button
-                  onClick={handleBrowse}
+                  onClick={() => void handleBrowse()}
                   className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
                 >
                   <FolderOpen size={16} />
@@ -127,7 +127,7 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
             </div>
 
             <button
-              onClick={handleConfirmPath}
+              onClick={() => void handleConfirmPath()}
               disabled={!selectedPath || saving}
               className="mt-8 flex w-full items-center justify-center gap-2 rounded-lg bg-accent-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
             >
@@ -149,7 +149,7 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
 
             <div className="mt-6 flex flex-col gap-3">
               <button
-                onClick={handleImportConfig}
+                onClick={() => void handleImportConfig()}
                 disabled={importing}
                 className="flex items-center gap-3 rounded-lg border border-fg/10 px-4 py-3 text-left transition-colors hover:bg-fg/5 disabled:opacity-50"
               >
@@ -165,7 +165,7 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
               </button>
 
               <button
-                onClick={handleCreateFresh}
+                onClick={() => void handleCreateFresh()}
                 disabled={importing}
                 className="flex items-center gap-3 rounded-lg border border-fg/10 px-4 py-3 text-left transition-colors hover:bg-fg/5 disabled:opacity-50"
               >
@@ -191,7 +191,7 @@ export default function SetupScreen({ defaultPath, onComplete }: SetupScreenProp
             </div>
 
             <button
-              onClick={handleFinish}
+              onClick={() => void handleFinish()}
               disabled={importing}
               className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-accent-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
             >

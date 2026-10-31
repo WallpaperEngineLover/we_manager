@@ -64,11 +64,11 @@ import CompatSection from './sidebar/CompatSection'
 import ThumbnailSection from './sidebar/ThumbnailSection'
 import { ShortcutRow } from './ShortcutRow'
 import { useDisplayTargets, useScreenAssignments } from '../../hooks/useDisplayTargets'
+import ResizableWidth from './ResizableWidth'
 import type {
   LweSceneObject,
   LweSceneEffect,
   LweProperty,
-  LweAudioObject,
   WallpaperMeta,
   ScalingMode,
   ImageAdjustments,
@@ -124,28 +124,28 @@ function objectState(objId: string, disabled: string[], enabled: string[]): Obje
   return 'default'
 }
 
-function LayerRow({
-  object,
+function VisibilityRow({
+  name,
   state,
   busy,
-  onToggle
+  visibleTitle,
+  hiddenTitle,
+  onToggle,
+  children
 }: {
-  object: LweSceneObject
+  name: string
   state: ObjectState
   busy: boolean
+  visibleTitle: string
+  hiddenTitle: string
   onToggle: () => void
+  children: ReactNode
 }) {
   return (
     <button
       onClick={onToggle}
       disabled={busy}
-      title={
-        state === 'default'
-          ? t('detail.layerVisible')
-          : state === 'hidden'
-            ? t('detail.layerHidden')
-            : t('detail.forcedVisible')
-      }
+      title={state === 'default' ? visibleTitle : state === 'hidden' ? hiddenTitle : t('detail.forcedVisible')}
       className={clsx(
         'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-fg/5 disabled:opacity-40',
         state === 'hidden' ? 'text-gray-600' : 'text-gray-300'
@@ -158,11 +158,34 @@ function LayerRow({
       ) : (
         <Eye size={12} className="shrink-0 text-gray-500" />
       )}
-      <span className={clsx('flex-1 truncate', state === 'hidden' && 'line-through')}>
-        {object.name}
-      </span>
-      <span className="shrink-0 text-gray-600">{object.type}</span>
+      <span className={clsx('flex-1 truncate', state === 'hidden' && 'line-through')}>{name}</span>
+      {children}
     </button>
+  )
+}
+
+function LayerRow({
+  object,
+  state,
+  busy,
+  onToggle
+}: {
+  object: LweSceneObject
+  state: ObjectState
+  busy: boolean
+  onToggle: () => void
+}) {
+  return (
+    <VisibilityRow
+      name={object.name}
+      state={state}
+      busy={busy}
+      visibleTitle={t('detail.layerVisible')}
+      hiddenTitle={t('detail.layerHidden')}
+      onToggle={onToggle}
+    >
+      <span className="shrink-0 text-gray-600">{object.type}</span>
+    </VisibilityRow>
   )
 }
 
@@ -178,35 +201,18 @@ function EffectRow({
   onToggle: () => void
 }) {
   return (
-    <button
-      onClick={onToggle}
-      disabled={busy}
-      title={
-        state === 'default'
-          ? t('detail.effectVisible')
-          : state === 'hidden'
-            ? t('detail.effectDisabled')
-            : t('detail.forcedVisible')
-      }
-      className={clsx(
-        'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-fg/5 disabled:opacity-40',
-        state === 'hidden' ? 'text-gray-600' : 'text-gray-300'
-      )}
+    <VisibilityRow
+      name={effect.name}
+      state={state}
+      busy={busy}
+      visibleTitle={t('detail.effectVisible')}
+      hiddenTitle={t('detail.effectDisabled')}
+      onToggle={onToggle}
     >
-      {state === 'hidden' ? (
-        <EyeOff size={12} className="shrink-0 text-gray-600" />
-      ) : state === 'forced' ? (
-        <Pin size={12} className="shrink-0 text-accent-400" />
-      ) : (
-        <Eye size={12} className="shrink-0 text-gray-500" />
-      )}
-      <span className={clsx('flex-1 truncate', state === 'hidden' && 'line-through')}>
-        {effect.name}
-      </span>
       <span className="shrink-0 truncate text-gray-600" title={effect.objectName}>
         {t('detail.onObject', { name: effect.objectName })}
       </span>
-    </button>
+    </VisibilityRow>
   )
 }
 
@@ -231,7 +237,7 @@ function PropertyRow({
     const on = value === '1' || value === 'true'
     return (
       <button
-        onClick={() => onCommit(on ? '0' : '1')}
+        onClick={() => { onCommit(on ? '0' : '1') }}
         title={property.name}
         className={clsx(
           'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors hover:bg-fg/5',
@@ -264,7 +270,7 @@ function PropertyRow({
           max={property.max ?? 100}
           step={property.step || 1}
           value={num}
-          onChange={(e) => setDraft(Number(e.target.value))}
+          onChange={(e) => { setDraft(Number(e.target.value)) }}
           onMouseUp={(e) => { onCommit(e.currentTarget.value); setDraft(null) }}
           onTouchEnd={(e) => { onCommit(e.currentTarget.value); setDraft(null) }}
           onKeyUp={(e) => { if (!isRangeKey(e.key)) return; onCommit(e.currentTarget.value); setDraft(null) }}
@@ -282,7 +288,7 @@ function PropertyRow({
         </span>
         <select
           value={value}
-          onChange={(e) => onCommit(e.target.value)}
+          onChange={(e) => { onCommit(e.target.value) }}
           className="rounded bg-fg/5 px-1.5 py-0.5 text-xs text-gray-300 outline-none"
         >
           {property.options?.map((opt) => (
@@ -327,7 +333,7 @@ function AudioObjectRow({
         max={200}
         step={5}
         value={percent}
-        onChange={(e) => setDraft(Number(e.target.value))}
+        onChange={(e) => { setDraft(Number(e.target.value)) }}
         onMouseUp={(e) => { onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
         onTouchEnd={(e) => { onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
         onKeyUp={(e) => { if (!isRangeKey(e.key)) return; onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
@@ -363,7 +369,7 @@ function SoundTrackRow({
         max={1}
         step={0.1}
         value={value}
-        onChange={(e) => setDraft(Number(e.target.value))}
+        onChange={(e) => { setDraft(Number(e.target.value)) }}
         onMouseUp={(e) => { onCommit(Number(e.currentTarget.value)); setDraft(null) }}
         onTouchEnd={(e) => { onCommit(Number(e.currentTarget.value)); setDraft(null) }}
         onKeyUp={(e) => { if (!isRangeKey(e.key)) return; onCommit(Number(e.currentTarget.value)); setDraft(null) }}
@@ -463,7 +469,9 @@ export default function DetailSidebar({
     queryKey: ['author-info', creatorSteamId],
     queryFn: () => window.electronAPI.steam.getAuthorInfo(creatorSteamId!),
     enabled: !!creatorSteamId,
-    staleTime: Infinity
+    staleTime: Infinity,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(2000 * 2 ** attempt, 15_000)
   })
 
   const { data: libraryMeta } = useQuery({
@@ -528,7 +536,7 @@ export default function DetailSidebar({
   })
   // sensitivity is per object, which can drive several properties
   const audioObjects: { objectId: string; objectName: string; properties: string[] }[] = []
-  for (const p of audioObjectProperties as LweAudioObject[]) {
+  for (const p of audioObjectProperties) {
     const existing = audioObjects.find((o) => o.objectId === p.objectId)
     if (existing) existing.properties.push(p.property)
     else audioObjects.push({ objectId: p.objectId, objectName: p.objectName, properties: [p.property] })
@@ -560,7 +568,7 @@ export default function DetailSidebar({
   async function persistAndMaybeRelaunch(patch: Partial<WallpaperMeta>) {
     const updated = await window.electronAPI.library.update(id, patch)
     queryClient.setQueryData(['library', 'item', id], updated)
-    queryClient.invalidateQueries({ queryKey: ['library'] })
+    void queryClient.invalidateQueries({ queryKey: ['library'] })
     if (isActive) {
       // customArgs and effect overrides can't be hotswapped
       const { ok } = 'customArgs' in patch || 'disabledEffects' in patch || 'enabledEffects' in patch || 'engineFlags' in patch
@@ -590,7 +598,7 @@ export default function DetailSidebar({
       if (!ok) {
         for (const screen of activeScreens) await window.electronAPI.wallpaper.apply({ wallpaperId: id, screen })
       }
-      queryClient.invalidateQueries({ queryKey: ['screen-assignments'] })
+      void queryClient.invalidateQueries({ queryKey: ['screen-assignments'] })
     }
   }
 
@@ -598,7 +606,7 @@ export default function DetailSidebar({
   async function persistOnly(patch: Partial<WallpaperMeta>) {
     const updated = await window.electronAPI.library.update(id, patch)
     queryClient.setQueryData(['library', 'item', id], updated)
-    queryClient.invalidateQueries({ queryKey: ['library'] })
+    void queryClient.invalidateQueries({ queryKey: ['library'] })
   }
 
   const livePreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -617,7 +625,7 @@ export default function DetailSidebar({
     if (!isActive) return
     if (livePreviewTimer.current) clearTimeout(livePreviewTimer.current)
     livePreviewTimer.current = setTimeout(() => {
-      window.electronAPI.lwe.hotswapSettings(patch, localPath)
+      window.electronAPI.lwe.hotswapSettings(patch, localPath).catch(console.error)
     }, 80)
   }
 
@@ -908,7 +916,8 @@ export default function DetailSidebar({
   }
 
   return (
-    <div className="flex w-80 flex-shrink-0 flex-col overflow-y-auto border-l border-fg/5 bg-pane">
+    <ResizableWidth storageKey="we-detail-panel-width" defaultWidth={320} min={280} max={640} edge="left">
+    <div className="flex w-full flex-col overflow-y-auto border-l border-fg/5 bg-pane">
       <div className="relative aspect-video shrink-0 overflow-hidden bg-sunken">
         {previewUrl ? (
           <img src={previewUrl} alt={title} className="h-full w-full object-cover" />
@@ -945,7 +954,7 @@ export default function DetailSidebar({
               </div>
             )}
             <span className="text-sm text-accent-300 hover:text-accent-200">
-              {author?.name ?? '...'}
+              {author?.name ?? creatorSteamId}
             </span>
           </button>
         )}
@@ -954,23 +963,23 @@ export default function DetailSidebar({
 
         <div className="flex flex-wrap gap-1.5">
           {typeTag && (
-            <span className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-300">
+            <span className="whitespace-nowrap rounded bg-fg/5 px-2 py-1 text-xs text-gray-300">
               {tagLabel(typeTag)}
               {fileSizeLabel ? ` · ${fileSizeLabel}` : ''}
             </span>
           )}
           {genreTags.map((tag) => (
-            <span key={tag} className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-400">
+            <span key={tag} className="whitespace-nowrap rounded bg-fg/5 px-2 py-1 text-xs text-gray-400">
               {tagLabel(tag)}
             </span>
           ))}
           {resolutionTags.map((tag) => (
-            <span key={tag} className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-400">
+            <span key={tag} className="whitespace-nowrap rounded bg-fg/5 px-2 py-1 text-xs text-gray-400">
               {tagLabel(tag)}
             </span>
           ))}
           {ageTag && (
-            <span className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-400">{tagLabel(ageTag)}</span>
+            <span className="whitespace-nowrap rounded bg-fg/5 px-2 py-1 text-xs text-gray-400">{tagLabel(ageTag)}</span>
           )}
         </div>
 
@@ -982,7 +991,7 @@ export default function DetailSidebar({
           <div className="border-t border-fg/5 pt-3">
             <div className="flex items-center gap-1.5">
               <button
-                onClick={() => setLayersOpen((v) => !v)}
+                onClick={() => { setLayersOpen((v) => !v) }}
                 className="flex flex-1 items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
               >
                 {layersOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -997,7 +1006,7 @@ export default function DetailSidebar({
               </button>
               {fogObjects.length > 0 && (
                 <button
-                  onClick={toggleFog}
+                  onClick={() => void toggleFog()}
                   disabled={togglingFog}
                   title={fogDisabled ? t('detail.fogDisabled') : t('detail.fogEnabled')}
                   className={clsx(
@@ -1018,7 +1027,7 @@ export default function DetailSidebar({
                     object={obj}
                     state={objectState(obj.id, disabledObjects, enabledObjects)}
                     busy={togglingObjectId === obj.id}
-                    onToggle={() => toggleObject(obj.id)}
+                    onToggle={() => void toggleObject(obj.id)}
                   />
                 ))}
               </div>
@@ -1029,7 +1038,7 @@ export default function DetailSidebar({
         {localPath && lweInstalled && (effectsLoading || effects.length > 0) && (
           <div className="border-t border-fg/5 pt-3">
             <button
-              onClick={() => setEffectsOpen((v) => !v)}
+              onClick={() => { setEffectsOpen((v) => !v) }}
               className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
             >
               {effectsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -1045,7 +1054,7 @@ export default function DetailSidebar({
                     effect={fx}
                     state={objectState(fx.id, disabledEffects, enabledEffects)}
                     busy={togglingEffectId === fx.id}
-                    onToggle={() => toggleEffect(fx.id)}
+                    onToggle={() => void toggleEffect(fx.id)}
                   />
                 ))}
               </div>
@@ -1072,7 +1081,7 @@ export default function DetailSidebar({
             <select
               value={scalingMode}
               disabled={isCommittingScaling}
-              onChange={(e) => commitScaling(e.target.value as ScalingMode)}
+              onChange={(e) => void commitScaling(e.target.value as ScalingMode)}
               className="w-full rounded bg-fg/5 px-1.5 py-1 text-xs text-gray-300 outline-none disabled:opacity-50"
             >
               {SCALING_MODE_OPTIONS.map((opt) => (
@@ -1109,9 +1118,9 @@ export default function DetailSidebar({
                 setZoomDraft(v)
                 previewLive({ zoom: v / 100 })
               }}
-              onMouseUp={(e) => commitZoom(Number(e.currentTarget.value))}
-              onTouchEnd={(e) => commitZoom(Number(e.currentTarget.value))}
-              onKeyUp={(e) => isRangeKey(e.key) && commitZoom(Number(e.currentTarget.value))}
+              onMouseUp={(e) => void commitZoom(Number(e.currentTarget.value))}
+              onTouchEnd={(e) => void commitZoom(Number(e.currentTarget.value))}
+              onKeyUp={(e) => void (isRangeKey(e.key) && commitZoom(Number(e.currentTarget.value)))}
               className="w-full accent-accent-500 disabled:opacity-50"
             />
           </div>
@@ -1143,9 +1152,9 @@ export default function DetailSidebar({
                   setOffsetXDraft(v)
                   previewLive({ offsetX: v, offsetY })
                 }}
-                onMouseUp={(e) => commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
-                onTouchEnd={(e) => commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
-                onKeyUp={(e) => isRangeKey(e.key) && commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
+                onMouseUp={(e) => void commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
+                onTouchEnd={(e) => void commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
+                onKeyUp={(e) => void (isRangeKey(e.key) && commitOffset(Number(e.currentTarget.value) / 100, offsetY))}
                 className="w-full accent-accent-500 disabled:opacity-50"
               />
               <span className="w-8 shrink-0 text-right text-[10px] text-gray-400">
@@ -1166,9 +1175,9 @@ export default function DetailSidebar({
                   setOffsetYDraft(v)
                   previewLive({ offsetX, offsetY: v })
                 }}
-                onMouseUp={(e) => commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
-                onTouchEnd={(e) => commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
-                onKeyUp={(e) => isRangeKey(e.key) && commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
+                onMouseUp={(e) => void commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
+                onTouchEnd={(e) => void commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
+                onKeyUp={(e) => void (isRangeKey(e.key) && commitOffset(offsetX, Number(e.currentTarget.value) / 100))}
                 className="w-full accent-accent-500 disabled:opacity-50"
               />
               <span className="w-8 shrink-0 text-right text-[10px] text-gray-400">
@@ -1192,18 +1201,18 @@ export default function DetailSidebar({
                 placeholder={t('library.fpsDefault')}
                 value={fps ?? ''}
                 disabled={isCommittingFps}
-                onChange={(e) => setFpsDraft(e.target.value === '' ? null : Number(e.target.value))}
+                onChange={(e) => { setFpsDraft(e.target.value === '' ? null : Number(e.target.value)) }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') e.currentTarget.blur()
                 }}
                 onBlur={(e) => {
                   const raw = e.currentTarget.value.trim()
                   if (raw === '') {
-                    commitFps(null)
+                    void commitFps(null)
                     return
                   }
                   const parsed = Number(raw)
-                  commitFps(Number.isFinite(parsed) ? Math.min(240, Math.max(1, parsed)) : fps)
+                  void commitFps(Number.isFinite(parsed) ? Math.min(240, Math.max(1, parsed)) : fps)
                 }}
                 title={t('detail.fpsHint')}
                 className="w-14 rounded bg-fg/5 px-1 py-0.5 text-right normal-case text-gray-400 outline-none focus:ring-1 focus:ring-accent-500 disabled:opacity-50"
@@ -1230,14 +1239,14 @@ export default function DetailSidebar({
                 step={5}
                 value={speedPercent}
                 disabled={isCommittingSpeed}
-                onChange={(e) => setSpeedDraft(Number(e.target.value))}
+                onChange={(e) => { setSpeedDraft(Number(e.target.value)) }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') e.currentTarget.blur()
                 }}
                 onBlur={(e) => {
                   const raw = Number(e.currentTarget.value)
                   const clamped = Number.isFinite(raw) ? Math.min(200, Math.max(10, raw)) : speedPercent
-                  commitSpeed(clamped)
+                  void commitSpeed(clamped)
                 }}
                 title={t('detail.speedInputHint')}
                 className="w-12 rounded bg-fg/5 px-1 py-0.5 text-right normal-case text-gray-400 outline-none focus:ring-1 focus:ring-accent-500 disabled:opacity-50"
@@ -1256,9 +1265,9 @@ export default function DetailSidebar({
                 setSpeedDraft(v)
                 previewLive({ speed: v / 100 })
               }}
-              onMouseUp={(e) => commitSpeed(Number(e.currentTarget.value))}
-              onTouchEnd={(e) => commitSpeed(Number(e.currentTarget.value))}
-              onKeyUp={(e) => isRangeKey(e.key) && commitSpeed(Number(e.currentTarget.value))}
+              onMouseUp={(e) => void commitSpeed(Number(e.currentTarget.value))}
+              onTouchEnd={(e) => void commitSpeed(Number(e.currentTarget.value))}
+              onKeyUp={(e) => void (isRangeKey(e.key) && commitSpeed(Number(e.currentTarget.value)))}
               title={t('detail.speedHint')}
               className="w-full accent-accent-500 disabled:opacity-50"
             />
@@ -1273,7 +1282,7 @@ export default function DetailSidebar({
             onCommit={(segments) =>
               persistAndMaybeRelaunch({ videoSegments: segments, videoStart: undefined, videoEnd: undefined })
             }
-            onPreview={(segments, seek) => previewLive({ videoSegments: segments, videoSeek: seek })}
+            onPreview={(segments, seek) => { previewLive({ videoSegments: segments, videoSeek: seek }); }}
           />
         )}
 
@@ -1282,7 +1291,7 @@ export default function DetailSidebar({
             adjustments={libraryMeta.imageAdjustments}
             live={isActive}
             onCommit={(imageAdjustments) => persistAndMaybeRelaunch({ imageAdjustments })}
-            onPreview={(imageAdjustments) => previewLive({ imageAdjustments })}
+            onPreview={(imageAdjustments) => { previewLive({ imageAdjustments }); }}
           />
         )}
 
@@ -1301,7 +1310,7 @@ export default function DetailSidebar({
                 type="color"
                 value={cornerColor}
                 disabled={isCommittingCornerColor}
-                onChange={(e) => commitCornerColor(e.target.value)}
+                onChange={(e) => void commitCornerColor(e.target.value)}
                 title={t('detail.cornerColorHint')}
                 className="h-5 w-8 shrink-0 cursor-pointer rounded border border-fg/10 bg-transparent p-0 disabled:opacity-50"
               />
@@ -1321,7 +1330,7 @@ export default function DetailSidebar({
               )}
               {libraryMeta && (globalAutomute || automuteIgnored) && (
                 <button
-                  onClick={toggleAutomuteIgnore}
+                  onClick={() => void toggleAutomuteIgnore()}
                   disabled={togglingAutomute}
                   title={automuteIgnored ? t('detail.automuteIgnoreOn') : t('detail.automuteIgnoreOff')}
                   className={clsx(
@@ -1351,9 +1360,9 @@ export default function DetailSidebar({
                 setVolumeDraft(v)
                 previewLive({ volume: v })
               }}
-              onMouseUp={(e) => commitVolume(Number(e.currentTarget.value))}
-              onTouchEnd={(e) => commitVolume(Number(e.currentTarget.value))}
-              onKeyUp={(e) => isRangeKey(e.key) && commitVolume(Number(e.currentTarget.value))}
+              onMouseUp={(e) => void commitVolume(Number(e.currentTarget.value))}
+              onTouchEnd={(e) => void commitVolume(Number(e.currentTarget.value))}
+              onKeyUp={(e) => void (isRangeKey(e.key) && commitVolume(Number(e.currentTarget.value)))}
               className="w-full accent-accent-500 disabled:opacity-50"
             />
           </div>
@@ -1362,7 +1371,7 @@ export default function DetailSidebar({
         {localPath && lweInstalled && libraryMeta?.type === 'scene' && (
           <div className="border-t border-fg/5 pt-3">
             <button
-              onClick={() => setXray({ xrayFullReveal: !xrayFullReveal, xrayDisabled: false })}
+              onClick={() => void setXray({ xrayFullReveal: !xrayFullReveal, xrayDisabled: false })}
               disabled={isCommittingXray}
               title={t('detail.fullXrayHint')}
               className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
@@ -1383,7 +1392,7 @@ export default function DetailSidebar({
               )}
             </button>
             <button
-              onClick={() => setXray({ xrayDisabled: !xrayDisabled, xrayFullReveal: false })}
+              onClick={() => void setXray({ xrayDisabled: !xrayDisabled, xrayFullReveal: false })}
               disabled={isCommittingXray}
               title={t('detail.disableXrayHint')}
               className="mt-1.5 flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
@@ -1404,7 +1413,7 @@ export default function DetailSidebar({
               )}
             </button>
             <button
-              onClick={toggleParallax}
+              onClick={() => void toggleParallax()}
               disabled={isCommittingParallax}
               title={t('detail.disableParallaxHint')}
               className="mt-1.5 flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
@@ -1425,7 +1434,7 @@ export default function DetailSidebar({
               )}
             </button>
             <button
-              onClick={toggleExpandCanvas}
+              onClick={() => void toggleExpandCanvas()}
               disabled={isCommittingExpandCanvas}
               title={t('detail.showFullImageHint')}
               className="mt-1.5 flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
@@ -1446,7 +1455,7 @@ export default function DetailSidebar({
               )}
             </button>
             <button
-              onClick={toggleRepairAssets}
+              onClick={() => void toggleRepairAssets()}
               disabled={isCommittingRepairAssets}
               title={t('detail.repairAssetsTitle')}
               className="mt-1.5 flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 disabled:opacity-40"
@@ -1487,8 +1496,8 @@ export default function DetailSidebar({
               spellCheck={false}
               value={customArgs}
               disabled={isCommittingCustomArgs}
-              onChange={(e) => setCustomArgsDraft(e.target.value)}
-              onBlur={(e) => commitCustomArgs(e.target.value)}
+              onChange={(e) => { setCustomArgsDraft(e.target.value) }}
+              onBlur={(e) => void commitCustomArgs(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') e.currentTarget.blur()
               }}
@@ -1501,7 +1510,7 @@ export default function DetailSidebar({
         {localPath && lweInstalled && (propertiesLoading || properties.length > 0) && (
           <div className="border-t border-fg/5 pt-3">
             <button
-              onClick={() => setPropertiesOpen((v) => !v)}
+              onClick={() => { setPropertiesOpen((v) => !v) }}
               className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
             >
               {propertiesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -1521,7 +1530,7 @@ export default function DetailSidebar({
                     key={prop.name}
                     property={prop}
                     value={propertyCommits.values[prop.name] ?? prop.value}
-                    onCommit={(value) => propertyCommits.commit(prop.name, value)}
+                    onCommit={(value) => { propertyCommits.commit(prop.name, value) }}
                   />
                 ))}
               </div>
@@ -1532,7 +1541,7 @@ export default function DetailSidebar({
         {localPath && lweInstalled && (audioObjectsLoading || audioObjects.length > 0) && (
           <div className="border-t border-fg/5 pt-3">
             <button
-              onClick={() => setAudioOpen((v) => !v)}
+              onClick={() => { setAudioOpen((v) => !v) }}
               className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
             >
               {audioOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -1553,7 +1562,7 @@ export default function DetailSidebar({
                     objectName={obj.objectName}
                     properties={obj.properties}
                     multiplier={audioCommits.values[obj.objectId] ?? 1}
-                    onCommit={(multiplier) => audioCommits.commit(obj.objectId, multiplier)}
+                    onCommit={(multiplier) => { audioCommits.commit(obj.objectId, multiplier) }}
                   />
                 ))}
               </div>
@@ -1564,7 +1573,7 @@ export default function DetailSidebar({
         {localPath && lweInstalled && (objectsLoading || soundObjects.length > 0) && (
           <div className="border-t border-fg/5 pt-3">
             <button
-              onClick={() => setSoundTracksOpen((v) => !v)}
+              onClick={() => { setSoundTracksOpen((v) => !v) }}
               className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
             >
               {soundTracksOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -1584,7 +1593,7 @@ export default function DetailSidebar({
                     key={obj.id}
                     trackName={obj.name}
                     volume={soundCommits.values[obj.id] ?? 0}
-                    onCommit={(level) => soundCommits.commit(obj.id, level)}
+                    onCommit={(level) => { soundCommits.commit(obj.id, level) }}
                   />
                 ))}
               </div>
@@ -1611,7 +1620,7 @@ export default function DetailSidebar({
               canGenerate={lweInstalled && !!localPath && libraryMeta.type !== 'application'}
               onUpdated={(updated) => {
                 queryClient.setQueryData(['library', 'item', id], updated)
-                queryClient.invalidateQueries({ queryKey: ['library'] })
+                void queryClient.invalidateQueries({ queryKey: ['library'] })
               }}
             />
           </>
@@ -1620,7 +1629,7 @@ export default function DetailSidebar({
         <div className="flex flex-col gap-1.5 border-t border-fg/5 pt-3">
           <div className="flex gap-1.5">
             <button
-              onClick={() => handleVote(true)}
+              onClick={() => { handleVote(true) }}
               disabled={isLiked || isLiking || isDisliking || unavailable}
               title={unavailable ? t('vote.unavailable') : undefined}
               className={clsx(
@@ -1636,7 +1645,7 @@ export default function DetailSidebar({
               {isLiked ? t('vote.liked') : t('vote.like')}
             </button>
             <button
-              onClick={() => handleVote(false)}
+              onClick={() => { handleVote(false) }}
               disabled={isLiking || isDisliking || unavailable || (isDisliked && !isLiked)}
               title={unavailable ? t('vote.unavailable') : undefined}
               className={clsx(
@@ -1653,7 +1662,7 @@ export default function DetailSidebar({
             </button>
             {workshopId && (
               <button
-                onClick={() => setFavorite(id, favoriteAdd)}
+                onClick={() => void setFavorite(id, favoriteAdd)}
                 disabled={isFavoritePending || (unavailable && favoriteAdd)}
                 title={
                   favoriteFailure
@@ -1688,7 +1697,7 @@ export default function DetailSidebar({
               <span>
                 {favoriteFailure.message}.{' '}
                 <button
-                  onClick={() => setFavorite(id, favoriteFailure.add)}
+                  onClick={() => void setFavorite(id, favoriteFailure.add)}
                   disabled={isFavoritePending || (unavailable && favoriteFailure.add)}
                   className="underline underline-offset-2 hover:text-red-200 disabled:opacity-50"
                 >
@@ -1709,7 +1718,7 @@ export default function DetailSidebar({
           )}
           {canPlay && (
             <button
-              onClick={handlePlay}
+              onClick={() => void handlePlay()}
               disabled={isApplying || !lweInstalled}
               title={lweInstalled ? undefined : t('play.installFirst')}
               className="flex items-center justify-center gap-1.5 rounded-lg bg-accent-600 py-1.5 text-xs text-white transition-colors hover:bg-accent-500 disabled:cursor-not-allowed disabled:opacity-50"
@@ -1721,7 +1730,7 @@ export default function DetailSidebar({
 
           {isSubscribed ? (
             <button
-              onClick={handleUnsubscribe}
+              onClick={() => void handleUnsubscribe()}
               disabled={isUnsubscribing}
               className={clsx(
                 'flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs transition-colors',
@@ -1745,22 +1754,23 @@ export default function DetailSidebar({
 
           {workshopId && (
             <>
-              <SidebarButton icon={MessageCircle} onClick={() => window.electronAPI.steam.openWorkshopItem(id)}>
+              <SidebarButton icon={MessageCircle} onClick={() => void window.electronAPI.steam.openWorkshopItem(id)}>
                 {t('detail.comment')}
               </SidebarButton>
-              <SidebarButton icon={ExternalLink} onClick={() => openWorkshopPage(id)}>
+              <SidebarButton icon={ExternalLink} onClick={() => { openWorkshopPage(id) }}>
                 {t('menu.openWorkshop')}
               </SidebarButton>
             </>
           )}
 
           {creatorSteamId && (
-            <SidebarButton icon={User} onClick={() => openProfilePage(creatorSteamId)}>
+            <SidebarButton icon={User} onClick={() => { openProfilePage(creatorSteamId) }}>
               {t('detail.viewProfile')}
             </SidebarButton>
           )}
         </div>
       </div>
     </div>
+    </ResizableWidth>
   )
 }

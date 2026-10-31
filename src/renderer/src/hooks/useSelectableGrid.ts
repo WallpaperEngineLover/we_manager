@@ -156,7 +156,7 @@ export function useSelectableGrid({ ids, dataAttr, onOpenDetail }: UseSelectable
       }
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    return () => { window.removeEventListener('keydown', onKeyDown) }
   }, [ids])
 
   // right-clicking a card outside the selection makes it the selection, like a file manager

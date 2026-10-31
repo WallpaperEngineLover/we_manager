@@ -16,7 +16,7 @@ export default function ScreenSelect({ targets, value, onChange, title }: Props)
       <Monitor size={12} />
       <select
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => { onChange(e.target.value) }}
         className="rounded bg-fg/5 px-1.5 py-1 text-xs text-gray-200 outline-none"
       >
         <option value="*">{t('common.allScreens')}</option>

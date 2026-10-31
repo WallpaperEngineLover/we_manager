@@ -17,7 +17,7 @@ export default function AutomuteIgnoreSettings() {
     const next = { ...wallpaper.engineFlags }
     delete next.automute
     await window.electronAPI.library.update(id, { engineFlags: hasEngineFlags(next) ? next : undefined })
-    queryClient.invalidateQueries({ queryKey: ['library'] })
+    void queryClient.invalidateQueries({ queryKey: ['library'] })
   }
 
   return (
@@ -37,7 +37,7 @@ export default function AutomuteIgnoreSettings() {
             <BellOff size={13} className="shrink-0 text-gray-500" />
             <span className="min-w-0 flex-1 truncate text-sm text-gray-200">{w.title}</span>
             <button
-              onClick={() => remove(w.id)}
+              onClick={() => void remove(w.id)}
               title={t('automuteIgnore.remove')}
               className="rounded p-1 text-gray-500 hover:text-red-400"
             >

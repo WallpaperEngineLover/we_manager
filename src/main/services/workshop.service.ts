@@ -161,14 +161,14 @@ const FILE_SIZE_TIMEOUT_MS = 15_000
 async function fetchFileSizesBatch(ids: string[]): Promise<void> {
   if (ids.length === 0) return
   const body = new URLSearchParams({ itemcount: String(ids.length) })
-  ids.forEach((id, i) => body.set(`publishedfileids[${i}]`, id))
+  ids.forEach((id, i) => { body.set(`publishedfileids[${i}]`, id) })
 
   const res = await fetch('https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/', {
     method: 'POST',
     body,
     signal: AbortSignal.timeout(FILE_SIZE_TIMEOUT_MS)
   })
-  const data = await res.json()
+  const data = (await res.json()) as { response?: { publishedfiledetails?: ({ publishedfileid?: string; file_size?: string | number | null } | null)[] } } | null
   const details = data?.response?.publishedfiledetails ?? []
   for (const d of details) {
     if (d?.publishedfileid && d.file_size != null) {

@@ -83,7 +83,7 @@ export default function WallpaperCard({
   }, [wallpaper.downloading, wallpaper.id])
 
   function refreshLibrary() {
-    queryClient.invalidateQueries({ queryKey: ['library'] })
+    void queryClient.invalidateQueries({ queryKey: ['library'] })
   }
 
   async function handleRedownload(e: React.MouseEvent) {
@@ -121,7 +121,7 @@ export default function WallpaperCard({
     if (parsed !== undefined && (isNaN(parsed) || parsed < 1)) return
     const current = wallpaper.fpsOverride
     if ((parsed ?? undefined) === current) return
-    window.electronAPI.library.update(wallpaper.id, { fpsOverride: parsed })
+    window.electronAPI.library.update(wallpaper.id, { fpsOverride: parsed }).catch(console.error)
   }
 
   async function handleAddToPlaylist() {
@@ -131,7 +131,7 @@ export default function WallpaperCard({
     try {
       await window.electronAPI.playlist.addItems(currentPlaylistId, [wallpaper.id])
       showToast(t('playlist.addedToCurrent'))
-      queryClient.invalidateQueries({ queryKey: ['playlists'] })
+      void queryClient.invalidateQueries({ queryKey: ['playlists'] })
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -147,7 +147,7 @@ export default function WallpaperCard({
     try {
       await window.electronAPI.steam.unsubscribe(wallpaper.id)
       refreshLibrary()
-      queryClient.invalidateQueries({ queryKey: ['folders'] })
+      void queryClient.invalidateQueries({ queryKey: ['folders'] })
     } catch (err) {
       setError((err as Error).message)
       setUnsubState('idle')
@@ -161,8 +161,173 @@ export default function WallpaperCard({
 
   const previewSrc = getPreviewSrc(wallpaper)
   const compact = previewSize !== 'big'
+  const tiny = previewSize === 'small'
 
   const playBlocked = !lweInstalled || !!wallpaper.downloading || !!wallpaper.downloadFailed
+
+  const actionButtons = (
+    <>
+      <LikeAction
+        id={wallpaper.id}
+        isLiked={steam.isLiked}
+        unavailable={wallpaper.unavailable}
+        compact={compact}
+        onError={setError}
+      />
+      <CardAction
+        icon={isInCurrentPlaylist ? Check : Plus}
+        label={isInCurrentPlaylist ? t('playlist.added') : t('playlist.add')}
+        busy={isAddingToPlaylist}
+        compact={compact}
+        tone={isInCurrentPlaylist ? 'active' : 'default'}
+        disabled={!currentPlaylistId || isAddingToPlaylist || isInCurrentPlaylist}
+        title={
+          !currentPlaylistId
+            ? t('playlist.noneActive')
+            : isInCurrentPlaylist
+              ? t('playlist.alreadyInCurrent')
+              : t('playlist.addToCurrent')
+        }
+        onClick={() => void handleAddToPlaylist()}
+      />
+      {unsubState === 'confirm' ? (
+        <div className="flex items-center gap-1">
+          {!compact && <span className="text-xs text-gray-400">{t('common.sure')}</span>}
+          <button
+            onClick={(e) => void handleUnsubscribeClick(e)}
+            title={t('subscribe.confirmUnsubscribe')}
+            className={clsx('rounded bg-red-600/80 text-xs text-white hover:bg-red-600', compact ? 'p-1.5' : 'px-2 py-1')}
+          >
+            {compact ? <Check size={11} /> : t('common.yes')}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setUnsubState('idle') }}
+            title={t('common.cancel')}
+            className={clsx('rounded bg-fg/5 text-xs text-gray-400 hover:bg-fg/10', compact ? 'p-1.5' : 'px-2 py-1')}
+          >
+            {compact ? <X size={11} /> : t('common.no')}
+          </button>
+        </div>
+      ) : (
+        <CardAction
+          icon={Trash2}
+          label={t('subscribe.unsubShort')}
+          busy={unsubState === 'pending'}
+          compact={compact}
+          tone="danger"
+          disabled={unsubState === 'pending'}
+          title={t('subscribe.unsubscribeHint')}
+          onClick={(e) => void handleUnsubscribeClick(e)}
+        />
+      )}
+      <SteamAction id={wallpaper.id} compact={compact} />
+      <CardAction
+        icon={FolderOpen}
+        label={t('common.open')}
+        compact={compact}
+        disabled={!wallpaper.localPath}
+        title={wallpaper.localPath ? t('library.openFolder') : t('library.noLocalFiles')}
+        onClick={() => void handleOpenLocally()}
+      />
+    </>
+  )
+
+  const featureBadges = (badges.hdr && wallpaper.hdr) || (badges.hrtf && wallpaper.hrtf) ? (
+    <>
+      {badges.hdr && wallpaper.hdr && (
+        <span
+          className="rounded bg-black/70 px-1 py-0.5 text-[10px] font-semibold leading-none tracking-wide text-amber-300"
+          title={wallpaper.type === 'video' ? t('hdr.video') : t('hdr.scene')}
+        >
+          HDR
+        </span>
+      )}
+      {badges.hrtf && wallpaper.hrtf && (
+        <span
+          className="rounded bg-black/70 px-1 py-0.5 text-[10px] font-semibold leading-none tracking-wide text-sky-300"
+          title={t('hrtf.badge')}
+        >
+          HRTF
+        </span>
+      )}
+    </>
+  ) : null
+
+  if (previewSize === 'list') {
+    const issue = wallpaper.downloadFailed || hasDamagedFiles(wallpaper)
+    return (
+      <GridCard
+        row
+        data-wallpaper-id={wallpaper.id}
+        selected={selected}
+        isDetailOpen={isDetailOpen}
+        steam={steam}
+        borders={borders}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/wallpaper-id', wallpaper.id)
+          e.dataTransfer.setData('text/wallpaper-selected', 'true')
+          e.dataTransfer.effectAllowed = 'copy'
+        }}
+        onClick={onSelect}
+        onContextMenu={onContextMenu}
+      >
+        <div className="w-20 shrink-0">
+          <CardPreview src={previewSrc} alt={wallpaper.title} dimmed={wallpaper.downloading || issue} />
+        </div>
+        <div className="min-w-0 flex-1 px-3 py-1">
+          <h3 className="truncate text-sm font-medium text-gray-200" title={wallpaper.title}>
+            {wallpaper.title}
+          </h3>
+          <div className="flex items-center gap-1 overflow-hidden">
+            {wallpaper.tags.slice(0, 3).map((tag) => (
+              <span key={tag} className="whitespace-nowrap rounded bg-fg/5 px-1.5 text-[11px] text-gray-400">
+                {tagLabel(tag)}
+              </span>
+            ))}
+            {error && <span className="truncate text-[11px] text-red-400">{error}</span>}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5 pr-3" onClick={(e) => { e.stopPropagation() }}>
+          {wallpaper.downloading && (
+            <span className="flex items-center gap-1 text-xs text-gray-300">
+              <Download size={12} className="animate-bounce text-accent-400" />
+              {downloadPercentage != null ? `${downloadPercentage}%` : t('subscribe.downloading')}
+            </span>
+          )}
+          {backupProgress != null && (
+            <span className="flex items-center gap-1 text-xs text-gray-300">
+              <Archive size={12} className="animate-pulse text-accent-400" />
+              {backupProgress.percentage}%
+            </span>
+          )}
+          {issue && (
+            <button
+              onClick={(e) => void handleRedownload(e)}
+              disabled={isRedownloading}
+              title={wallpaper.downloadFailed ? t('subscribe.downloadFailed') : verifyProblemLabel(wallpaper.verifyProblem!)}
+              className="flex items-center gap-1 rounded bg-accent-600/80 px-2 py-1 text-xs text-white transition-colors hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isRedownloading ? <Loader2 size={11} className="animate-spin" /> : <RotateCw size={11} />}
+              {wallpaper.downloadFailed ? t('subscribe.redownload') : t('verify.repair')}
+            </button>
+          )}
+          {featureBadges}
+          {backupProgress == null && hasBackup(wallpaper) && <Archive size={12} className="text-accent-300" />}
+          {wallpaper.unavailable && <WifiOff size={12} className="text-amber-400" />}
+          <CompatBadge compat={wallpaper.compat} />
+          {actionButtons}
+          <PlayButton
+            busy={isApplying}
+            ready={!playBlocked}
+            disabled={isApplying || playBlocked}
+            title={t('play.wallpaper')}
+            onClick={() => void handleApply()}
+          />
+        </div>
+      </GridCard>
+    )
+  }
 
   return (
     <GridCard
@@ -197,7 +362,7 @@ export default function WallpaperCard({
             <AlertTriangle size={20} className="text-red-400" />
             <span className="text-xs text-gray-300">{t('subscribe.downloadFailed')}</span>
             <button
-              onClick={handleRedownload}
+              onClick={(e) => void handleRedownload(e)}
               disabled={isRedownloading}
               className="flex items-center gap-1 rounded bg-accent-600/80 px-2 py-1 text-xs text-white transition-colors hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -211,7 +376,7 @@ export default function WallpaperCard({
             <AlertTriangle size={20} className="text-amber-400" />
             <span className="text-xs text-gray-300">{verifyProblemLabel(wallpaper.verifyProblem!)}</span>
             <button
-              onClick={handleRedownload}
+              onClick={(e) => void handleRedownload(e)}
               disabled={isRedownloading}
               className="flex items-center gap-1 rounded bg-accent-600/80 px-2 py-1 text-xs text-white transition-colors hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -231,26 +396,7 @@ export default function WallpaperCard({
             <ProgressBar percentage={backupProgress.percentage} className="h-1 w-full max-w-[140px] rounded-full bg-fg/10" />
           </CardOverlay>
         )}
-        {((badges.hdr && wallpaper.hdr) || (badges.hrtf && wallpaper.hrtf)) && (
-          <div className="absolute right-2 top-2 flex gap-1">
-            {badges.hdr && wallpaper.hdr && (
-              <span
-                className="rounded bg-black/70 px-1 py-0.5 text-[10px] font-semibold leading-none tracking-wide text-amber-300"
-                title={wallpaper.type === 'video' ? t('hdr.video') : t('hdr.scene')}
-              >
-                HDR
-              </span>
-            )}
-            {badges.hrtf && wallpaper.hrtf && (
-              <span
-                className="rounded bg-black/70 px-1 py-0.5 text-[10px] font-semibold leading-none tracking-wide text-sky-300"
-                title={t('hrtf.badge')}
-              >
-                HRTF
-              </span>
-            )}
-          </div>
-        )}
+        {featureBadges && <div className="absolute right-2 top-2 flex gap-1">{featureBadges}</div>}
         {backupProgress == null && hasBackup(wallpaper) && (
           <CornerBadge className="bottom-2 right-2 bg-black/60 text-accent-300" title={t('backup.badge')}>
             <Archive size={12} />
@@ -270,20 +416,20 @@ export default function WallpaperCard({
         />
       </CardPreview>
 
-      <div className="p-3">
-        <h3 className="truncate text-sm font-medium text-gray-200" title={wallpaper.title}>
+      <div className={tiny ? 'p-2' : 'p-3'}>
+        <h3 className={clsx('truncate font-medium text-gray-200', tiny ? 'text-xs' : 'text-sm')} title={wallpaper.title}>
           {wallpaper.title}
         </h3>
-        {wallpaper.tags.length > 0 && (
+        {!tiny && wallpaper.tags.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
             {wallpaper.tags.slice(0, 3).map((tag) => (
-              <span key={tag} className="rounded bg-fg/5 px-1.5 py-0.5 text-xs text-gray-400">
+              <span key={tag} className="whitespace-nowrap rounded bg-fg/5 px-1.5 py-0.5 text-xs text-gray-400">
                 {tagLabel(tag)}
               </span>
             ))}
           </div>
         )}
-        <div className="mt-2 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+        <div className={clsx('mt-2 items-center gap-1.5', tiny ? 'hidden' : 'flex')} onClick={(e) => { e.stopPropagation() }}>
           <span className="text-xs text-gray-500">{t('library.fps')}</span>
           <input
             type="number"
@@ -291,76 +437,15 @@ export default function WallpaperCard({
             max={360}
             placeholder={t('library.fpsDefault')}
             value={fpsInput}
-            onChange={(e) => setFpsInput(e.target.value)}
+            onChange={(e) => { setFpsInput(e.target.value) }}
             onBlur={handleFpsBlur}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
             className="w-16 rounded bg-fg/5 px-1.5 py-0.5 text-xs text-gray-300 outline-none focus:ring-1 focus:ring-accent-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
         </div>
         {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
-        <div className={clsx('mt-2 flex items-center', compact ? 'gap-1' : 'gap-2')}>
-          <LikeAction
-            id={wallpaper.id}
-            isLiked={steam.isLiked}
-            unavailable={wallpaper.unavailable}
-            compact={compact}
-            onError={setError}
-          />
-          <CardAction
-            icon={isInCurrentPlaylist ? Check : Plus}
-            label={isInCurrentPlaylist ? t('playlist.added') : t('playlist.add')}
-            busy={isAddingToPlaylist}
-            compact={compact}
-            tone={isInCurrentPlaylist ? 'active' : 'default'}
-            disabled={!currentPlaylistId || isAddingToPlaylist || isInCurrentPlaylist}
-            title={
-              !currentPlaylistId
-                ? t('playlist.noneActive')
-                : isInCurrentPlaylist
-                  ? t('playlist.alreadyInCurrent')
-                  : t('playlist.addToCurrent')
-            }
-            onClick={handleAddToPlaylist}
-          />
-          {unsubState === 'confirm' ? (
-            <div className="flex items-center gap-1">
-              {!compact && <span className="text-xs text-gray-400">{t('common.sure')}</span>}
-              <button
-                onClick={handleUnsubscribeClick}
-                title={t('subscribe.confirmUnsubscribe')}
-                className={clsx('rounded bg-red-600/80 text-xs text-white hover:bg-red-600', compact ? 'p-1.5' : 'px-2 py-1')}
-              >
-                {compact ? <Check size={11} /> : t('common.yes')}
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); setUnsubState('idle') }}
-                title={t('common.cancel')}
-                className={clsx('rounded bg-fg/5 text-xs text-gray-400 hover:bg-fg/10', compact ? 'p-1.5' : 'px-2 py-1')}
-              >
-                {compact ? <X size={11} /> : t('common.no')}
-              </button>
-            </div>
-          ) : (
-            <CardAction
-              icon={Trash2}
-              label={t('subscribe.unsubShort')}
-              busy={unsubState === 'pending'}
-              compact={compact}
-              tone="danger"
-              disabled={unsubState === 'pending'}
-              title={t('subscribe.unsubscribeHint')}
-              onClick={handleUnsubscribeClick}
-            />
-          )}
-          <SteamAction id={wallpaper.id} compact={compact} />
-          <CardAction
-            icon={FolderOpen}
-            label={t('common.open')}
-            compact={compact}
-            disabled={!wallpaper.localPath}
-            title={wallpaper.localPath ? t('library.openFolder') : t('library.noLocalFiles')}
-            onClick={handleOpenLocally}
-          />
+        <div className={clsx('flex items-center justify-center', tiny ? 'mt-1.5' : 'mt-2', tiny ? 'gap-0.5' : compact ? 'gap-1' : 'gap-2')}>
+          {actionButtons}
         </div>
       </div>
 
@@ -378,7 +463,7 @@ export default function WallpaperCard({
                   ? t('play.installFirst')
                   : t('play.wallpaper')
           }
-          onClick={handleApply}
+          onClick={() => void handleApply()}
         />
       </div>
     </GridCard>

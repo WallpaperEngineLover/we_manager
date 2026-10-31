@@ -63,7 +63,7 @@ beforeEach(() => {
   unsubscribe.mockClear()
 })
 
-afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }))
+afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }) })
 
 describe('transferWallpapers', () => {
   it('copies without touching the entry or the original', async () => {

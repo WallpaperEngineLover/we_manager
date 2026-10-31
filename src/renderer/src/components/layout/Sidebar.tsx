@@ -42,14 +42,14 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
   return (
     <aside className="flex w-14 flex-col items-center gap-1.5 border-r border-fg/5 bg-chrome py-3">
       {items.map(({ id, label, icon }) => (
-        <NavButton key={id} active={activeView === id} label={label} icon={icon} onClick={() => onNavigate(id)} />
+        <NavButton key={id} active={activeView === id} label={label} icon={icon} onClick={() => { onNavigate(id) }} />
       ))}
       <div className="flex-1" />
       <NavButton
         active={activeView === 'settings'}
         label={t('nav.settings')}
         icon={Settings}
-        onClick={() => onNavigate('settings')}
+        onClick={() => { onNavigate('settings') }}
       />
     </aside>
   )

@@ -14,15 +14,13 @@ export function setDependencyInstaller(fn: DependencyInstaller): void {
   installer = fn
 }
 
-export function getMissingDependency(wallpaper: WallpaperMeta): string | null {
+function getMissingDependency(wallpaper: WallpaperMeta): string | null {
   if (!wallpaper.localPath) return null
 
   try {
-    const project = JSON.parse(fs.readFileSync(path.join(wallpaper.localPath, 'project.json'), 'utf8'))
+    const project = JSON.parse(fs.readFileSync(path.join(wallpaper.localPath, 'project.json'), 'utf8')) as { dependency?: unknown } | null
     const dependency = project?.dependency
-    if (dependency === undefined || dependency === null || dependency === '') return null
-
-    const dependencyId = String(dependency)
+    const dependencyId = typeof dependency === 'string' || typeof dependency === 'number' ? String(dependency) : ''
     if (!/^\d+$/.test(dependencyId)) return null
 
     const baseDir = path.join(path.dirname(path.resolve(wallpaper.localPath)), dependencyId)

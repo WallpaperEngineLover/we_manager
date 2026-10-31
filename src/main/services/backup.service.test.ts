@@ -57,7 +57,7 @@ beforeEach(() => {
   wallpapers.clear()
 })
 
-afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }))
+afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }) })
 
 describe('backupWallpaper', () => {
   it('copies, verifies and leaves no staging folder behind', async () => {
@@ -166,7 +166,7 @@ describe('interrupted copies', () => {
       return copyFile(...args)
     })
     const running = backup.backupWallpaper('123', source, win)
-    await vi.waitFor(() => expect(fs.existsSync(partial())).toBe(true))
+    await vi.waitFor(() => { expect(fs.existsSync(partial())).toBe(true) })
     await backup.scanBackupFolder()
     expect(fs.existsSync(partial())).toBe(true)
     await expect(backup.backupWallpaper('123', source, win)).rejects.toThrow(/already being written/)

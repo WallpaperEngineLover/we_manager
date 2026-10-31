@@ -48,7 +48,7 @@ export default function PlaylistItemRow({
   return (
     <div
       draggable
-      onDragStart={() => onDragStart(index)}
+      onDragStart={() => { onDragStart(index) }}
       onDragOver={(e) => {
         e.preventDefault()
         onDragOver(index)
@@ -101,7 +101,7 @@ export default function PlaylistItemRow({
           </p>
         </button>
         <button
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => { setExpanded((v) => !v) }}
           title={t('playlist.overrides')}
           className="rounded p-1.5 text-gray-500 hover:bg-fg/5 hover:text-gray-300"
         >
@@ -126,13 +126,13 @@ export default function PlaylistItemRow({
               min={0}
               max={100}
               value={item.volume ?? defaultVolume}
-              onChange={(e) => onUpdate({ volume: Number(e.target.value) })}
+              onChange={(e) => { onUpdate({ volume: Number(e.target.value) }); }}
               className="w-24 accent-accent-500"
             />
             <span className="w-8 text-gray-300">{item.volume ?? defaultVolume}</span>
             {item.volume !== undefined && (
               <button
-                onClick={() => onUpdate({ volume: undefined })}
+                onClick={() => { onUpdate({ volume: undefined }); }}
                 className="text-gray-600 hover:text-gray-300"
               >
                 {t('common.reset')}

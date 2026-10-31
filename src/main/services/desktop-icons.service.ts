@@ -117,8 +117,8 @@ export function installDesktopIconsDependencies(): Promise<{ ok: boolean; error?
       if (err) {
         // 126 and 127 are pkexec's dismissed and not-authorized codes
         const code = (err as { code?: number }).code
-        if (code === 126 || code === 127) return resolve({ ok: false, error: 'cancelled' })
-        return resolve({ ok: false, error: stderr.trim().split('\n').slice(-4).join('\n') || err.message })
+        if (code === 126 || code === 127) { resolve({ ok: false, error: 'cancelled' }); return; }
+        resolve({ ok: false, error: stderr.trim().split('\n').slice(-4).join('\n') || err.message }); return;
       }
       startFailure = null
       if (getDesktopIconsEnabled()) startDesktopIconsOverlay()
@@ -229,7 +229,7 @@ export function getDesktopIconsStatus(): DesktopIconsStatus {
   return { enabled }
 }
 
-export function startDesktopIconsOverlay(): void {
+function startDesktopIconsOverlay(): void {
   stopDesktopIconsOverlay()
   startFailure = null
 
@@ -296,7 +296,7 @@ export function startDesktopIconsOverlay(): void {
   console.log(`[DesktopIcons] Started ${targets.length} overlay(s)`)
 }
 
-export function stopDesktopIconsOverlay(): void {
+function stopDesktopIconsOverlay(): void {
   for (const child of overlayProcesses) {
     try {
       child.kill('SIGTERM')
@@ -317,7 +317,7 @@ export function setDesktopIconsEnabled(enabled: boolean): void {
 }
 
 /** The engine and the overlay share the bottom layer and the later surface is drawn on top, so the overlay has to map after the wallpaper */
-export function raiseDesktopIconsOverlay(): void {
+function raiseDesktopIconsOverlay(): void {
   if (getDesktopIconsEnabled()) startDesktopIconsOverlay()
 }
 

@@ -7,7 +7,7 @@ import { trimmedVideoLength, videoSegmentsOf } from '@shared/videoTrim'
 import { getPlaylist } from './playlist.service'
 import { getWallpaper, updateWallpaper } from './library.service'
 import { getLweStatus, ALL_SCREENS } from './lwe.service'
-import { getAutostartPlaylistId } from './config.service'
+import { getAutostartPlaylistId, getSkipPlaylistResume } from './config.service'
 import { getFavoriteItemIds } from './steam.service'
 import { expandScreen, getDisplayTargets, setBusyWallpaperSource, setPlaylistRecovery, showWallpaper } from './display.service'
 import { findWallpaperVideoFile, getVideoDurationSec } from '../utils/video'
@@ -375,10 +375,6 @@ export function getPlaybackState(): PlaylistPlaybackState {
   return states.find((s) => s.isPlaying) ?? states[0] ?? idleState(ALL_SCREENS)
 }
 
-export function isPlayingOn(screen: ScreenTarget): boolean {
-  return selectPlayers(screen).some((p) => p.state.isPlaying)
-}
-
 function savedPlayers(): Record<ScreenTarget, SavedPlayer> {
   const saved = store.get('players')
   if (saved) return saved
@@ -404,7 +400,7 @@ export function initPlaylistPlayer(window: BrowserWindow): boolean {
 
   let resumed = false
   const targets = getDisplayTargets()
-  for (const [screen, saved] of Object.entries(savedPlayers())) {
+  for (const [screen, saved] of Object.entries(getSkipPlaylistResume() ? {} : savedPlayers())) {
     const playlist = getPlaylist(saved.playlistId)
     if (!playlist || playlist.items.length === 0 || !targets.includes(screen)) continue
 

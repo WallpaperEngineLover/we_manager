@@ -39,10 +39,10 @@ function watchNewFolders(
         if (meta && watcherWin && !watcherWin.isDestroyed()) {
           watcherWin.webContents.send(IpcChannels.EVENT_WALLPAPER_IMPORTED, meta)
         }
-      })
+      }).catch((err: unknown) => { console.error(`[Watcher] Import of ${filename} failed:`, err) })
     }, 1000)
   })
-  watcher.on('error', (err) => console.warn(`[Watcher] ${watchPath}: ${err.message}`))
+  watcher.on('error', (err) => { console.warn(`[Watcher] ${watchPath}: ${err.message}`) })
   activeWatchers.push(watcher)
 }
 

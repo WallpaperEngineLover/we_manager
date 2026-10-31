@@ -1,12 +1,65 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { WallpaperFolder } from '@shared/types'
+import type { LweInstallProgress, WallpaperFolder } from '@shared/types'
+import { t } from '../i18n'
 
 export function useConfig() {
   return useQuery({
     queryKey: ['config'],
     queryFn: () => window.electronAPI.config.get()
   }).data
+}
+
+type AppConfigData = NonNullable<ReturnType<typeof useConfig>>
+
+export function useConfigSection<T extends object>(
+  pick: (config: AppConfigData) => T,
+  save: (section: T) => unknown
+): [T | null, (patch: Partial<T>) => void] {
+  const queryClient = useQueryClient()
+  const config = useConfig()
+  const [edited, setEdited] = useState<T | null>(null)
+  const section = edited ?? (config ? pick(config) : null)
+
+  function change(patch: Partial<T>) {
+    if (!section) return
+    const next = { ...section, ...patch }
+    setEdited(next)
+    const resync = () => queryClient.invalidateQueries({ queryKey: ['config'] })
+    void Promise.resolve(save(next)).then(resync, () => {
+      setEdited(null)
+      void resync()
+    })
+  }
+
+  return [section, change]
+}
+
+const LWE_INSTALL_PROGRESS_KEY = ['lwe-install-progress']
+
+export function useLweInstallProgress() {
+  const queryClient = useQueryClient()
+  const { data: progress = null } = useQuery<LweInstallProgress | null>({
+    queryKey: LWE_INSTALL_PROGRESS_KEY,
+    queryFn: () => null,
+    staleTime: Infinity,
+    gcTime: Infinity
+  })
+
+  function setProgress(next: LweInstallProgress) {
+    queryClient.setQueryData(LWE_INSTALL_PROGRESS_KEY, next)
+  }
+
+  async function run(start: LweInstallProgress, install: () => Promise<unknown>, failedKey: Parameters<typeof t>[0]) {
+    setProgress(start)
+    try {
+      await install()
+    } catch (err) {
+      setProgress({ stage: 'error', message: t(failedKey, { error: (err as Error).message }), percentage: 0 })
+    }
+  }
+
+  return { progress, setProgress, run }
 }
 
 export function useLweInstalled(): boolean {
@@ -77,7 +130,7 @@ export function useFolders() {
   async function moveToFolder(folderId: string, ids: string[]): Promise<void> {
     if (ids.length === 0) return
     await window.electronAPI.folders.addItems(folderId, ids)
-    refetchFolders()
+    void refetchFolders()
   }
 
   async function removeFromFolders(ids: string[]): Promise<void> {
@@ -85,7 +138,7 @@ export function useFolders() {
       const overlap = ids.filter((id) => folder.items.includes(id))
       if (overlap.length > 0) await window.electronAPI.folders.removeItems(folder.id, overlap)
     }
-    refetchFolders()
+    void refetchFolders()
   }
 
   function menuState(ids: string[]): FolderMenuState {

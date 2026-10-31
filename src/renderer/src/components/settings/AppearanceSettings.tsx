@@ -42,7 +42,7 @@ function Segmented<T extends string>({
       {options.map(({ value: option, label, icon: Icon }) => (
         <button
           key={option}
-          onClick={() => onChange(option)}
+          onClick={() => { onChange(option) }}
           className={clsx(
             'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-all',
             value === option ? 'bg-card text-gray-100 shadow-sm ring-1 ring-fg/10' : 'text-gray-400 hover:text-gray-200'
@@ -80,7 +80,7 @@ export default function AppearanceSettings() {
     setDraft(next)
     applyAppearance(next, config!.windowTranslucent)
     await window.electronAPI.config.setAppearance(next)
-    queryClient.invalidateQueries({ queryKey: ['config'] })
+    void queryClient.invalidateQueries({ queryKey: ['config'] })
   }
 
   const isKde = config.desktopEnv === 'kde'
@@ -96,7 +96,7 @@ export default function AppearanceSettings() {
       </div>
 
       <div className="mt-3">
-        <Segmented options={THEMES} value={draft.theme} onChange={(theme) => save({ theme })} />
+        <Segmented options={THEMES} value={draft.theme} onChange={(theme) => void save({ theme })} />
       </div>
 
       <div className="mt-5">
@@ -108,7 +108,7 @@ export default function AppearanceSettings() {
               <button
                 key={p.name}
                 title={translatedOr(`accent.${p.name}`, p.name)}
-                onClick={() => save({ accentHue: p.hue, accentChroma: p.chroma })}
+                onClick={() => void save({ accentHue: p.hue, accentChroma: p.chroma })}
                 className={clsx(
                   'flex h-7 w-7 items-center justify-center rounded-full text-white ring-offset-2 ring-offset-app transition-transform hover:scale-110',
                   active && 'ring-2 ring-fg/60'
@@ -127,9 +127,9 @@ export default function AppearanceSettings() {
             min={0}
             max={360}
             value={draft.accentHue}
-            onChange={(e) => preview({ accentHue: Number(e.target.value), accentChroma: draft.accentChroma || 1 })}
-            onPointerUp={() => save({})}
-            onKeyUp={(e) => isRangeKey(e.key) && save({})}
+            onChange={(e) => { preview({ accentHue: Number(e.target.value), accentChroma: draft.accentChroma || 1 }); }}
+            onPointerUp={() => void save({})}
+            onKeyUp={(e) => void (isRangeKey(e.key) && save({}))}
             className="hue-slider h-2 w-full cursor-pointer appearance-none rounded-full"
             aria-label={t('appearance.accentHue')}
           />
@@ -142,7 +142,7 @@ export default function AppearanceSettings() {
           <Segmented
             options={PREVIEW_ANIMATION}
             value={draft.previewAnimation}
-            onChange={(previewAnimation) => save({ previewAnimation })}
+            onChange={(previewAnimation) => void save({ previewAnimation })}
           />
         </div>
         <p className="mt-1 text-xs text-gray-600">
@@ -160,9 +160,9 @@ export default function AppearanceSettings() {
           min={MIN_WINDOW_OPACITY}
           max={100}
           value={draft.windowOpacity}
-          onChange={(e) => preview({ windowOpacity: Number(e.target.value) })}
-          onPointerUp={() => save({})}
-          onKeyUp={(e) => isRangeKey(e.key) && save({})}
+          onChange={(e) => { preview({ windowOpacity: Number(e.target.value) }); }}
+          onPointerUp={() => void save({})}
+          onKeyUp={(e) => void (isRangeKey(e.key) && save({}))}
           className="mt-2 w-full accent-accent-500"
           aria-label={t('appearance.opacity')}
         />
@@ -174,7 +174,7 @@ export default function AppearanceSettings() {
       <label className={clsx('mt-4 flex items-center gap-3', isKde && translucent ? 'cursor-pointer' : 'cursor-default')}>
         <Toggle
           on={draft.blur && isKde}
-          onClick={() => save({ blur: !draft.blur })}
+          onClick={() => void save({ blur: !draft.blur })}
           disabled={!isKde || !translucent}
         />
         <span className="text-sm text-gray-300">{t('appearance.blur')}</span>

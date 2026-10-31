@@ -174,8 +174,42 @@ jobs:
           path: we-manager.flatpak
           if-no-files-found: error
 
+  rpm:
+    needs: we-manager
+    runs-on: ubuntu-latest
+    container: fedora:44
+    steps:
+      - name: Install the rpm tools
+        run: dnf install -y rpm-build rpmlint binutils tar xz desktop-file-utils
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: we-manager
+          path: ${{ runner.temp }}/we-manager
+
+      - name: Build the rpm from the release .deb
+        run: |
+          version=$(sed -n 's/^  "version": "\(.*\)",/\1/p' package.json)
+          sed -i "s/^Version:.*/Version:        ${version//-/\~}/; s/^%global upstream_version .*/%global upstream_version $version/" packaging/rpm/we-manager.spec
+          mkdir -p "$RUNNER_TEMP/rpm/SOURCES"
+          cp "$RUNNER_TEMP"/we-manager/*.deb "$RUNNER_TEMP/rpm/SOURCES/"
+          rpmbuild -bb --define "_topdir $RUNNER_TEMP/rpm" --define "_build_id_links none" packaging/rpm/we-manager.spec
+          mkdir -p dist-rpm
+          cp "$RUNNER_TEMP"/rpm/RPMS/x86_64/*.rpm dist-rpm/
+
+      - name: rpmlint
+        run: rpmlint -r packaging/rpm/we-manager.rpmlintrc dist-rpm/*.rpm packaging/rpm/we-manager.spec || true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: we-manager-rpm
+          path: dist-rpm/*.rpm
+          if-no-files-found: error
+
   release:
-    needs: [steamworks-vote, we-manager, flatpak]
+    needs: [steamworks-vote, we-manager, flatpak, rpm]
     if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.we-manager.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
@@ -207,7 +241,7 @@ jobs:
             notes=(--notes "> **Built without the patched steamworks.js** (its build ended with \`$STEAMWORKS_RESULT\`): likes, dislikes and favorites are not confirmed by Steam in this release.")
           fi
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes "${notes[@]}" \
-            release/*.AppImage release/*.deb $(ls release/steamworks.js-*.tgz release/*.flatpak 2>/dev/null)
+            release/*.AppImage release/*.deb $(ls release/steamworks.js-*.tgz release/*.flatpak release/*.rpm 2>/dev/null)
 
   aur:
     needs: release

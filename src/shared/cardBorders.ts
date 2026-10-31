@@ -1,7 +1,7 @@
 
 export type CardBorderKind = 'liked' | 'disliked' | 'favorite' | 'failed'
 
-export interface CardBorder {
+interface CardBorder {
   enabled: boolean
   color: string
 }

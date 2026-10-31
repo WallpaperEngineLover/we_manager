@@ -81,9 +81,11 @@ export const IpcChannels = {
   CONFIG_SET_DISABLE_PUPPET_ANIMATION: 'config:set-disable-puppet-animation',
   CONFIG_SET_SCRIPT_LIMITS: 'config:set-script-limits',
   CONFIG_SET_LEDS: 'config:set-leds',
+  CONFIG_SET_LOADER: 'config:set-loader',
   CONFIG_SET_ENGINE_FLAGS: 'config:set-engine-flags',
   CONFIG_SET_ENGINE_PRESETS: 'config:set-engine-presets',
   CONFIG_SET_DISPLAY_MODE: 'config:set-display-mode',
+  CONFIG_RESET_ENGINE_SETTINGS: 'config:reset-engine-settings',
   CONFIG_SET_DISABLED_SCREENS: 'config:set-disabled-screens',
   LWE_MIRRORED_SCREENS: 'lwe:mirrored-screens',
   CONFIG_SET_STEAM_IDENTITY: 'config:set-steam-identity',
@@ -121,6 +123,7 @@ export const IpcChannels = {
   // Tray & autostart
   CONFIG_SET_TRAY_ENABLED: 'config:set-tray-enabled',
   CONFIG_SET_KILL_LWE_ON_QUIT: 'config:set-kill-lwe-on-quit',
+  CONFIG_SET_SKIP_PLAYLIST_RESUME: 'config:set-skip-playlist-resume',
   CONFIG_SET_CARD_BORDERS: 'config:set-card-borders',
   CONFIG_SET_CARD_BADGES: 'config:set-card-badges',
   CONFIG_SET_APPEARANCE: 'config:set-appearance',
@@ -201,5 +204,3 @@ export const IpcChannels = {
   EVENT_SCHEDULE_FIRED: 'event:schedule-fired',
   EVENT_UPDATE_STATUS: 'event:update-status'
 } as const
-
-export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]

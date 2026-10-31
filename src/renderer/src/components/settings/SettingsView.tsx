@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import Toggle from '../common/Toggle'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull, Film, Globe, Shield, Bug } from 'lucide-react'
-import type { LweStatus, LwePrebuiltTarget, LweInstallProgress, LinuxDistro, SteamIdentity, DesktopIconsStatus } from '../../../../shared/types'
+import { FolderOpen, Save, Upload, Download, CheckCircle, XCircle, Loader2, Package, Trash2, Monitor, RotateCcw, Archive, LayoutGrid, Power, Skull, Film, Globe, Shield } from 'lucide-react'
+import type { LweStatus, LwePrebuiltTarget, LinuxDistro, SteamIdentity, DesktopIconsStatus } from '../../../../shared/types'
 import AutomuteIgnoreSettings from './AutomuteIgnoreSettings'
 import PerformanceSettings from './PerformanceSettings'
 import DisplaySettings from './DisplaySettings'
@@ -13,11 +13,15 @@ import AppearanceSettings from './AppearanceSettings'
 import LibraryFoldersSettings from './LibraryFoldersSettings'
 import FontSettings from './FontSettings'
 import LedSettings from './LedSettings'
+import LoaderSettings from './LoaderSettings'
 import ScheduleSettings from './ScheduleSettings'
 import UpdateSettings from './UpdateSettings'
 import DiagnosticsSettings from './DiagnosticsSettings'
+import SettingsCard from './SettingsCard'
 import SettingsTabs, { loadSettingsTab, saveSettingsTab, type SettingsTab } from './SettingsTabs'
 import CopyField from '../common/CopyField'
+import { useToast } from '../common/Toast'
+import { useLweInstallProgress } from '../../hooks/queries'
 import { t, translatedOr } from '../../i18n'
 
 const DISTRO_LABELS: Record<LinuxDistro, string> = {
@@ -29,6 +33,21 @@ const DISTRO_LABELS: Record<LinuxDistro, string> = {
 }
 
 export default function SettingsView() {
+  const queryClient = useQueryClient()
+  const [generation, setGeneration] = useState(0)
+
+  function reloadSettings() {
+    for (const key of ['config', 'display-targets', 'screen-assignments', 'playlist-playback-state']) {
+      void queryClient.invalidateQueries({ queryKey: [key] })
+    }
+    setGeneration((n) => n + 1)
+  }
+
+  return <SettingsPanels key={generation} onReset={reloadSettings} />
+}
+
+function SettingsPanels({ onReset }: { onReset: () => void }) {
+  const { showToast } = useToast()
   const [workshopPath, setWorkshopPath] = useState('')
   const [saved, setSaved] = useState(false)
   const [importStatus, setImportStatus] = useState<string | null>(null)
@@ -45,14 +64,7 @@ export default function SettingsView() {
   const [lweCmakeArgs, setLweCmakeArgs] = useState('')
   const [defaultLweRepo, setDefaultLweRepo] = useState('')
   const [repoSaved, setRepoSaved] = useState(false)
-  const queryClient = useQueryClient()
-  // in the query cache (fed by App.tsx) so progress survives navigation
-  const { data: lweProgress = null } = useQuery<LweInstallProgress | null>({
-    queryKey: ['lwe-install-progress'],
-    queryFn: () => null,
-    staleTime: Infinity,
-    gcTime: Infinity
-  })
+  const { progress: lweProgress, run: runLweInstall } = useLweInstallProgress()
   const lweInstalling = lweProgress !== null && !['done', 'error', 'installing-deps'].includes(lweProgress.stage)
   const depsInstalling = lweProgress?.stage === 'installing-deps'
   const [distro, setDistro] = useState<LinuxDistro | null>(null)
@@ -79,6 +91,7 @@ export default function SettingsView() {
 
   const [trayEnabled, setTrayEnabled] = useState(false)
   const [killLweOnQuit, setKillLweOnQuit] = useState(false)
+  const [skipPlaylistResume, setSkipPlaylistResume] = useState(false)
   const [steamIdentity, setSteamIdentityState] = useState<SteamIdentity>('wallpaper-engine')
   const [steamIdentitySaved, setSteamIdentitySaved] = useState(false)
   const [autostartSupported, setAutostartSupported] = useState(false)
@@ -112,6 +125,7 @@ export default function SettingsView() {
       setAutoUnsubscribeAfterBackup(cfg.autoUnsubscribeAfterBackup)
       setTrayEnabled(cfg.trayEnabled)
       setKillLweOnQuit(cfg.killLweOnQuit)
+      setSkipPlaylistResume(cfg.skipPlaylistResume)
       setSteamIdentityState(cfg.steamIdentity)
       setAutostartSupported(cfg.autostartSupported)
       setAutostartCompositorLine(cfg.autostartCompositorLine)
@@ -123,19 +137,19 @@ export default function SettingsView() {
       setDefaultAudioSensitivity(String(Math.round(cfg.defaultAudioSensitivity * 100)))
       setDisablePuppetAnimation(cfg.disablePuppetAnimation)
       setScriptLimits(cfg.scriptLimits)
-    })
-    window.electronAPI.lwe.status().then(setLweStatus)
-    window.electronAPI.lwe.detectDistro().then(setDistro)
-    window.electronAPI.lwe.prebuiltTarget().then(setPrebuiltTarget)
-    window.electronAPI.desktopIcons.getEnabled().then(setDesktopIconsEnabled)
-    window.electronAPI.desktopIcons.getStatus().then(setDesktopIconsStatus)
-    window.electronAPI.playlist.getAll().then((all) => setPlaylists(all.map((p) => ({ id: p.id, title: p.title }))))
-    window.electronAPI.lwe.listScreens().then(setScreens)
+    }).catch(console.error)
+    window.electronAPI.lwe.status().then(setLweStatus).catch(console.error)
+    window.electronAPI.lwe.detectDistro().then(setDistro).catch(console.error)
+    window.electronAPI.lwe.prebuiltTarget().then(setPrebuiltTarget).catch(console.error)
+    window.electronAPI.desktopIcons.getEnabled().then(setDesktopIconsEnabled).catch(console.error)
+    window.electronAPI.desktopIcons.getStatus().then(setDesktopIconsStatus).catch(console.error)
+    window.electronAPI.playlist.getAll().then((all) => { setPlaylists(all.map((p) => ({ id: p.id, title: p.title }))); }).catch(console.error)
+    window.electronAPI.lwe.listScreens().then(setScreens).catch(console.error)
   }, [])
 
   useEffect(() => {
     if (lweProgress?.stage === 'done' || lweProgress?.stage === 'error') {
-      window.electronAPI.lwe.status().then(setLweStatus)
+      window.electronAPI.lwe.status().then(setLweStatus).catch(console.error)
     }
   }, [lweProgress])
 
@@ -150,7 +164,19 @@ export default function SettingsView() {
   async function handleSave() {
     await window.electronAPI.config.setWorkshopPath(workshopPath)
     setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setTimeout(() => { setSaved(false) }, 2000)
+  }
+
+  async function handleResetEngineSettings() {
+    if (!confirm(t('settings.resetConfirm'))) return
+    try {
+      await window.electronAPI.config.resetEngineSettings()
+    } catch {
+      showToast(t('settings.resetFailed'), { warning: true })
+      return
+    }
+    onReset()
+    showToast(t('settings.resetDone'))
   }
 
   async function handleImportConfig() {
@@ -167,70 +193,47 @@ export default function SettingsView() {
     }
   }
 
-  function setLweProgress(progress: LweInstallProgress) {
-    queryClient.setQueryData(['lwe-install-progress'], progress)
+  function handleInstallDeps() {
+    return runLweInstall(
+      { stage: 'installing-deps', message: t('lwe.startingDeps'), percentage: 0 },
+      () => window.electronAPI.lwe.installDeps(),
+      'lwe.depsFailed'
+    )
   }
 
-  async function handleInstallDeps() {
-    setLweProgress({ stage: 'installing-deps', message: t('lwe.startingDeps'), percentage: 0 })
-    try {
-      await window.electronAPI.lwe.installDeps()
-    } catch (err) {
-      setLweProgress({
-        stage: 'error',
-        message: t('lwe.depsFailed', { error: (err as Error).message }),
-        percentage: 0
-      })
-    }
-  }
-
-  async function handleInstallLibnode() {
-    setLweProgress({ stage: 'installing-deps', message: t('lwe.lookingUpLibnode'), percentage: 0 })
-    try {
-      await window.electronAPI.lwe.installLibnode()
-    } catch (err) {
-      setLweProgress({
-        stage: 'error',
-        message: t('lwe.libnodeFailed', { error: (err as Error).message }),
-        percentage: 0
-      })
-    }
+  function handleInstallLibnode() {
+    return runLweInstall(
+      { stage: 'installing-deps', message: t('lwe.lookingUpLibnode'), percentage: 0 },
+      () => window.electronAPI.lwe.installLibnode(),
+      'lwe.libnodeFailed'
+    )
   }
 
   async function handleSaveRepo() {
     await window.electronAPI.config.setLweRepo(lweRepoUrl.trim() || null, lweRepoBranch.trim() || null)
     await window.electronAPI.config.setLweCmakeArgs(lweCmakeArgs.trim() || null)
     setRepoSaved(true)
-    setTimeout(() => setRepoSaved(false), 2000)
+    setTimeout(() => { setRepoSaved(false) }, 2000)
   }
 
-  async function handleInstallLwe() {
-    setLweProgress({ stage: 'cloning', message: t('lwe.startingInstall'), percentage: 0 })
-    try {
-      // the build uses what's on screen
-      await window.electronAPI.config.setLweRepo(lweRepoUrl.trim() || null, lweRepoBranch.trim() || null)
-      await window.electronAPI.config.setLweCmakeArgs(lweCmakeArgs.trim() || null)
-      await window.electronAPI.lwe.install()
-    } catch (err) {
-      setLweProgress({
-        stage: 'error',
-        message: t('lwe.installFailed', { error: (err as Error).message }),
-        percentage: 0
-      })
-    }
+  function handleInstallLwe() {
+    return runLweInstall(
+      { stage: 'cloning', message: t('lwe.startingInstall'), percentage: 0 },
+      async () => {
+        await window.electronAPI.config.setLweRepo(lweRepoUrl.trim() || null, lweRepoBranch.trim() || null)
+        await window.electronAPI.config.setLweCmakeArgs(lweCmakeArgs.trim() || null)
+        await window.electronAPI.lwe.install()
+      },
+      'lwe.installFailed'
+    )
   }
 
-  async function handleInstallPrebuilt() {
-    setLweProgress({ stage: 'downloading', message: t('lwe.startingDownload'), percentage: 0 })
-    try {
-      await window.electronAPI.lwe.installPrebuilt()
-    } catch (err) {
-      setLweProgress({
-        stage: 'error',
-        message: t('lwe.installFailed', { error: (err as Error).message }),
-        percentage: 0
-      })
-    }
+  function handleInstallPrebuilt() {
+    return runLweInstall(
+      { stage: 'downloading', message: t('lwe.startingDownload'), percentage: 0 },
+      () => window.electronAPI.lwe.installPrebuilt(),
+      'lwe.installFailed'
+    )
   }
 
   async function handleUninstallLwe() {
@@ -240,7 +243,7 @@ export default function SettingsView() {
     try {
       const result = await window.electronAPI.lwe.uninstall()
       setUninstallMsg(result.message)
-      window.electronAPI.lwe.status().then(setLweStatus)
+      window.electronAPI.lwe.status().then(setLweStatus).catch(console.error)
     } catch (err) {
       setUninstallMsg(t('lwe.uninstallFailed', { error: (err as Error).message }))
     } finally {
@@ -266,7 +269,7 @@ export default function SettingsView() {
     if (parsed !== null && (isNaN(parsed) || parsed < 1)) return
     await window.electronAPI.config.setDefaultFps(parsed)
     setFpsSaved(true)
-    setTimeout(() => setFpsSaved(false), 2000)
+    setTimeout(() => { setFpsSaved(false) }, 2000)
   }
 
   async function handleRecommendedFpsToggle() {
@@ -286,7 +289,7 @@ export default function SettingsView() {
     setResetFpsConfirm(false)
     const result = await window.electronAPI.library.resetFpsOverrides()
     setResetFpsMsg(t('settings.resetFpsDone', { count: result.count }))
-    setTimeout(() => setResetFpsMsg(null), 3000)
+    setTimeout(() => { setResetFpsMsg(null) }, 3000)
   }
 
   async function handleDesktopIconsToggle() {
@@ -295,7 +298,7 @@ export default function SettingsView() {
     await window.electronAPI.desktopIcons.setEnabled(newVal)
     setDesktopIconsStatus(await window.electronAPI.desktopIcons.getStatus())
     // a missing module only shows once the overlay process has run
-    setTimeout(() => window.electronAPI.desktopIcons.getStatus().then(setDesktopIconsStatus), 3000)
+    setTimeout(() => void window.electronAPI.desktopIcons.getStatus().then(setDesktopIconsStatus).catch(console.error), 3000)
   }
 
   async function handleDesktopIconsInstall() {
@@ -303,7 +306,7 @@ export default function SettingsView() {
     const result = await window.electronAPI.desktopIcons.installDeps()
     setDesktopIconsInstall({ busy: false, error: result.ok ? undefined : result.error })
     setDesktopIconsStatus(await window.electronAPI.desktopIcons.getStatus())
-    setTimeout(() => window.electronAPI.desktopIcons.getStatus().then(setDesktopIconsStatus), 3000)
+    setTimeout(() => void window.electronAPI.desktopIcons.getStatus().then(setDesktopIconsStatus).catch(console.error), 3000)
   }
 
   async function handleBrowseBackup() {
@@ -317,7 +320,7 @@ export default function SettingsView() {
   async function handleSaveBackup() {
     await window.electronAPI.config.setBackupPath(backupPath)
     setBackupSaved(true)
-    setTimeout(() => setBackupSaved(false), 2000)
+    setTimeout(() => { setBackupSaved(false) }, 2000)
   }
 
   async function handleAutoUnsubscribeToggle() {
@@ -338,6 +341,12 @@ export default function SettingsView() {
     await window.electronAPI.config.setKillLweOnQuit(newVal)
   }
 
+  async function handleSkipPlaylistResumeToggle() {
+    const newVal = !skipPlaylistResume
+    setSkipPlaylistResume(newVal)
+    await window.electronAPI.config.setSkipPlaylistResume(newVal)
+  }
+
   async function handleScriptLimitsToggle() {
     const newVal = !scriptLimits
     setScriptLimits(newVal)
@@ -354,7 +363,7 @@ export default function SettingsView() {
     setSteamIdentityState(identity)
     await window.electronAPI.config.setSteamIdentity(identity)
     setSteamIdentitySaved(true)
-    setTimeout(() => setSteamIdentitySaved(false), 3000)
+    setTimeout(() => { setSteamIdentitySaved(false) }, 3000)
   }
 
   async function handleAudioScreenChange(screen: string | null) {
@@ -380,7 +389,7 @@ export default function SettingsView() {
       await window.electronAPI.lwe.hotswapSettings({ ambientVolume: parsed })
     }
     setAmbientVolumeSaved(true)
-    setTimeout(() => setAmbientVolumeSaved(false), 2000)
+    setTimeout(() => { setAmbientVolumeSaved(false) }, 2000)
   }
 
   async function handleSaveDefaultAudioSensitivity() {
@@ -392,7 +401,7 @@ export default function SettingsView() {
 
     await window.electronAPI.lwe.hotswapSettings({ audioSensitivity: { '*': multiplier } })
     setDefaultAudioSensitivitySaved(true)
-    setTimeout(() => setDefaultAudioSensitivitySaved(false), 2000)
+    setTimeout(() => { setDefaultAudioSensitivitySaved(false) }, 2000)
   }
 
   async function saveAutostart(patch: {
@@ -426,7 +435,7 @@ export default function SettingsView() {
         <h2 className="mb-6 text-lg font-semibold text-gray-100 md:hidden">{t('nav.settings')}</h2>
 
         {tab === 'appearance' && (
-          <div className="max-w-lg space-y-8">
+          <div className="settings-sections max-w-lg">
             <AppearanceSettings />
 
             <CardBorderSettings />
@@ -436,7 +445,7 @@ export default function SettingsView() {
         )}
 
         {tab === 'library' && (
-          <div className="max-w-lg space-y-8">
+          <div className="settings-sections max-w-lg">
             <div>
               <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
                 {t('setup.workshopFolder')}
@@ -455,7 +464,7 @@ export default function SettingsView() {
                   className="flex-1 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                 />
                 <button
-                  onClick={handleBrowse}
+                  onClick={() => void handleBrowse()}
                   className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
                 >
                   <FolderOpen size={16} />
@@ -463,7 +472,7 @@ export default function SettingsView() {
                 </button>
               </div>
               <button
-                onClick={handleSave}
+                onClick={() => void handleSave()}
                 disabled={!workshopPath}
                 className="mt-3 flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
               >
@@ -477,6 +486,8 @@ export default function SettingsView() {
             <FontSettings />
 
             <LedSettings />
+
+            <LoaderSettings />
 
             <div>
               <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
@@ -497,7 +508,7 @@ export default function SettingsView() {
                   className="flex-1 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                 />
                 <button
-                  onClick={handleBrowseBackup}
+                  onClick={() => void handleBrowseBackup()}
                   className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
                 >
                   <FolderOpen size={16} />
@@ -505,7 +516,7 @@ export default function SettingsView() {
                 </button>
               </div>
               <button
-                onClick={handleSaveBackup}
+                onClick={() => void handleSaveBackup()}
                 disabled={!backupPath}
                 className="mt-3 flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
               >
@@ -514,7 +525,7 @@ export default function SettingsView() {
               </button>
 
               <label className="mt-4 flex items-center gap-3 cursor-pointer">
-                <Toggle on={autoUnsubscribeAfterBackup} onClick={handleAutoUnsubscribeToggle} />
+                <Toggle on={autoUnsubscribeAfterBackup} onClick={() => void handleAutoUnsubscribeToggle()} />
                 <span className="flex items-center gap-2 text-sm text-gray-300">
                   <Archive size={16} />
                   {t('settings.autoUnsubscribe')}
@@ -532,7 +543,7 @@ export default function SettingsView() {
 
               <div className="mt-3 flex rounded-lg overflow-hidden text-sm w-fit">
                 <button
-                  onClick={() => handleSteamIdentityChange('wallpaper-engine')}
+                  onClick={() => void handleSteamIdentityChange('wallpaper-engine')}
                   className={`flex items-center gap-2 px-3 py-2 transition-colors ${
                     steamIdentity === 'wallpaper-engine'
                       ? 'bg-accent-600 text-white'
@@ -543,7 +554,7 @@ export default function SettingsView() {
                   {t('settings.steamWe')}
                 </button>
                 <button
-                  onClick={() => handleSteamIdentityChange('standalone')}
+                  onClick={() => void handleSteamIdentityChange('standalone')}
                   className={`flex items-center gap-2 px-3 py-2 transition-colors ${
                     steamIdentity === 'standalone'
                       ? 'bg-accent-600 text-white'
@@ -573,7 +584,7 @@ export default function SettingsView() {
         )}
 
         {tab === 'engine' && (
-          <div className="max-w-lg space-y-8">
+          <div className="settings-sections max-w-lg">
             <div>
               <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
                 linux-wallpaperengine
@@ -615,7 +626,7 @@ export default function SettingsView() {
                   <div className="flex flex-wrap gap-2">
                     {prebuiltTarget?.supported && (
                       <button
-                        onClick={handleInstallPrebuilt}
+                        onClick={() => void handleInstallPrebuilt()}
                         disabled={isBusy}
                         className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
                       >
@@ -635,7 +646,7 @@ export default function SettingsView() {
                     )}
                     {lweStatus.installed && !engineManaged && !lweStatus.managedBy && (
                       <button
-                        onClick={handleUninstallLwe}
+                        onClick={() => void handleUninstallLwe()}
                         disabled={isBusy}
                         className="flex items-center gap-2 rounded-lg bg-red-600/20 px-4 py-2 text-sm text-red-400 hover:bg-red-600/30 disabled:opacity-50"
                       >
@@ -661,7 +672,7 @@ export default function SettingsView() {
 
               {!engineManaged && (
                 <button
-                  onClick={() => setShowSourceBuild(!sourceBuildVisible)}
+                  onClick={() => { setShowSourceBuild(!sourceBuildVisible) }}
                   className="mt-4 text-xs text-gray-400 hover:text-gray-200"
                 >
                   {sourceBuildVisible ? '▾' : '▸'} {t('lwe.buildFromSource')}
@@ -690,7 +701,7 @@ export default function SettingsView() {
                       className="w-44 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                     />
                     <button
-                      onClick={handleSaveRepo}
+                      onClick={() => void handleSaveRepo()}
                       className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
                     >
                       <Save size={14} />
@@ -717,7 +728,7 @@ export default function SettingsView() {
 
                   <div className="flex flex-wrap gap-2 pt-1">
                     <button
-                      onClick={handleInstallDeps}
+                      onClick={() => void handleInstallDeps()}
                       disabled={isBusy || !distro || distro === 'unknown'}
                       title={
                         !distro || distro === 'unknown'
@@ -736,7 +747,7 @@ export default function SettingsView() {
 
                     {libnodeNeeded && (
                       <button
-                        onClick={handleInstallLibnode}
+                        onClick={() => void handleInstallLibnode()}
                         disabled={isBusy}
                         title={t('lwe.installLibnodeHint')}
                         className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
@@ -747,7 +758,7 @@ export default function SettingsView() {
                     )}
 
                     <button
-                      onClick={handleInstallLwe}
+                      onClick={() => void handleInstallLwe()}
                       disabled={isBusy}
                       className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
                     >
@@ -797,7 +808,7 @@ export default function SettingsView() {
 
               <div className="mt-4">
                 <button
-                  onClick={handleKillAllLwe}
+                  onClick={() => void handleKillAllLwe()}
                   disabled={killingLwe}
                   className="flex items-center gap-2 rounded-lg bg-red-600/20 px-4 py-2 text-sm text-red-400 hover:bg-red-600/30 disabled:opacity-50"
                 >
@@ -816,11 +827,16 @@ export default function SettingsView() {
                 )}
 
                 <label className="mt-3 flex items-center gap-3 cursor-pointer">
-                  <Toggle on={killLweOnQuit} onClick={handleKillLweOnQuitToggle} />
+                  <Toggle on={killLweOnQuit} onClick={() => void handleKillLweOnQuitToggle()} />
                   <span className="flex items-center gap-2 text-sm text-gray-300">
                     <Skull size={16} />
                     {t('settings.killOnQuit')}
                   </span>
+                </label>
+
+                <label className="mt-3 flex items-center gap-3 cursor-pointer">
+                  <Toggle on={skipPlaylistResume} onClick={() => void handleSkipPlaylistResumeToggle()} />
+                  <span className="text-sm text-gray-300">{t('settings.skipPlaylistResume')}</span>
                 </label>
               </div>
             </div>
@@ -846,11 +862,11 @@ export default function SettingsView() {
                       placeholder={t('settings.unlimited')}
                       value={defaultFps}
                       onChange={(e) => { setDefaultFps(e.target.value); setFpsSaved(false) }}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSaveDefaultFps()}
+                      onKeyDown={(e) => void (e.key === 'Enter' && handleSaveDefaultFps())}
                       className="w-28 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                     />
                     <button
-                      onClick={handleSaveDefaultFps}
+                      onClick={() => void handleSaveDefaultFps()}
                       className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
                     >
                       <Save size={14} />
@@ -860,7 +876,7 @@ export default function SettingsView() {
                 </div>
                 <div>
                   <label className="mt-1 flex items-center gap-3 cursor-pointer">
-                    <Toggle on={recommendedFpsEnabled} onClick={handleRecommendedFpsToggle} />
+                    <Toggle on={recommendedFpsEnabled} onClick={() => void handleRecommendedFpsToggle()} />
                     <span className="flex items-center gap-2 text-sm text-gray-300">
                       <Film size={16} />
                       {t('settings.recommendedVideo')}
@@ -872,7 +888,7 @@ export default function SettingsView() {
                 </div>
                 <div>
                   <label className="mt-1 flex items-center gap-3 cursor-pointer">
-                    <Toggle on={recommendedWebFpsEnabled} onClick={handleRecommendedWebFpsToggle} />
+                    <Toggle on={recommendedWebFpsEnabled} onClick={() => void handleRecommendedWebFpsToggle()} />
                     <span className="flex items-center gap-2 text-sm text-gray-300">
                       <Globe size={16} />
                       {t('settings.recommendedWeb')}
@@ -891,13 +907,13 @@ export default function SettingsView() {
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-400">{t('settings.areYouSure')}</span>
                       <button
-                        onClick={handleResetFpsOverrides}
+                        onClick={() => void handleResetFpsOverrides()}
                         className="rounded-lg bg-red-600/80 px-3 py-1.5 text-xs text-white hover:bg-red-600"
                       >
                         {t('settings.resetAllConfirm')}
                       </button>
                       <button
-                        onClick={() => setResetFpsConfirm(false)}
+                        onClick={() => { setResetFpsConfirm(false) }}
                         className="rounded-lg bg-fg/5 px-3 py-1.5 text-xs text-gray-400 hover:bg-fg/10"
                       >
                         {t('common.cancel')}
@@ -905,7 +921,7 @@ export default function SettingsView() {
                     </div>
                   ) : (
                     <button
-                      onClick={handleResetFpsOverrides}
+                      onClick={() => void handleResetFpsOverrides()}
                       className="flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
                     >
                       <RotateCcw size={14} />
@@ -927,7 +943,7 @@ export default function SettingsView() {
                 {t('settings.weConfigHint')}
               </p>
               <button
-                onClick={handleImportConfig}
+                onClick={() => void handleImportConfig()}
                 className="mt-3 flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10"
               >
                 <Upload size={14} />
@@ -946,7 +962,7 @@ export default function SettingsView() {
                 {t('settings.desktopIconsHint')}
               </p>
               <label className="mt-3 flex items-center gap-3 cursor-pointer">
-                <Toggle on={desktopIconsEnabled} onClick={handleDesktopIconsToggle} />
+                <Toggle on={desktopIconsEnabled} onClick={() => void handleDesktopIconsToggle()} />
                 <span className="flex items-center gap-2 text-sm text-gray-300">
                   <Monitor size={16} />
                   {desktopIconsEnabled ? t('settings.desktopIconsOn') : t('settings.desktopIconsOff')}
@@ -963,7 +979,7 @@ export default function SettingsView() {
               )}
               {desktopIconsStatus?.command && (
                 <button
-                  onClick={handleDesktopIconsInstall}
+                  onClick={() => void handleDesktopIconsInstall()}
                   disabled={desktopIconsInstall.busy}
                   className="mt-2 flex items-center gap-2 rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10 disabled:opacity-50"
                 >
@@ -978,35 +994,11 @@ export default function SettingsView() {
                 </p>
               )}
             </div>
-
-            <div>
-              <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-                {t('settings.troubleshooting')}
-              </label>
-              <p className="mt-1 text-xs text-gray-600">
-                {t('settings.puppetHint')}
-              </p>
-              <label className="mt-3 flex items-center gap-3 cursor-pointer">
-                <Toggle on={disablePuppetAnimation} onClick={handleDisablePuppetAnimationToggle} />
-                <span className="flex items-center gap-2 text-sm text-gray-300">
-                  <Bug size={16} />
-                  {t('settings.puppet')}
-                </span>
-              </label>
-              <label className="mt-3 flex items-center gap-3 cursor-pointer">
-                <Toggle on={scriptLimits} onClick={handleScriptLimitsToggle} />
-                <span className="flex items-center gap-2 text-sm text-gray-300">
-                  <Bug size={16} />
-                  {t('settings.scriptLimits')}
-                </span>
-              </label>
-              <p className="mt-1 text-xs text-gray-600">{t('settings.scriptLimitsHint')}</p>
-            </div>
           </div>
         )}
 
         {tab === 'display' && (
-          <div className="max-w-lg space-y-8">
+          <div className="settings-sections max-w-lg">
             <DisplaySettings screens={screens} />
 
             <SplitScreenSettings />
@@ -1027,7 +1019,7 @@ export default function SettingsView() {
                   <div className="flex items-center gap-2">
                     <select
                       value={audioScreen ?? ''}
-                      onChange={(e) => handleAudioScreenChange(e.target.value || null)}
+                      onChange={(e) => void handleAudioScreenChange(e.target.value || null)}
                       className="w-56 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                     >
                       <option value="">{t('settings.allScreensDefault')}</option>
@@ -1039,7 +1031,7 @@ export default function SettingsView() {
                     </select>
                     <button
                       type="button"
-                      onClick={handleRefreshScreens}
+                      onClick={() => void handleRefreshScreens()}
                       disabled={screensRefreshing}
                       className="rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 outline-none hover:bg-fg/10 disabled:opacity-50"
                       title={t('settings.redetectHint')}
@@ -1061,11 +1053,11 @@ export default function SettingsView() {
                       placeholder={t('settings.ambientPlaceholder')}
                       value={ambientVolume}
                       onChange={(e) => { setAmbientVolume(e.target.value); setAmbientVolumeSaved(false) }}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSaveAmbientVolume()}
+                      onKeyDown={(e) => void (e.key === 'Enter' && handleSaveAmbientVolume())}
                       className="w-44 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                     />
                     <button
-                      onClick={handleSaveAmbientVolume}
+                      onClick={() => void handleSaveAmbientVolume()}
                       className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
                     >
                       <Save size={14} />
@@ -1085,12 +1077,12 @@ export default function SettingsView() {
                       max={200}
                       value={defaultAudioSensitivity}
                       onChange={(e) => { setDefaultAudioSensitivity(e.target.value); setDefaultAudioSensitivitySaved(false) }}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSaveDefaultAudioSensitivity()}
+                      onKeyDown={(e) => void (e.key === 'Enter' && handleSaveDefaultAudioSensitivity())}
                       className="w-44 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                     />
                     <span className="text-sm text-gray-500">%</span>
                     <button
-                      onClick={handleSaveDefaultAudioSensitivity}
+                      onClick={() => void handleSaveDefaultAudioSensitivity()}
                       className="flex items-center gap-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
                     >
                       <Save size={14} />
@@ -1104,10 +1096,10 @@ export default function SettingsView() {
         )}
 
         {tab === 'performance' && (
-          <div className="max-w-lg space-y-8">
+          <div className="settings-sections max-w-lg">
             <PerformanceSettings
               defaultFps={defaultFps ? Number(defaultFps) : null}
-              onDefaultFpsChanged={(fps) => setDefaultFps(fps != null ? String(fps) : '')}
+              onDefaultFpsChanged={(fps) => { setDefaultFps(fps != null ? String(fps) : '') }}
             />
 
             <AutomuteIgnoreSettings />
@@ -1117,7 +1109,7 @@ export default function SettingsView() {
         )}
 
         {tab === 'system' && (
-          <div className="max-w-lg space-y-8">
+          <div className="settings-sections max-w-lg">
             <div>
               <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">
                 {t('settings.trayStartup')}
@@ -1127,7 +1119,7 @@ export default function SettingsView() {
               </p>
 
               <label className="mt-3 flex items-center gap-3 cursor-pointer">
-                <Toggle on={trayEnabled} onClick={handleTrayToggle} />
+                <Toggle on={trayEnabled} onClick={() => void handleTrayToggle()} />
                 <span className="flex items-center gap-2 text-sm text-gray-300">
                   <LayoutGrid size={16} />
                   {t('settings.trayEnable')}
@@ -1136,7 +1128,7 @@ export default function SettingsView() {
 
               <div className="mt-4 space-y-3">
                 <label className="flex items-center gap-3 cursor-pointer">
-                  <Toggle on={autostartEnabled} onClick={() => autostartSupported && saveAutostart({ enabled: !autostartEnabled })} disabled={!autostartSupported} />
+                  <Toggle on={autostartEnabled} onClick={() => void (autostartSupported && saveAutostart({ enabled: !autostartEnabled }))} disabled={!autostartSupported} />
                   <span className="flex items-center gap-2 text-sm text-gray-300">
                     <Power size={16} />
                     {t('settings.autostart')}
@@ -1159,7 +1151,7 @@ export default function SettingsView() {
                 <label className="flex items-center gap-3 cursor-pointer pl-12">
                   <Toggle
                     on={autostartMinimized}
-                    onClick={() => saveAutostart({ minimized: !autostartMinimized })}
+                    onClick={() => void saveAutostart({ minimized: !autostartMinimized })}
                     disabled={!trayEnabled || !autostartEnabled}
                   />
                   <span className="text-sm text-gray-300">
@@ -1172,7 +1164,7 @@ export default function SettingsView() {
                   <label className="block text-xs text-gray-400 mb-1">{t('settings.autoplay')}</label>
                   <select
                     value={autostartPlaylistId ?? ''}
-                    onChange={(e) => saveAutostart({ playlistId: e.target.value || null })}
+                    onChange={(e) => void saveAutostart({ playlistId: e.target.value || null })}
                     className="w-56 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
                   >
                     <option value="">{t('settings.none')}</option>
@@ -1188,8 +1180,34 @@ export default function SettingsView() {
 
             <UpdateSettings />
 
+
+          </div>
+        )}
+
+        {tab === 'troubleshooting' && (
+          <div className="settings-sections max-w-lg">
+            <SettingsCard title={t('settings.troubleshooting')} hint={t('settings.puppetHint')}>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <Toggle on={disablePuppetAnimation} onClick={() => void handleDisablePuppetAnimationToggle()} />
+                <span className="text-sm text-gray-300">{t('settings.puppet')}</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <Toggle on={scriptLimits} onClick={() => void handleScriptLimitsToggle()} />
+                <span className="text-sm text-gray-300">{t('settings.scriptLimits')}</span>
+              </label>
+              <p className="text-xs text-gray-600">{t('settings.scriptLimitsHint')}</p>
+            </SettingsCard>
+
             <DiagnosticsSettings />
 
+            <SettingsCard title={t('settings.resetTitle')} hint={t('settings.resetHint')}>
+              <button
+                onClick={() => void handleResetEngineSettings()}
+                className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-300 hover:bg-red-500/20"
+              >
+                {t('settings.resetButton')}
+              </button>
+            </SettingsCard>
           </div>
         )}
 

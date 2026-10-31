@@ -15,7 +15,7 @@ export function userFontDir(): string {
   return path.join(dataHome, 'linux-wallpaperengine', 'fonts')
 }
 
-export function isFontFile(file: string): boolean {
+function isFontFile(file: string): boolean {
   return FONT_EXTENSIONS.has(path.extname(file).toLowerCase())
 }
 

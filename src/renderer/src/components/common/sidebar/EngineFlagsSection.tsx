@@ -50,7 +50,7 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
   return (
     <div className="border-t border-fg/5 pt-3">
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setOpen((v) => !v) }}
         className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -70,7 +70,7 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
             <select
               value=""
               disabled={busy}
-              onChange={(e) => applyPreset(e.target.value)}
+              onChange={(e) => { applyPreset(e.target.value) }}
               className={`${selectClass} flex-1`}
             >
               <option value="" disabled>
@@ -84,7 +84,7 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
             </select>
             {hasEngineFlags(flags) && (
               <button
-                onClick={() => commit({ engineFlags: undefined })}
+                onClick={() => void commit({ engineFlags: undefined })}
                 disabled={busy}
                 className="rounded bg-fg/5 px-2 py-1 text-xs text-gray-400 hover:bg-fg/10 disabled:opacity-50"
               >
@@ -99,7 +99,7 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
               <select
                 value={flags[key] === undefined ? 'inherit' : onOff(flags[key])}
                 disabled={busy}
-                onChange={(e) => setFlag(key, e.target.value === 'inherit' ? undefined : e.target.value === 'on')}
+                onChange={(e) => { setFlag(key, e.target.value === 'inherit' ? undefined : e.target.value === 'on') }}
                 className={selectClass}
               >
                 <option value="inherit">{t('common.defaultValue', { value: onOffLabel(global[key]) })}</option>
@@ -116,8 +116,7 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
                 <select
                   value={flags[key] ?? 'inherit'}
                   disabled={busy}
-                  onChange={(e) =>
-                    setFlag(key, e.target.value === 'inherit' ? undefined : (e.target.value as EngineFlags[typeof key]))
+                  onChange={(e) => { setFlag(key, e.target.value === 'inherit' ? undefined : (e.target.value as EngineFlags[typeof key])) }
                   }
                   className={selectClass}
                 >
@@ -147,8 +146,7 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
             <select
               value={flags.fullscreenPause ?? 'inherit'}
               disabled={busy}
-              onChange={(e) =>
-                setFlag('fullscreenPause', e.target.value === 'inherit' ? undefined : (e.target.value as FullscreenPauseMode))
+              onChange={(e) => { setFlag('fullscreenPause', e.target.value === 'inherit' ? undefined : (e.target.value as FullscreenPauseMode)) }
               }
               className={selectClass}
             >

@@ -47,7 +47,7 @@ export default function FontNotice({ wallpaperPath, revision }: { wallpaperPath:
         ))}
       </ul>
       <button
-        onClick={handleAdd}
+        onClick={() => void handleAdd()}
         className="mt-2 flex items-center gap-1.5 rounded bg-fg/10 px-2 py-1 text-xs text-gray-300 hover:bg-fg/15"
       >
         <Type size={11} />

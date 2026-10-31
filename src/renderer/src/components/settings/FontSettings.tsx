@@ -49,7 +49,7 @@ export default function FontSettings() {
               <span className="flex-1 truncate">{font.name}</span>
               <span className="text-xs text-gray-500">{(font.size / 1024 / 1024).toFixed(1)} MB</span>
               <button
-                onClick={() => handleRemove(font.name)}
+                onClick={() => void handleRemove(font.name)}
                 title={t('fonts.remove')}
                 className="rounded p-0.5 text-gray-500 hover:bg-fg/10 hover:text-gray-200"
               >
@@ -60,7 +60,7 @@ export default function FontSettings() {
         </ul>
       )}
       <button
-        onClick={handleAdd}
+        onClick={() => void handleAdd()}
         className="mt-3 flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
       >
         <Type size={16} />

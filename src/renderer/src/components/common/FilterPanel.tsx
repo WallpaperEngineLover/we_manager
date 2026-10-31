@@ -2,15 +2,18 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import clsx from 'clsx'
 import { WE_RESOLUTION_GROUPS, setGroupSelected, type FilterItem } from '../../constants/weFilters'
+import ResizableWidth from './ResizableWidth'
 import { toggle } from '../../utils/array'
 import { t, tagLabel } from '../../i18n'
 
 
 export function FilterPanel({ children }: { children: ReactNode }) {
   return (
-    <div className="w-52 flex-shrink-0 space-y-3 overflow-y-auto border-r border-fg/5 bg-pane px-3 py-3">
-      {children}
-    </div>
+    <ResizableWidth storageKey="we-filter-panel-width" defaultWidth={208} min={160} max={400} edge="right">
+      <div className="w-full space-y-3 overflow-y-auto border-r border-fg/5 bg-pane px-3 py-3">
+        {children}
+      </div>
+    </ResizableWidth>
   )
 }
 
@@ -62,7 +65,7 @@ export function CheckGroup({ children }: { children: ReactNode }) {
   return <div className="ml-[6px] pl-2.5">{children}</div>
 }
 
-export function AllNoneButtons({ onAll, onNone }: { onAll: () => void; onNone: () => void }) {
+function AllNoneButtons({ onAll, onNone }: { onAll: () => void; onNone: () => void }) {
   return (
     <div className="flex gap-2">
       <button onClick={onAll} className="text-[10px] text-gray-600 hover:text-gray-400">{t('filters.all')}</button>
@@ -90,7 +93,7 @@ export function FilterSection({
   return (
     <div>
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setOpen((v) => !v) }}
         className="flex w-full items-center gap-1 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -131,15 +134,15 @@ export function TagFilterSection({
       title={title}
       defaultOpen={defaultOpen}
       activeCount={activeCount}
-      onAll={() => onChange(options.map((i) => i.tag))}
-      onNone={() => onChange([])}
+      onAll={() => { onChange(options.map((i) => i.tag)) }}
+      onNone={() => { onChange([]) }}
     >
       {options.map((item) => (
         <CheckItem
           key={item.tag}
           label={tagLabel(item.label)}
           checked={selected.includes(item.tag)}
-          onChange={() => onChange(toggle(selected, item.tag))}
+          onChange={() => { onChange(toggle(selected, item.tag)) }}
         />
       ))}
     </FilterSection>
@@ -164,16 +167,16 @@ export function ResolutionFilterSection({
       title={t('filters.resolution')}
       defaultOpen={false}
       activeCount={activeCount}
-      onAll={() => onChange(allTags)}
-      onNone={() => onChange([])}
+      onAll={() => { onChange(allTags) }}
+      onNone={() => { onChange([]) }}
     >
       {WE_RESOLUTION_GROUPS.map((group) => (
         <div key={group.label} className="mt-2">
           <div className="mb-0.5 flex items-center justify-between pl-0.5">
             <p className="text-xs text-gray-600">{tagLabel(group.label)}</p>
             <AllNoneButtons
-              onAll={() => onChange(setGroupSelected(selected, group, true))}
-              onNone={() => onChange(setGroupSelected(selected, group, false))}
+              onAll={() => { onChange(setGroupSelected(selected, group, true)) }}
+              onNone={() => { onChange(setGroupSelected(selected, group, false)) }}
             />
           </div>
           {group.items.map((item) => (
@@ -182,7 +185,7 @@ export function ResolutionFilterSection({
               label={tagLabel(item.label)}
               checked={selected.includes(item.tag)}
               count={counts ? (counts.get(item.tag) ?? 0) : undefined}
-              onChange={() => onChange(toggle(selected, item.tag))}
+              onChange={() => { onChange(toggle(selected, item.tag)) }}
             />
           ))}
         </div>

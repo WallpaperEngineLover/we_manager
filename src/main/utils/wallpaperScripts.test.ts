@@ -38,7 +38,45 @@ describe('plasmaWallpaperScript', () => {
   })
 })
 
+describe('plasmaWallpaperScript settings', () => {
+  it('sets the image plugin and writes into every desktop', () => {
+    const seen: { plugin?: string; group?: string[]; key?: string }[] = []
+    const make = () => {
+      const entry: { plugin?: string; group?: string[]; key?: string } = {}
+      seen.push(entry)
+      return {
+        set wallpaperPlugin(v: string) {
+          entry.plugin = v
+        },
+        set currentConfigGroup(v: string[]) {
+          entry.group = v
+        },
+        writeConfig: (key: string) => {
+          entry.key = key
+        }
+      }
+    }
+    new Function('desktops', plasmaWallpaperScript('/a.png'))(() => [make(), make(), make()])
+    expect(seen).toHaveLength(3)
+    for (const entry of seen) {
+      expect(entry).toEqual({ plugin: 'org.kde.image', group: ['Wallpaper', 'org.kde.image', 'General'], key: 'Image' })
+    }
+  })
+})
+
 describe('finderWallpaperArgs', () => {
+  it('is an osascript program with the path as argv', () => {
+    expect(finderWallpaperArgs('/x.png')).toEqual([
+      '-e',
+      'on run argv',
+      '-e',
+      'tell application "Finder" to set desktop picture to POSIX file (item 1 of argv)',
+      '-e',
+      'end run',
+      '/x.png'
+    ])
+  })
+
   it('passes the path as an argument, not inside the AppleScript', () => {
     const path = '/Users/u/a" & (do shell script "id") & ".png'
     const args = finderWallpaperArgs(path)

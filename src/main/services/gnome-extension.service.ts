@@ -12,7 +12,7 @@ import { t } from '../i18n'
 const execFileAsync = promisify(execFile)
 
 /** GNOME has no layer-shell, the engine's extension makes desktop windows. A fresh install needs a re-login */
-export const GNOME_EXTENSION_UUID = 'linux-wallpaperengine@wallpaperenginelover.github.io'
+const GNOME_EXTENSION_UUID = 'linux-wallpaperengine@wallpaperenginelover.github.io'
 const GNOME_HELPER = 'linux-wallpaperengine-gnome-helper'
 
 function userExtensionDir(): string {
@@ -21,7 +21,7 @@ function userExtensionDir(): string {
   return path.join(dataHome, 'gnome-shell', 'extensions', GNOME_EXTENSION_UUID)
 }
 
-export function bundledExtensionDir(enginePath = getLweStatus().path): string | undefined {
+function bundledExtensionDir(enginePath = getLweStatus().path): string | undefined {
   if (!enginePath) return undefined
   let real = enginePath
   try { real = fs.realpathSync(enginePath) } catch { }
@@ -31,8 +31,9 @@ export function bundledExtensionDir(enginePath = getLweStatus().path): string | 
 
 function readVersion(dir: string): string | undefined {
   try {
-    const metadata = JSON.parse(fs.readFileSync(path.join(dir, 'metadata.json'), 'utf8'))
-    return metadata['version-name'] !== undefined ? String(metadata['version-name']) : undefined
+    const metadata = JSON.parse(fs.readFileSync(path.join(dir, 'metadata.json'), 'utf8')) as Record<string, unknown>
+    const version = metadata['version-name']
+    return typeof version === 'string' || typeof version === 'number' ? String(version) : undefined
   } catch {
     return undefined
   }
@@ -54,7 +55,7 @@ async function runHost(cmd: string, args: string[]): Promise<{ ok: boolean; out:
   }
 }
 
-export function isGnomeWayland(): boolean {
+function isGnomeWayland(): boolean {
   return detectDesktopEnv() === 'gnome' && isWaylandSession()
 }
 
@@ -94,9 +95,9 @@ export function flatpakInstallCommands(hostDir: string): string[] {
   ]
 }
 
-async function flatpakDetails(bundled: string | undefined): Promise<Partial<GnomeExtensionStatus>> {
+function flatpakDetails(bundled: string | undefined): Promise<Partial<GnomeExtensionStatus>> {
   const hostDir = bundled ? toHostPath(bundled) : undefined
-  return hostDir ? { flatpakCommands: flatpakInstallCommands(hostDir) } : {}
+  return Promise.resolve(hostDir ? { flatpakCommands: flatpakInstallCommands(hostDir) } : {})
 }
 
 export async function installGnomeExtension(): Promise<{ ok: boolean; message: string; status: GnomeExtensionStatus }> {

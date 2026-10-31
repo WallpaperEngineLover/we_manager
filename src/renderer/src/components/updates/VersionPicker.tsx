@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Download, Loader2, RotateCw } from 'lucide-react'
-import type { LweInstallProgress, ReleaseChoice, UpdateStatus, UpdateTarget } from '@shared/types'
-import { UPDATE_STATUS_KEY } from '../../hooks/queries'
+import type { ReleaseChoice, UpdateStatus, UpdateTarget } from '@shared/types'
+import { UPDATE_STATUS_KEY, useLweInstallProgress } from '../../hooks/queries'
 import { currentLanguage, t } from '../../i18n'
 import { pendingProgress } from './UpdateNotice'
 
@@ -20,12 +20,7 @@ export default function VersionPicker({ target, status }: { target: UpdateTarget
   const [selected, setSelected] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { data: engineProgress = null } = useQuery<LweInstallProgress | null>({
-    queryKey: ['lwe-install-progress'],
-    queryFn: () => null,
-    staleTime: Infinity,
-    gcTime: Infinity
-  })
+  const { progress: engineProgress, run } = useLweInstallProgress()
 
   if (!canSwitch(target, status)) return null
 
@@ -62,21 +57,12 @@ export default function VersionPicker({ target, status }: { target: UpdateTarget
       queryClient.setQueryData(UPDATE_STATUS_KEY, await window.electronAPI.updates.installApp(selected))
       return
     }
-    queryClient.setQueryData(['lwe-install-progress'], {
-      stage: 'downloading',
-      message: t('lwe.startingDownload'),
-      percentage: 0
-    } satisfies LweInstallProgress)
-    try {
-      await window.electronAPI.lwe.installPrebuilt(selected)
-    } catch (err) {
-      queryClient.setQueryData(['lwe-install-progress'], {
-        stage: 'error',
-        message: t('lwe.installFailed', { error: (err as Error).message }),
-        percentage: 0
-      } satisfies LweInstallProgress)
-    }
-    queryClient.invalidateQueries({ queryKey: ['lwe-status'] })
+    await run(
+      { stage: 'downloading', message: t('lwe.startingDownload'), percentage: 0 },
+      () => window.electronAPI.lwe.installPrebuilt(selected),
+      'lwe.installFailed'
+    )
+    void queryClient.invalidateQueries({ queryKey: ['lwe-status'] })
   }
 
   function label(r: ReleaseChoice): string {
@@ -91,7 +77,7 @@ export default function VersionPicker({ target, status }: { target: UpdateTarget
       <div className="mt-1 flex flex-wrap items-center gap-2">
         {versions === null ? (
           <button
-            onClick={load}
+            onClick={() => void load()}
             disabled={loading}
             className="flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-fg/10 disabled:opacity-50"
           >
@@ -104,7 +90,7 @@ export default function VersionPicker({ target, status }: { target: UpdateTarget
           <>
             <select
               value={selected}
-              onChange={(e) => setSelected(e.target.value)}
+              onChange={(e) => { setSelected(e.target.value) }}
               disabled={busy}
               className="rounded-lg bg-fg/5 px-2 py-1.5 text-xs text-gray-300"
             >
@@ -114,7 +100,7 @@ export default function VersionPicker({ target, status }: { target: UpdateTarget
             </select>
             {!busy && (
               <button
-                onClick={install}
+                onClick={() => void install()}
                 className="flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-500"
               >
                 <Download size={12} />
@@ -134,7 +120,7 @@ export default function VersionPicker({ target, status }: { target: UpdateTarget
         )}
         {target === 'app' && appProgress?.stage === 'ready' && (
           <button
-            onClick={() => window.electronAPI.updates.restart()}
+            onClick={() => void window.electronAPI.updates.restart()}
             className="flex items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-500"
           >
             <RotateCw size={12} />
