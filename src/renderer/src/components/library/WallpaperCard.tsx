@@ -23,6 +23,7 @@ import {
   SteamAction
 } from '../common/GridCard'
 import { t, tagLabel } from '../../i18n'
+import { useApplyWallpaper } from '../../hooks/useWallpaperActions'
 
 interface WallpaperCardProps {
   wallpaper: WallpaperMeta
@@ -56,6 +57,7 @@ export default function WallpaperCard({
   onContextMenu
 }: WallpaperCardProps) {
   const { showToast } = useToast()
+  const applyWallpaper = useApplyWallpaper()
   const queryClient = useQueryClient()
   const [isApplying, setIsApplying] = useState(false)
   const [unsubState, setUnsubState] = useState<'idle' | 'confirm' | 'pending'>('idle')
@@ -106,10 +108,8 @@ export default function WallpaperCard({
     setIsApplying(true)
     setError(null)
     try {
-      await window.electronAPI.wallpaper.apply({ wallpaperId: wallpaper.id })
-      refreshLibrary()
-    } catch (err) {
-      setError((err as Error).message)
+      // no screen yet: the hook asks which monitor when per-screen mode has two or more
+      await applyWallpaper(wallpaper.id)
     } finally {
       setIsApplying(false)
     }

@@ -124,6 +124,7 @@ export const IpcChannels = {
   CONFIG_SET_TRAY_ENABLED: 'config:set-tray-enabled',
   CONFIG_SET_KILL_LWE_ON_QUIT: 'config:set-kill-lwe-on-quit',
   CONFIG_SET_SKIP_PLAYLIST_RESUME: 'config:set-skip-playlist-resume',
+  CONFIG_SET_FRESH_PROCESS_ON_PATH_CHANGE: 'config:set-fresh-process-on-path-change',
   CONFIG_SET_CARD_BORDERS: 'config:set-card-borders',
   CONFIG_SET_CARD_BADGES: 'config:set-card-badges',
   CONFIG_SET_APPEARANCE: 'config:set-appearance',

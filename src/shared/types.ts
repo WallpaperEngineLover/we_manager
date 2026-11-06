@@ -680,6 +680,7 @@ export interface AppConfigSnapshot {
   autostartPlaylistId: string | null
   killLweOnQuit: boolean
   skipPlaylistResume: boolean
+  freshProcessOnPathChange: boolean
   cardBorders: CardBorders
   cardBadges: CardBadges
   audioScreen: string | null

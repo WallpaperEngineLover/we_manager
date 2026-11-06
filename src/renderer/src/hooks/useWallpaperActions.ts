@@ -1,6 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query'
 import type { ScreenTarget } from '@shared/types'
+import { cardPlayNeedsScreenChoice } from '@shared/playScreen'
 import { useToast } from '../components/common/Toast'
+import { askPlayScreen } from '../components/common/PlayScreenPrompt'
 import { forEachIgnoringErrors } from '../utils/async'
 import { t } from '../i18n'
 
@@ -10,7 +12,19 @@ export function useApplyWallpaper(): (id: string, screen?: ScreenTarget) => Prom
 
   return async (id, screen) => {
     try {
-      await window.electronAPI.wallpaper.apply({ wallpaperId: id, screen })
+      let chosen = screen
+      if (chosen === undefined) {
+        const [cfg, targets] = await Promise.all([
+          window.electronAPI.config.get(),
+          window.electronAPI.wallpaper.getTargets()
+        ])
+        if (cardPlayNeedsScreenChoice(cfg.displayMode, targets)) {
+          const picked = await askPlayScreen(targets.filter((name) => name !== '*'))
+          if (picked === null) return
+          chosen = picked
+        }
+      }
+      await window.electronAPI.wallpaper.apply({ wallpaperId: id, screen: chosen })
       void queryClient.invalidateQueries({ queryKey: ['library'] })
     } catch (err) {
       showToast((err as Error).message)

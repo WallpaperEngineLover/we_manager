@@ -11,10 +11,10 @@ import { initDesktopIcons, cleanupDesktopIcons } from './services/desktop-icons.
 import { getTrayEnabled, getAutostartEnabled, getAutostartMinimized, getAutostartPlaylistId, getKillLweOnQuit, getConfiguredBackupPath } from './services/config.service'
 import { refreshAutostartExec } from './services/autostart.service'
 import { createTray } from './services/tray.service'
-import { initPlaylistPlayer, startPlaylist } from './services/playlist-player.service'
+import { initPlaylistPlayer, playlistRestoreSkipScreens, startPlaylist } from './services/playlist-player.service'
 import { checkEarlierRunEngines, killAllLweProcesses, getLweStatus } from './services/lwe.service'
-import { initDisplay } from './services/display.service'
-import { initSchedule } from './services/schedule.service'
+import { expandScreen, initDisplay, restoreAssignedWallpapers } from './services/display.service'
+import { catchUpScreens, initSchedule } from './services/schedule.service'
 import { initUpdates } from './services/update.service'
 import { detectDesktopEnv, hasStatusNotifierHost } from './utils/platform'
 import { needsSoftwareCompositing, readGpuVendors } from './utils/gpuWorkaround'
@@ -250,15 +250,24 @@ app.whenReady().then(async () => {
   if (getAutostartEnabled()) refreshAutostartExec(getAutostartMinimized())
 
   const autostartPlaylistId = getAutostartPlaylistId()
+  let autostartScreens: string[] = []
   if (!resumed && autostartPlaylistId && getLweStatus().installed) {
     try {
       startPlaylist(autostartPlaylistId)
+      autostartScreens = expandScreen(undefined)
     } catch (err) {
       console.error('[App] Failed to autostart playlist:', err)
     }
   }
+  const scheduleScreens = catchUpScreens().flatMap((screen) => expandScreen(screen))
   initSchedule(win)
   initUpdates(win)
+
+  // not awaited: a restore is at least 2s per screen, and its dependency dialog must not hold the tray.
+  // '*' is every current screen, same as a schedule rule for all of them
+  const playlistScreens = playlistRestoreSkipScreens().flatMap((screen) => expandScreen(screen))
+  const skip = new Set([...playlistScreens, ...autostartScreens, ...scheduleScreens])
+  void restoreAssignedWallpapers(skip).catch((err: unknown) => { console.error('[Display] Restore failed:', err) })
 }).catch((err: unknown) => { console.error('[Main] startup failed:', err) })
 
 app.on('before-quit', (event) => {

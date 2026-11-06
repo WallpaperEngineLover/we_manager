@@ -38,6 +38,8 @@ interface AppConfig {
   autostartPlaylistId: string | null
   killLweOnQuit: boolean
   skipPlaylistResume: boolean
+  /** A path change starts a new engine instead of hotswapping. Off keeps transitions. */
+  freshProcessOnPathChange: boolean
   /** Legacy, only read to migrate into cardBorders */
   voteBorders: boolean
   cardBorders: CardBorders | null
@@ -91,6 +93,7 @@ const store = openStore<AppConfig>({
     autostartPlaylistId: null,
     killLweOnQuit: false,
     skipPlaylistResume: false,
+    freshProcessOnPathChange: false,
     voteBorders: true,
     cardBorders: null,
     cardBadges: null,
@@ -197,6 +200,14 @@ export function setKillLweOnQuit(enabled: boolean): void {
 
 export function getSkipPlaylistResume(): boolean {
   return store.get('skipPlaylistResume')
+}
+
+export function getFreshProcessOnPathChange(): boolean {
+  return store.get('freshProcessOnPathChange')
+}
+
+export function setFreshProcessOnPathChange(enabled: boolean): void {
+  store.set('freshProcessOnPathChange', enabled)
 }
 
 export function setSkipPlaylistResume(enabled: boolean): void {
@@ -391,6 +402,7 @@ const RESETS_WITH_ENGINE_SETTINGS: Record<keyof AppConfig, boolean> = {
   autostartPlaylistId: false,
   killLweOnQuit: false,
   skipPlaylistResume: false,
+  freshProcessOnPathChange: false,
   voteBorders: false,
   cardBorders: false,
   cardBadges: false,
