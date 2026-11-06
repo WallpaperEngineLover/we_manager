@@ -33,12 +33,15 @@ function getMissingDependency(wallpaper: WallpaperMeta): string | null {
 // throws unless the wallpaper can go ahead, since after "Install now" the download has only just started
 export async function ensureDependencyInstalled(
   wallpaper: WallpaperMeta,
-  mode: 'always' | 'once' = 'always'
+  mode: 'always' | 'once' | 'never' = 'always'
 ): Promise<void> {
   const dependencyId = getMissingDependency(wallpaper)
   if (!dependencyId) return
 
   const title = wallpaper.title || wallpaper.id
+
+  // startup restore must not open a dialog, least of all over a minimized tray start
+  if (mode === 'never') throw new Error(t('dependency.skipped', { title, id: dependencyId }))
 
   if (mode === 'once' && alreadyAsked.has(dependencyId)) {
     throw new Error(t('dependency.skipped', { title, id: dependencyId }))

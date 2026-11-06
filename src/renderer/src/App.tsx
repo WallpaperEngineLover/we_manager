@@ -12,6 +12,7 @@ import GnomeExtensionNotice from './components/layout/GnomeExtensionNotice'
 import UpdateNotice from './components/updates/UpdateNotice'
 import GraphicsNotice from './components/layout/GraphicsNotice'
 import UpdatePrompt from './components/updates/UpdatePrompt'
+import PlayScreenPrompt from './components/common/PlayScreenPrompt'
 import { useToast } from './components/common/Toast'
 import { screenLabel } from './utils/screens'
 import { UPDATE_STATUS_KEY, useConfig } from './hooks/queries'
@@ -188,6 +189,7 @@ export default function App() {
         </div>
         <StatusBar />
         <UpdatePrompt />
+        <PlayScreenPrompt />
       </div>
     </ErrorBoundary>
   )

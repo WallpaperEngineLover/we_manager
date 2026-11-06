@@ -185,6 +185,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_KILL_LWE_ON_QUIT, enabled),
     setSkipPlaylistResume: (enabled: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_SKIP_PLAYLIST_RESUME, enabled),
+    setFreshProcessOnPathChange: (enabled: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_FRESH_PROCESS_ON_PATH_CHANGE, enabled),
     setCardBorders: (borders: CardBorders): Promise<CardBorders> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_CARD_BORDERS, borders),
     setCardBadges: (badges: CardBadges): Promise<CardBadges> =>

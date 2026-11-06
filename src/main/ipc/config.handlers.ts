@@ -42,6 +42,8 @@ import {
   setKillLweOnQuit,
   getSkipPlaylistResume,
   setSkipPlaylistResume,
+  getFreshProcessOnPathChange,
+  setFreshProcessOnPathChange,
   getCardBorders,
   getCardBadges,
   getAppearance,
@@ -126,6 +128,7 @@ export function registerConfigHandlers(): void {
     autostartPlaylistId: getAutostartPlaylistId(),
     killLweOnQuit: getKillLweOnQuit(),
     skipPlaylistResume: getSkipPlaylistResume(),
+    freshProcessOnPathChange: getFreshProcessOnPathChange(),
     cardBorders: getCardBorders(),
     cardBadges: getCardBadges(),
     audioScreen: getAudioScreen(),
@@ -181,6 +184,11 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle(IpcChannels.CONFIG_SET_SKIP_PLAYLIST_RESUME, (_e, enabled: boolean) => {
     setSkipPlaylistResume(enabled)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_FRESH_PROCESS_ON_PATH_CHANGE, (_e, enabled: boolean) => {
+    setFreshProcessOnPathChange(enabled)
     return { ok: true }
   })
 

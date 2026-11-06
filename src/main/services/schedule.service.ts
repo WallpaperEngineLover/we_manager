@@ -2,7 +2,7 @@ import { openStore } from '../utils/safeStore'
 import { nativeTheme, type BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import { IpcChannels } from '@shared/ipc-channels'
-import type { ScheduleRule } from '@shared/types'
+import type { ScheduleRule, ScreenTarget } from '@shared/types'
 import { dueTimeRules } from '@shared/schedule'
 import { getWallpaper, updateWallpaper } from './library.service'
 import { getPlaylist } from './playlist.service'
@@ -98,6 +98,14 @@ function onThemeChanged(): void {
   lastDark = dark
   const theme = dark ? 'dark' : 'light'
   void runAll(store.get('rules').filter((r) => r.enabled && r.trigger.type === 'theme' && r.trigger.theme === theme))
+}
+
+/** Screens whose catch-up rule is about to launch, so restore does not launch there as well */
+export function catchUpScreens(now = Date.now()): ScreenTarget[] {
+  const last = store.get('lastTick')
+  if (last === null || last >= now) return []
+  const from = new Date(Math.max(last, now - MAX_CATCH_UP_MS))
+  return dueTimeRules(store.get('rules'), from, new Date(now)).map((rule) => rule.screen)
 }
 
 /** Call after the playlist player resumed, so a rule that came due while closed wins over it */

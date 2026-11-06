@@ -92,6 +92,7 @@ function SettingsPanels({ onReset }: { onReset: () => void }) {
   const [trayEnabled, setTrayEnabled] = useState(false)
   const [killLweOnQuit, setKillLweOnQuit] = useState(false)
   const [skipPlaylistResume, setSkipPlaylistResume] = useState(false)
+  const [freshProcessOnPathChange, setFreshProcessOnPathChange] = useState(false)
   const [steamIdentity, setSteamIdentityState] = useState<SteamIdentity>('wallpaper-engine')
   const [steamIdentitySaved, setSteamIdentitySaved] = useState(false)
   const [autostartSupported, setAutostartSupported] = useState(false)
@@ -126,6 +127,7 @@ function SettingsPanels({ onReset }: { onReset: () => void }) {
       setTrayEnabled(cfg.trayEnabled)
       setKillLweOnQuit(cfg.killLweOnQuit)
       setSkipPlaylistResume(cfg.skipPlaylistResume)
+      setFreshProcessOnPathChange(cfg.freshProcessOnPathChange)
       setSteamIdentityState(cfg.steamIdentity)
       setAutostartSupported(cfg.autostartSupported)
       setAutostartCompositorLine(cfg.autostartCompositorLine)
@@ -345,6 +347,12 @@ function SettingsPanels({ onReset }: { onReset: () => void }) {
     const newVal = !skipPlaylistResume
     setSkipPlaylistResume(newVal)
     await window.electronAPI.config.setSkipPlaylistResume(newVal)
+  }
+
+  async function handleFreshProcessToggle() {
+    const newVal = !freshProcessOnPathChange
+    setFreshProcessOnPathChange(newVal)
+    await window.electronAPI.config.setFreshProcessOnPathChange(newVal)
   }
 
   async function handleScriptLimitsToggle() {
@@ -838,6 +846,12 @@ function SettingsPanels({ onReset }: { onReset: () => void }) {
                   <Toggle on={skipPlaylistResume} onClick={() => void handleSkipPlaylistResumeToggle()} />
                   <span className="text-sm text-gray-300">{t('settings.skipPlaylistResume')}</span>
                 </label>
+                <p className="mt-1 text-xs text-gray-600">{t('settings.skipPlaylistResumeHint')}</p>
+                <label className="mt-3 flex items-center gap-3 cursor-pointer">
+                  <Toggle on={freshProcessOnPathChange} onClick={() => void handleFreshProcessToggle()} />
+                  <span className="text-sm text-gray-300">{t('settings.freshProcessOnPathChange')}</span>
+                </label>
+                <p className="mt-1 text-xs text-gray-600">{t('settings.freshProcessOnPathChangeHint')}</p>
               </div>
             </div>
 

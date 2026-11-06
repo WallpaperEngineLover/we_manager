@@ -257,7 +257,7 @@ export async function applyWallpaperMeta(
     fps?: number
     volume?: number
     backend?: WallpaperBackend
-    dependencyPrompt?: 'always' | 'once'
+    dependencyPrompt?: 'always' | 'once' | 'never'
     screen?: ScreenTarget
     forceFresh?: boolean
   } = {}
