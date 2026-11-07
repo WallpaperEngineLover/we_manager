@@ -19,29 +19,29 @@
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.101.4",
+    "@tanstack/react-query": "^5.105.3",
     "clsx": "^2.1.1",
     "electron-store": "^12.0.0",
-    "koffi": "^3.3.5",
-    "lucide-react": "^1.63.0",
+    "koffi": "^3.3.6",
+    "lucide-react": "^1.68.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "steamworks.js": "^0.4.0"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^26.1.1",
+    "@tailwindcss/vite": "^4.3.4",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.1.2",
-    "electron": "^45.1.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "electron": "^45.2.2",
     "electron-builder": "^26.15.3",
     "electron-vite": "^6.0.0",
-    "oxlint": "^1.90.0",
+    "oxlint": "^1.91.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   },
   "build": {
     "appId": "com.we-manager.app",
