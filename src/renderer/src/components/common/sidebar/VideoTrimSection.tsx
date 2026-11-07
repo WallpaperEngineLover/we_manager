@@ -9,6 +9,7 @@ import {
   type VideoSegment
 } from '@shared/videoTrim'
 import { t } from '../../../i18n'
+import RangeInput from '../RangeInput'
 
 interface Props {
   segments: VideoSegment[]
@@ -71,16 +72,21 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
     }
   }
 
-  function slide(side: 'start' | 'end', value: number) {
-    if (!part) return
+  function slid(side: 'start' | 'end', value: number) {
+    if (!part) return null
     const end = endOf(part)
     const changed =
       side === 'start'
         ? { ...part, start: end === null ? value : Math.min(value, end - MIN_LENGTH) }
         : { ...part, end: Math.max(value, part.start + MIN_LENGTH) }
-    const next = withPart(index, changed)
-    setDraft(next)
-    onPreview(normalizeVideoSegments(next, duration), side === 'end' ? seamSeek(changed) : undefined)
+    return { changed, next: withPart(index, changed) }
+  }
+
+  function slide(side: 'start' | 'end', value: number) {
+    const moved = slid(side, value)
+    if (!moved) return
+    setDraft(moved.next)
+    onPreview(normalizeVideoSegments(moved.next, duration), side === 'end' ? seamSeek(moved.changed) : undefined)
   }
 
   function commitText(i: number, side: 'start' | 'end', text: string) {
@@ -147,19 +153,18 @@ export default function VideoTrimSection({ segments, duration, live, onCommit, o
     return (
       <div className="flex items-center gap-1.5">
         <span className="w-7 text-gray-500">{side === 'start' ? t('trim.start') : t('trim.end')}</span>
-        <input
-          type="range"
+        <RangeInput
           min={0}
           max={duration}
           step={0.1}
           value={side === 'start' ? part.start : (part.end ?? duration)}
           disabled={busy}
-          onChange={(e) => { slide(side, Number(e.target.value)) }}
-          onMouseUp={() => void (draft && commit(draft))}
-          onTouchEnd={() => void (draft && commit(draft))}
-          onKeyUp={() => void (draft && commit(draft))}
+          onLive={(next) => { slide(side, next) }}
+          onCommit={(value) => {
+            const moved = slid(side, value)
+            if (moved) void commit(moved.next)
+          }}
           title={side === 'start' ? t('trim.startHint') : t('trim.endHint')}
-          className="w-full accent-accent-500 disabled:opacity-50"
         />
       </div>
     )

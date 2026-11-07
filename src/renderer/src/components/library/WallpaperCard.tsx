@@ -108,8 +108,7 @@ export default function WallpaperCard({
     setIsApplying(true)
     setError(null)
     try {
-      // no screen yet: the hook asks which monitor when per-screen mode has two or more
-      await applyWallpaper(wallpaper.id)
+      await applyWallpaper(wallpaper.id, undefined, setError)
     } finally {
       setIsApplying(false)
     }

@@ -15,7 +15,7 @@ import {
   type EngineHistory
 } from './lwe.service'
 import { stopDisplay } from './display.service'
-import { getPlaybackStates, pausePlaylist, resumePlaylist } from './playlist-player.service'
+import { getPlaybackStates, restoreVolume, suspendPlaylist } from './playlist-player.service'
 import { detectDesktopEnv, detectDisplayServer, getConnectedScreens, runningAppImage } from '../utils/platform'
 import { hostCommand, hostAppPath, isFlatpak } from '../utils/flatpak'
 
@@ -120,7 +120,7 @@ async function restartPlaying(): Promise<string[]> {
       notes.push(`${inst.screen}: not restarted (${inst.split ? 'split screen' : 'not in the library'})`)
       continue
     }
-    await applyWallpaperMeta(wallpaper, { screen: inst.screen, forceFresh: true })
+    await applyWallpaperMeta(wallpaper, { screen: inst.screen, forceFresh: true, volume: restoreVolume(inst.screen, wallpaper.id) })
   }
   return notes
 }
@@ -213,7 +213,8 @@ async function runTarget(target: DiagnosticsTarget, seconds: number, notes: stri
   const pausedPlaylists = getPlaybackStates().filter(
     (s) => s.isPlaying && (s.screen === target.screen || s.screen === '*' || target.screen === '*')
   )
-  for (const state of pausedPlaylists) pausePlaylist(state.screen)
+  const volume = previous ? restoreVolume(target.screen, previous.id) : undefined
+  const resumes = pausedPlaylists.map((state) => suspendPlaylist(state.screen))
 
   const exits: EngineHistory[] = []
   const exit = { at: 0 }
@@ -244,12 +245,12 @@ async function runTarget(target: DiagnosticsTarget, seconds: number, notes: stri
     setDiagnosticStats(false)
     stopListening()
     try {
-      if (previous) await applyWallpaperMeta(previous, { screen: target.screen, forceFresh: true })
+      if (previous) await applyWallpaperMeta(previous, { screen: target.screen, forceFresh: true, volume })
       else await stopDisplay(target.screen)
     } catch (err) {
       notes.push(`could not restore the previous wallpaper: ${(err as Error).message}`)
     }
-    for (const state of pausedPlaylists) resumePlaylist(state.screen)
+    for (const resume of resumes) resume()
   }
   return { histories: histories.length > 0 ? histories : exits, snapshot }
 }

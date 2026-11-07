@@ -38,7 +38,6 @@ interface AppConfig {
   autostartPlaylistId: string | null
   killLweOnQuit: boolean
   skipPlaylistResume: boolean
-  /** A path change starts a new engine instead of hotswapping. Off keeps transitions. */
   freshProcessOnPathChange: boolean
   /** Legacy, only read to migrate into cardBorders */
   voteBorders: boolean
@@ -402,7 +401,7 @@ const RESETS_WITH_ENGINE_SETTINGS: Record<keyof AppConfig, boolean> = {
   autostartPlaylistId: false,
   killLweOnQuit: false,
   skipPlaylistResume: false,
-  freshProcessOnPathChange: false,
+  freshProcessOnPathChange: true,
   voteBorders: false,
   cardBorders: false,
   cardBadges: false,

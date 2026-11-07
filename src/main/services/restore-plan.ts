@@ -5,33 +5,50 @@ export interface RestoreInput {
   onDisk: boolean
   localPath: string
   running?: { split: boolean; wallpaperPath: string }
-  /** First on-disk slot a split would show, or null when this screen has no showable split */
-  splitSlotId: string | null
-  wallpaperId: string
+  /** The saved assignment is the first slot of a split that was showing */
+  splitActive: boolean
+  splitShowable: boolean
 }
 
-export type RestorePlan = 'skip' | 'split' | 'wallpaper'
+export type RestorePlan = 'skip' | 'split' | 'wait' | 'wallpaper'
 
-/** What startup should do with one saved screen. A static image and a missing folder are skipped. */
 export function planRestore(input: RestoreInput): RestorePlan {
   if (input.skipped || !input.connected) return 'skip'
   if (input.running?.split) return 'skip'
-  if (input.splitSlotId !== null && input.splitSlotId === input.wallpaperId) return 'split'
-  if (!input.animated || !input.onDisk) return 'skip'
+  if (input.splitActive && input.splitShowable) return 'split'
+  if (!input.animated) return 'skip'
   if (input.running && input.running.wallpaperPath === input.localPath) return 'skip'
+  if (!input.onDisk) return 'wait'
   return 'wallpaper'
 }
 
-/** Don't-resume skips the saved playlist screens. Otherwise only screens that actually resumed. */
 export function playlistSkipScreens(skipResume: boolean, saved: readonly string[], active: readonly string[]): string[] {
   return skipResume ? [...saved] : [...active]
+}
+
+/** players nothing touched this session stay as saved */
+export function mergePlayers<T>(
+  saved: Readonly<Record<string, T>>,
+  live: Readonly<Record<string, T>>,
+  touched: readonly string[]
+): Record<string, T> {
+  const kept: Record<string, T> = {}
+
+  for (const [screen, player] of Object.entries(saved)) {
+    if (!touched.includes(screen)) kept[screen] = player
+  }
+
+  return { ...kept, ...live }
+}
+
+export function savedScreensFor(saved: readonly string[], screen?: string): string[] {
+  return screen === undefined || screen === '*' ? [...saved] : saved.filter((name) => name === screen || name === '*')
 }
 
 export function mergeSkipScreens(...groups: readonly (readonly string[])[]): Set<string> {
   return new Set(groups.flat())
 }
 
-/** True when something else took the screen after restore read it. The newer launch stays. */
 export function restoreSuperseded(
   assignedAtStart: string,
   assignedNow: string | undefined,
@@ -39,4 +56,24 @@ export function restoreSuperseded(
   useNow: number
 ): boolean {
   return assignedNow !== assignedAtStart || useNow !== useAtStart
+}
+
+export interface SplitTry {
+  show: () => Promise<void>
+  uses: () => number
+  onError: (error: unknown) => void
+}
+
+// the try marks the screen once itself, a second mark means somebody else took it
+export async function trySplit(attempt: SplitTry): Promise<'done' | 'left' | 'failed'> {
+  const before = attempt.uses()
+
+  try {
+    await attempt.show()
+    return 'done'
+  } catch (error) {
+    attempt.onError(error)
+  }
+
+  return attempt.uses() - before <= 1 ? 'failed' : 'left'
 }

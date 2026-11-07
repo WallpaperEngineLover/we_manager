@@ -21,10 +21,9 @@ export function createRangeCommit() {
     },
     end(): number | null {
       const value = live
-      const active = dragging || value !== null
       live = null
       dragging = false
-      return active && value !== null ? value : null
+      return value
     }
   }
 }

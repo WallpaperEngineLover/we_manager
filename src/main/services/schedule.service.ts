@@ -2,11 +2,11 @@ import { openStore } from '../utils/safeStore'
 import { nativeTheme, type BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import { IpcChannels } from '@shared/ipc-channels'
-import type { ScheduleRule, ScreenTarget } from '@shared/types'
+import type { ScheduleRule } from '@shared/types'
 import { dueTimeRules } from '@shared/schedule'
 import { getWallpaper, updateWallpaper } from './library.service'
 import { getPlaylist } from './playlist.service'
-import { expandScreen, setBusyWallpaperSource, showWallpaper, stopDisplay } from './display.service'
+import { expandScreen, isShownOn, setBusyWallpaperSource, showWallpaper, stopDisplay } from './display.service'
 import { startPlaylist, stopPlaylist } from './playlist-player.service'
 
 interface ScheduleStore {
@@ -63,7 +63,9 @@ export async function runRule(rule: ScheduleRule): Promise<void> {
       if (left > 0) runningWallpapers.set(wallpaper.id, left)
       else runningWallpapers.delete(wallpaper.id)
     }
-    updateWallpaper(wallpaper.id, { appliedCount: (wallpaper.appliedCount ?? 0) + 1, lastAppliedAt: Date.now() })
+    if (isShownOn(wallpaper.id, screen)) {
+      updateWallpaper(wallpaper.id, { appliedCount: (wallpaper.appliedCount ?? 0) + 1, lastAppliedAt: Date.now() })
+    }
   } else if (action.type === 'playlist') {
     if (!getPlaylist(action.playlistId)) throw new Error('The scheduled playlist no longer exists')
     startPlaylist(action.playlistId, screen)
@@ -76,20 +78,24 @@ export async function runRule(rule: ScheduleRule): Promise<void> {
 }
 
 // one after another, a later rule for a single screen has to land after an earlier one for all of them
-async function runAll(rules: ScheduleRule[]): Promise<void> {
+async function runAll(rules: readonly ScheduleRule[]): Promise<void> {
   for (const rule of rules) {
     await runRule(rule).catch((err: unknown) => { console.error(`[Schedule] "${rule.name}" failed:`, err) })
   }
 }
 
+function dueRules(now: number): ScheduleRule[] {
+  const last = store.get('lastTick')
+  if (last === null || last >= now) return []
+  const from = new Date(Math.max(last, now - MAX_CATCH_UP_MS))
+  return dueTimeRules(store.get('rules'), from, new Date(now))
+}
+
 function tick(): void {
   const now = Date.now()
-  const last = store.get('lastTick')
+  const due = dueRules(now)
   store.set('lastTick', now)
-  if (last === null || last >= now) return
-
-  const from = new Date(Math.max(last, now - MAX_CATCH_UP_MS))
-  void runAll(dueTimeRules(store.get('rules'), from, new Date(now)))
+  void runAll(due)
 }
 
 function onThemeChanged(): void {
@@ -100,20 +106,18 @@ function onThemeChanged(): void {
   void runAll(store.get('rules').filter((r) => r.enabled && r.trigger.type === 'theme' && r.trigger.theme === theme))
 }
 
-/** Screens whose catch-up rule is about to launch, so restore does not launch there as well */
-export function catchUpScreens(now = Date.now()): ScreenTarget[] {
-  const last = store.get('lastTick')
-  if (last === null || last >= now) return []
-  const from = new Date(Math.max(last, now - MAX_CATCH_UP_MS))
-  return dueTimeRules(store.get('rules'), from, new Date(now)).map((rule) => rule.screen)
+export function takeCatchUp(now = Date.now()): ScheduleRule[] {
+  const due = dueRules(now)
+  store.set('lastTick', now)
+  return due
 }
 
-/** Call after the playlist player resumed, so a rule that came due while closed wins over it */
-export function initSchedule(window: BrowserWindow): void {
+/** Call after the playlist player resumed, so a rule that came due while closed (takeCatchUp) wins over it */
+export function initSchedule(window: BrowserWindow, catchUp: readonly ScheduleRule[]): void {
   win = window
   setBusyWallpaperSource('schedule', () => [...runningWallpapers.keys()])
   lastDark = nativeTheme.shouldUseDarkColors
   nativeTheme.on('updated', onThemeChanged)
-  tick()
+  void runAll(catchUp)
   timer ??= setInterval(tick, TICK_MS)
 }

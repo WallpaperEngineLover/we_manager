@@ -292,6 +292,7 @@ export type DisplayMode = 'shared' | 'per-screen'
 export interface ScreenAssignment {
   screen: ScreenTarget
   wallpaperId: string
+  split: boolean
 }
 
 /** How the slots of a split screen share it, see the engine's --split-layout */

@@ -4,8 +4,8 @@ import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, l
 import { getPrebuiltTarget, installLwePrebuilt } from '../services/lwe-prebuilt.service'
 import { installLibnode, libnodeNeeded } from '../services/lwe-libnode.service'
 import { addUserFonts, listUserFonts, removeUserFont } from '../services/fonts.service'
-import { stopDisplay } from '../services/display.service'
-import { stopPlaylist } from '../services/playlist-player.service'
+import { forgetAssignments, stopDisplay } from '../services/display.service'
+import { getPlaybackStates, stopPlaylist, suspendPlaylist } from '../services/playlist-player.service'
 import type { ScreenTarget } from '@shared/types'
 import { invalidateEnvCache } from '../services/wallpaper.service'
 import { refreshEngineUpdate } from '../services/update.service'
@@ -95,7 +95,15 @@ export function registerLweHandlers(win: BrowserWindow): void {
   })
 
   ipcMain.handle(IpcChannels.LWE_KILL_ALL, async () => {
-    return await killAllLweProcesses()
+    const resumes = getPlaybackStates().filter((state) => state.isPlaying).map((state) => suspendPlaylist(state.screen))
+    const result = await killAllLweProcesses()
+    if (result.ok) {
+      stopPlaylist()
+      forgetAssignments()
+    } else {
+      for (const resume of resumes) resume()
+    }
+    return result
   })
 
   ipcMain.handle(IpcChannels.LWE_LIST_OBJECTS, async (_e, wallpaperPath: string) => {

@@ -66,7 +66,7 @@ import {
   getDisabledScreens,
   getFreshProcessOnPathChange
 } from './config.service'
-import { DEFAULT_LWE_FPS, DEFAULT_LWE_REPO } from '@shared/constants'
+import { DEFAULT_ENGINE_VOLUME, DEFAULT_LWE_FPS, DEFAULT_LWE_REPO } from '@shared/constants'
 import { engineFlagArgs, filterSupportedArgs } from '@shared/engineFlags'
 import { imageAdjustmentArgs, imageAdjustmentLines, type ImageAdjustments } from '@shared/imageAdjustments'
 import { formatVideoSegments, type VideoSegment } from '@shared/videoTrim'
@@ -1042,9 +1042,13 @@ function windowedGeometry(screen?: ScreenTarget): string {
   return getScreenGeometry(screen && screen !== ALL_SCREENS ? screen : undefined) ?? FALLBACK_WINDOW
 }
 
+export function getUnusedScreens(): string[] {
+  return [...getDisabledScreens(), ...getMirroredScreens()]
+}
+
 export function getActiveScreens(): string[] {
   const all = getConnectedScreens()
-  const off = new Set([...getDisabledScreens(), ...getMirroredScreens()])
+  const off = new Set(getUnusedScreens())
   const active = all.filter((s) => !off.has(s))
   return active.length > 0 ? active : all
 }
@@ -1754,9 +1758,8 @@ export function hotswapOptionsFor(wallpaperPath: string, options: LweLaunchOptio
       ...options.audioSensitivity
     },
     soundVolume: options.soundVolume ?? {},
-    // 0 must be sent. Leaving volume out keeps the previous wallpaper's level, so a muted wallpaper
-    // comes back audible when it is applied to another screen.
-    ...(options.volume !== undefined ? { volume: options.volume } : {}),
+    // a swap that sends no volume keeps the previous wallpaper's level, muted included
+    volume: options.volume ?? DEFAULT_ENGINE_VOLUME,
     ...(supportsEffectHotswap()
       ? { disabledEffects: options.disabledEffects ?? [], enabledEffects: options.enabledEffects ?? [] }
       : {}),
@@ -1765,7 +1768,6 @@ export function hotswapOptionsFor(wallpaperPath: string, options: LweLaunchOptio
   }
 }
 
-/** Same-path changes hotswap. A different path hotswaps too, unless the setting starts a new process. */
 export function canHotswapExisting(
   existing: { wallpaperPath: string; launchKey: string; controlFile: string | null } | undefined,
   options: { forceFresh?: boolean; customArgs?: string },
@@ -1781,8 +1783,16 @@ export function canHotswapExisting(
   return true
 }
 
+let launchesBlocked = false
+
+/** The app is quitting: an engine that starts now would outlive the shutdown kill */
+export function blockLaunches(): void {
+  launchesBlocked = true
+}
+
 /** Hotswaps the engine on the screen when possible, else restarts it. Resolves once it survived 2s */
 export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOptions = {}): Promise<void> {
+  if (launchesBlocked) throw new Error('WE Manager is quitting')
   const screen = options.screen ?? ALL_SCREENS
   const key = launchKey(options)
 
@@ -1806,6 +1816,7 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
   }
 
   await stopLwe(screen)
+  if (launchesBlocked) throw new Error('WE Manager is quitting')
 
   const binaryPath = getLweBinaryPath()
   const controlFile = supportsFlag('--control-file') ? controlFileFor(screen) : null

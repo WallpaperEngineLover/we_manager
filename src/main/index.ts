@@ -11,10 +11,11 @@ import { initDesktopIcons, cleanupDesktopIcons } from './services/desktop-icons.
 import { getTrayEnabled, getAutostartEnabled, getAutostartMinimized, getAutostartPlaylistId, getKillLweOnQuit, getConfiguredBackupPath } from './services/config.service'
 import { refreshAutostartExec } from './services/autostart.service'
 import { createTray } from './services/tray.service'
-import { initPlaylistPlayer, playlistRestoreSkipScreens, startPlaylist } from './services/playlist-player.service'
-import { checkEarlierRunEngines, killAllLweProcesses, getLweStatus } from './services/lwe.service'
-import { expandScreen, initDisplay, restoreAssignedWallpapers } from './services/display.service'
-import { catchUpScreens, initSchedule } from './services/schedule.service'
+import { initPlaylistPlayer, playlistRestoreSkipScreens, restoreVolume, startPlaylist } from './services/playlist-player.service'
+import { checkEarlierRunEngines, blockLaunches, killAllLweProcesses, getLweStatus } from './services/lwe.service'
+import { cancelRestore, expandScreen, getDisplayTargets, initDisplay, restoreAssignedWallpapers } from './services/display.service'
+import { mergeSkipScreens } from './services/restore-plan'
+import { initSchedule, takeCatchUp } from './services/schedule.service'
 import { initUpdates } from './services/update.service'
 import { detectDesktopEnv, hasStatusNotifierHost } from './utils/platform'
 import { needsSoftwareCompositing, readGpuVendors } from './utils/gpuWorkaround'
@@ -244,6 +245,7 @@ app.whenReady().then(async () => {
   await checkEarlierRunEngines()
   initDisplay(win)
   const resumed = initPlaylistPlayer(win)
+  const targets = getDisplayTargets()
 
   if (getTrayEnabled()) createTray(win)
 
@@ -254,24 +256,25 @@ app.whenReady().then(async () => {
   if (!resumed && autostartPlaylistId && getLweStatus().installed) {
     try {
       startPlaylist(autostartPlaylistId)
-      autostartScreens = expandScreen(undefined)
+      autostartScreens = targets
     } catch (err) {
       console.error('[App] Failed to autostart playlist:', err)
     }
   }
-  const scheduleScreens = catchUpScreens().flatMap((screen) => expandScreen(screen))
-  initSchedule(win)
+  const catchUp = takeCatchUp()
+  const scheduleScreens = catchUp.flatMap((rule) => expandScreen(rule.screen, targets))
+  initSchedule(win, catchUp)
   initUpdates(win)
 
-  // not awaited: a restore is at least 2s per screen, and its dependency dialog must not hold the tray.
-  // '*' is every current screen, same as a schedule rule for all of them
-  const playlistScreens = playlistRestoreSkipScreens().flatMap((screen) => expandScreen(screen))
-  const skip = new Set([...playlistScreens, ...autostartScreens, ...scheduleScreens])
-  void restoreAssignedWallpapers(skip).catch((err: unknown) => { console.error('[Display] Restore failed:', err) })
+  const playlistScreens = playlistRestoreSkipScreens().flatMap((screen) => expandScreen(screen, targets))
+  const skip = mergeSkipScreens(playlistScreens, autostartScreens, scheduleScreens)
+  void restoreAssignedWallpapers(skip, restoreVolume).catch((err: unknown) => { console.error('[Display] Restore failed:', err) })
 }).catch((err: unknown) => { console.error('[Main] startup failed:', err) })
 
 app.on('before-quit', (event) => {
   isQuitting = true
+  cancelRestore()
+  blockLaunches()
 
   if (getKillLweOnQuit() && !hasKilledLweOnQuit) {
     event.preventDefault()

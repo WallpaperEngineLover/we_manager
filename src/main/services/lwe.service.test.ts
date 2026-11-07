@@ -174,6 +174,10 @@ describe('buildHotswapLines', () => {
     ])
   })
 
+  it('resets to the engine default volume when the swapped wallpaper has none', () => {
+    expect(buildHotswapLines(hotswapOptionsFor('/w/loud', {}))).toContain('volume=15')
+  })
+
   it('keeps a muted wallpaper muted when the swap is built', () => {
     expect(buildHotswapLines(hotswapOptionsFor('/w/quiet', { volume: 0, soundVolume: { '7': 0 } }))).toContain('volume=0')
   })
@@ -303,5 +307,15 @@ describe('parsePacmanRepos', () => {
   it('lists the repositories and leaves [options] out', () => {
     const conf = '[options]\nHoldPkg = pacman\n\n[core]\nInclude = /etc/pacman.d/mirrorlist\n  [extra]  \n#[testing]\n[garuda]\nServer = x\n'
     expect(parsePacmanRepos(conf)).toEqual(['core', 'extra', 'garuda'])
+  })
+})
+
+describe('launches while the app quits', () => {
+  it('start no engine', async () => {
+    vi.resetModules()
+    const fresh = await import('./lwe.service')
+    fresh.blockLaunches()
+
+    await expect(fresh.launchLweAsync('/w/a', { screen: 'DP-1' })).rejects.toThrow('quitting')
   })
 })

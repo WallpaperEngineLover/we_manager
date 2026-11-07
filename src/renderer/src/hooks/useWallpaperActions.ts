@@ -6,19 +6,24 @@ import { askPlayScreen } from '../components/common/PlayScreenPrompt'
 import { forEachIgnoringErrors } from '../utils/async'
 import { t } from '../i18n'
 
-export function useApplyWallpaper(): (id: string, screen?: ScreenTarget) => Promise<void> {
+export function useApplyWallpaper(): (
+  id: string,
+  screen?: ScreenTarget,
+  onError?: (message: string) => void
+) => Promise<void> {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
 
-  return async (id, screen) => {
+  return async (id, screen, onError = showToast) => {
     try {
       let chosen = screen
       if (chosen === undefined) {
-        const [cfg, targets] = await Promise.all([
-          window.electronAPI.config.get(),
-          window.electronAPI.wallpaper.getTargets()
-        ])
-        if (cardPlayNeedsScreenChoice(cfg.displayMode, targets)) {
+        const targets = await queryClient.fetchQuery({
+          queryKey: ['display-targets'],
+          queryFn: () => window.electronAPI.wallpaper.getTargets(),
+          staleTime: 30_000
+        })
+        if (cardPlayNeedsScreenChoice(targets)) {
           const picked = await askPlayScreen(targets.filter((name) => name !== '*'))
           if (picked === null) return
           chosen = picked
@@ -27,7 +32,7 @@ export function useApplyWallpaper(): (id: string, screen?: ScreenTarget) => Prom
       await window.electronAPI.wallpaper.apply({ wallpaperId: id, screen: chosen })
       void queryClient.invalidateQueries({ queryKey: ['library'] })
     } catch (err) {
-      showToast((err as Error).message)
+      onError((err as Error).message)
     }
   }
 }

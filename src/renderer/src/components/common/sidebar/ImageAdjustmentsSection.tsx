@@ -3,6 +3,7 @@ import { Loader2, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import type { ImageAdjustments } from '@shared/types'
 import { IMAGE_FILTERS, NEUTRAL_COLOR_VALUE, hasImageAdjustments } from '@shared/imageAdjustments'
 import { t, translatedOr } from '../../../i18n'
+import RangeInput from '../RangeInput'
 import type { MessageKey } from '@shared/i18n'
 
 interface Props {
@@ -52,17 +53,13 @@ export default function ImageAdjustmentsSection({ adjustments = {}, live, onComm
           <span className="flex-1">{label}</span>
           <span>{value}</span>
         </div>
-        <input
-          type="range"
+        <RangeInput
           min={0}
           max={100}
           value={value}
           disabled={busy}
-          onChange={(e) => { slide(key, Number(e.target.value)) }}
-          onMouseUp={() => void (draft && commit(draft))}
-          onTouchEnd={() => void (draft && commit(draft))}
-          onKeyUp={() => void (draft && commit(draft))}
-          className="w-full accent-accent-500 disabled:opacity-50"
+          onLive={(next) => { slide(key, next) }}
+          onCommit={(next) => void commit({ ...current, [key]: next })}
         />
       </div>
     )

@@ -250,6 +250,10 @@ export function isAnimatedWallpaper(wallpaper: WallpaperMeta): boolean {
   return wallpaper.type === 'scene' || wallpaper.type === 'web' || wallpaper.type === 'video'
 }
 
+export function usesEngine(wallpaper: WallpaperMeta): boolean {
+  return isAnimatedWallpaper(wallpaper) && os.platform() === 'linux' && getLweStatus().installed
+}
+
 /** linux-wallpaperengine when available, else a static image */
 export async function applyWallpaperMeta(
   wallpaper: WallpaperMeta,
@@ -266,7 +270,7 @@ export async function applyWallpaperMeta(
 
   await ensureDependencyInstalled(wallpaper, options.dependencyPrompt)
 
-  if (isAnimatedWallpaper(wallpaper) && os.platform() === 'linux' && getLweStatus().installed) {
+  if (usesEngine(wallpaper)) {
     await launchLweAsync(wallpaper.localPath, {
       ...(await lweOptionsFor(wallpaper, options)),
       screen: options.screen,

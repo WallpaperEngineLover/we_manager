@@ -3,11 +3,12 @@ import { IpcChannels } from '@shared/ipc-channels'
 import { detectEnvironment } from '../services/wallpaper.service'
 import { getWallpaper, updateWallpaper } from '../services/library.service'
 import { getActiveWallpaperId } from '../services/wallpaper-state.service'
-import { pausePlaylist } from '../services/playlist-player.service'
+import { releasePlaylistScreen } from '../services/playlist-player.service'
 import {
   expandScreen,
   getDisplayTargets,
   getScreenAssignments,
+  isShownOn,
   showSplitScreen,
   showWallpaper,
   stopDisplay,
@@ -37,20 +38,22 @@ export function registerWallpaperHandlers(): void {
     if (!wallpaper) throw new Error(`Wallpaper ${options.wallpaperId} not found in library`)
 
     // a playlist would replace it again on its next switch
-    for (const target of expandScreen(options.screen)) pausePlaylist(target)
+    for (const target of expandScreen(options.screen)) releasePlaylistScreen(target)
 
     const appliedPath = await showWallpaper(wallpaper, options.screen, { backend: options.backend })
 
-    updateWallpaper(options.wallpaperId, {
-      appliedCount: (wallpaper.appliedCount ?? 0) + 1,
-      lastAppliedAt: Date.now()
-    })
+    if (isShownOn(options.wallpaperId, options.screen)) {
+      updateWallpaper(options.wallpaperId, {
+        appliedCount: (wallpaper.appliedCount ?? 0) + 1,
+        lastAppliedAt: Date.now()
+      })
+    }
 
     return { ok: true, appliedPath }
   })
 
   ipcMain.handle(IpcChannels.WALLPAPER_STOP, async (_e, screen?: ScreenTarget) => {
-    for (const s of expandScreen(screen)) pausePlaylist(s)
+    for (const s of expandScreen(screen)) releasePlaylistScreen(s)
     await stopDisplay(screen)
     return { ok: true }
   })
@@ -61,12 +64,12 @@ export function registerWallpaperHandlers(): void {
   })
 
   ipcMain.handle(IpcChannels.WALLPAPER_SHOW_SPLIT, async (_e, screen: ScreenTarget) => {
-    await showSplitScreen(screen, () => pausePlaylist(screen))
+    await showSplitScreen(screen, () => releasePlaylistScreen(screen))
     return { ok: true }
   })
 
   ipcMain.handle(IpcChannels.WALLPAPER_TEST_LAUNCH, async (_e, wallpaperId: string, screen?: ScreenTarget) => {
-    for (const s of expandScreen(screen).slice(0, 1)) pausePlaylist(s)
+    for (const s of expandScreen(screen).slice(0, 1)) releasePlaylistScreen(s)
     await testFreshLaunch(wallpaperId, screen)
     return { ok: true }
   })
