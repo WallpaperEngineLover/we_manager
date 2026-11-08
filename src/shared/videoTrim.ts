@@ -73,7 +73,26 @@ export function formatVideoSegments(segments: VideoSegment[]): string {
   return segments.map((s) => `${wholeSeconds(s.start)}-${s.end === undefined ? '' : wholeSeconds(s.end)}`).join(',')
 }
 
+/** The one range a video's trim cuts out, null when there is no trim or it plays several parts (an optimize cuts one range) */
+export function trimAsCut(
+  meta: { videoSegments?: VideoSegment[]; videoStart?: number; videoEnd?: number },
+  duration: number
+): { start: number; end: number } | null {
+  const cuts = trimAsCuts(meta, duration)
+  return cuts.length === 1 ? cuts[0] : null
+}
+
 export function trimmedVideoLength(duration: number, segments: VideoSegment[]): number {
   if (segments.length === 0) return duration
   return segments.reduce((sum, s) => sum + Math.max(0, Math.min(s.end ?? duration, duration) - s.start), 0)
+}
+
+/** Every part of a video's trim as closed ranges in order, empty without a trim */
+export function trimAsCuts(
+  meta: { videoSegments?: VideoSegment[]; videoStart?: number; videoEnd?: number },
+  duration: number
+): { start: number; end: number }[] {
+  return normalizeVideoSegments(videoSegmentsOf(meta), duration)
+    .map((s) => ({ start: s.start, end: Math.min(s.end ?? duration, duration) }))
+    .filter((r) => r.end > r.start)
 }

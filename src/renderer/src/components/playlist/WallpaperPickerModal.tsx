@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useCallback, useState } from 'react'
+import type { WallpaperMeta } from '@shared/types'
+import { useWallpaperPicker } from '../../hooks/queries'
 import { Plus } from 'lucide-react'
 import { PickerCard, PickerFrame, PickerGrid, PickerSearch } from '../common/PickerParts'
 import { t } from '../../i18n'
@@ -18,21 +19,8 @@ export default function WallpaperPickerModal({
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
-  const { data: wallpapers = [], isLoading } = useQuery({
-    queryKey: ['library', { sortBy: 'title', sortDir: 'asc' }],
-    queryFn: () => window.electronAPI.library.getAll({ sortBy: 'title', sortDir: 'asc' })
-  })
-
-  const available = useMemo(
-    () => wallpapers.filter((w) => !excludeIds.has(w.id)),
-    [wallpapers, excludeIds]
-  )
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return available
-    const q = search.toLowerCase()
-    return available.filter((w) => w.title.toLowerCase().includes(q))
-  }, [available, search])
+  const keep = useCallback((w: WallpaperMeta) => !excludeIds.has(w.id), [excludeIds])
+  const { matches: filtered, isLoading } = useWallpaperPicker(search, keep)
 
   function toggle(id: string) {
     setSelected((prev) => {

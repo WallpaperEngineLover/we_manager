@@ -1,7 +1,20 @@
-import { Cpu, Library, Monitor, Palette, Settings, Gauge, Wrench, type LucideIcon } from 'lucide-react'
+import { useSyncExternalStore } from 'react'
+import { Cpu, Library, Monitor, Palette, Settings, Gauge, Clapperboard, Wrench, type LucideIcon } from 'lucide-react'
+import ResizableWidth from '../common/ResizableWidth'
 import { t } from '../../i18n'
 
-export type SettingsTab = 'appearance' | 'library' | 'engine' | 'display' | 'performance' | 'system' | 'troubleshooting'
+const wideQuery = window.matchMedia('(min-width: 768px)')
+
+function subscribeWide(listener: () => void): () => void {
+  wideQuery.addEventListener('change', listener)
+  return () => { wideQuery.removeEventListener('change', listener) }
+}
+
+function useWideLayout(): boolean {
+  return useSyncExternalStore(subscribeWide, () => wideQuery.matches)
+}
+
+export type SettingsTab = 'appearance' | 'library' | 'engine' | 'display' | 'performance' | 'videoDefaults' | 'system' | 'troubleshooting'
 
 const TABS: { id: SettingsTab; icon: LucideIcon }[] = [
   { id: 'appearance', icon: Palette },
@@ -9,6 +22,7 @@ const TABS: { id: SettingsTab; icon: LucideIcon }[] = [
   { id: 'engine', icon: Cpu },
   { id: 'display', icon: Monitor },
   { id: 'performance', icon: Gauge },
+  { id: 'videoDefaults', icon: Clapperboard },
   { id: 'system', icon: Settings },
   { id: 'troubleshooting', icon: Wrench }
 ]
@@ -32,11 +46,12 @@ export function saveSettingsTab(tab: SettingsTab): void {
 }
 
 export default function SettingsTabs({ active, onChange }: { active: SettingsTab; onChange: (tab: SettingsTab) => void }) {
-  return (
+  const wide = useWideLayout()
+  const nav = (
     <nav
       role="tablist"
       aria-orientation="vertical"
-      className="flex shrink-0 gap-1 overflow-x-auto px-4 pb-2 pt-4 md:w-52 md:flex-col md:overflow-x-visible md:border-r md:border-fg/5 md:px-3 md:pb-4"
+      className="flex shrink-0 gap-1 overflow-x-auto px-4 pb-2 pt-4 md:w-full md:flex-col md:overflow-x-visible md:border-r md:border-fg/5 md:px-3 md:pb-4"
     >
       <h2 className="hidden px-3 pb-3 text-lg font-semibold text-gray-100 md:block">{t('nav.settings')}</h2>
       {TABS.map(({ id, icon: Icon }) => {
@@ -54,11 +69,17 @@ export default function SettingsTabs({ active, onChange }: { active: SettingsTab
                 : 'text-gray-400 hover:bg-fg/5 hover:text-gray-200')
             }
           >
-            <Icon size={18} strokeWidth={selected ? 2.2 : 1.8} />
-            <span className="whitespace-nowrap">{t(`settings.tab.${id}`)}</span>
+            <Icon size={18} strokeWidth={selected ? 2.2 : 1.8} className="shrink-0" />
+            <span className="whitespace-nowrap md:whitespace-normal">{t(`settings.tab.${id}`)}</span>
           </button>
         )
       })}
     </nav>
+  )
+  if (!wide) return nav
+  return (
+    <ResizableWidth storageKey="we-settings-tabs-width" defaultWidth={208} min={160} max={400} edge="right">
+      {nav}
+    </ResizableWidth>
   )
 }

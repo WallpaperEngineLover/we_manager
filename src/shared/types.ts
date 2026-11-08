@@ -234,6 +234,12 @@ export interface EngineFlags {
   webFrames?: WebFramesMode
   frameLimiter?: FrameLimiter
   hrtf?: HrtfMode
+  /** --audio-input: a source name or description, unset or 'default' is the default output */
+  audioInput?: string
+  /** --audio-input-volume, 0 to 100, 50 leaves the level alone */
+  audioInputVolume?: number
+  /** --audio-input-threshold, 0 is off */
+  audioInputThreshold?: number
   transition?: TransitionMode
   transitionDuration?: TransitionDuration
   /** --fps-battery / --pause-on-battery */
@@ -310,10 +316,41 @@ export interface SplitScreen {
   slots: SplitSlot[]
 }
 
-export type ScheduleAction =
+export type ScreenAction =
   | { type: 'wallpaper'; wallpaperId: string }
   | { type: 'playlist'; playlistId: string }
   | { type: 'stop' }
+
+export type ScheduleAction = ScreenAction | { type: 'profile'; profileId: string }
+
+export interface Profile {
+  id: string
+  name: string
+  screens: Record<ScreenTarget, ScreenAction>
+}
+
+export type AppRuleCondition =
+  /** any of these programs is running (process names, a trailing .exe is ignored) */
+  | { type: 'process'; names: string[] }
+  /** an application other than the wallpaper plays sound */
+  | { type: 'audio' }
+
+export interface AppRule {
+  id: string
+  name: string
+  enabled: boolean
+  condition: AppRuleCondition
+  action: ScheduleAction
+  screen: ScreenTarget
+  revert: boolean
+}
+
+/** --list-audio-inputs */
+export interface AudioInputDevice {
+  name: string
+  description: string
+  monitor: boolean
+}
 
 export type ScheduleTrigger =
   | { type: 'time'; time: string; days: number[] }
@@ -613,9 +650,18 @@ export interface PlaylistItem {
   volume?: number
   /** Overrides the playlist's defaultDurationSec when set */
   durationSec?: number
+  /** daytime mode: the time of day this item runs until, as minutes since midnight. Items without one share the time */
+  endMinute?: number
 }
 
+/**
+ * timer: one wallpaper after another (the default). daytime and dayofweek: the clock picks the item, in list order.
+ * logon: one item per login session.
+ */
+export type PlaylistMode = 'timer' | 'daytime' | 'dayofweek' | 'logon'
+
 export interface PlaylistSettings {
+  mode?: PlaylistMode
   /** Reshuffled on every loop */
   randomize: boolean
   /** Used when randomize is off */
@@ -682,6 +728,8 @@ export interface AppConfigSnapshot {
   killLweOnQuit: boolean
   skipPlaylistResume: boolean
   freshProcessOnPathChange: boolean
+  stopPlaylistsOnKillAll: boolean
+  forgetOnKillAll: boolean
   cardBorders: CardBorders
   cardBadges: CardBadges
   audioScreen: string | null

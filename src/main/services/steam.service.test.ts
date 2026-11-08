@@ -97,3 +97,39 @@ describe('a Steam request that never answers', () => {
     expect(await second).toBe(7)
   })
 })
+
+describe('author lookups under a Steam rate limit', () => {
+  const xml = '<steamID><![CDATA[Maker]]></steamID><avatarFull><![CDATA[https://x/a.jpg]]></avatarFull>'
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    steam.resetAuthorThrottle()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('stops asking after a 429 and answers null until the cooldown ends', async () => {
+    const fetchMock = vi.fn<() => Promise<Response>>(() =>
+      Promise.resolve(new Response('', { status: 429, headers: { 'retry-after': '120' } }))
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await steam.getAuthorInfo('76561190000000001')).toBeNull()
+    expect(await steam.getAuthorInfo('76561190000000002')).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    vi.setSystemTime(Date.now() + 121_000)
+    fetchMock.mockImplementation(() => Promise.resolve(new Response(xml, { status: 200 })))
+    expect(await steam.getAuthorInfo('76561190000000002')).toMatchObject({ name: 'Maker' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not refetch an author whose lookup failed a moment ago', async () => {
+    const fetchMock = vi.fn<() => Promise<Response>>(() => Promise.resolve(new Response('', { status: 500 })))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(steam.getAuthorInfo('76561190000000003')).rejects.toThrow('HTTP 500')
+    expect(await steam.getAuthorInfo('76561190000000003')).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})

@@ -1,10 +1,7 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import * as fs from 'fs'
 import * as path from 'path'
 import { isCommandAvailable } from './platform'
-
-const execFileAsync = promisify(execFile)
+import { execFileAsync } from './exec'
 
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.avi', '.mkv', '.mov', '.m4v']
 
@@ -79,4 +76,10 @@ export async function getVideoDurationSec(filePath: string): Promise<number | un
     durationCache.set(filePath, undefined)
     return undefined
   }
+}
+
+/** the file was replaced, what was probed about it is stale */
+export function forgetVideoProbe(filePath: string): void {
+  fpsCache.delete(filePath)
+  durationCache.delete(filePath)
 }

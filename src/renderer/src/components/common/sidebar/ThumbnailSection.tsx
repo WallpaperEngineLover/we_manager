@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Camera, ChevronDown, ChevronRight, ImageOff, ImagePlus, Loader2 } from 'lucide-react'
+import { Camera, ImageOff, ImagePlus } from 'lucide-react'
 import clsx from 'clsx'
 import type { WallpaperMeta } from '@shared/types'
 import { useToast } from '../Toast'
 import { t } from '../../../i18n'
+import SidebarSection, { CustomBadge } from './SidebarSection'
 
 interface Props {
   wallpaper: WallpaperMeta
@@ -12,7 +13,6 @@ interface Props {
 }
 
 export default function ThumbnailSection({ wallpaper, canGenerate, onUpdated }: Props) {
-  const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState<'generate' | 'pick' | 'delete' | 'toggle' | null>(null)
   const { showToast } = useToast()
   const hasCustom = !!wallpaper.customPreview
@@ -34,79 +34,66 @@ export default function ThumbnailSection({ wallpaper, canGenerate, onUpdated }: 
     run('toggle', () => window.electronAPI.library.update(wallpaper.id, { useOriginalPreview: value }))
 
   return (
-    <div className="border-t border-fg/5 pt-3">
-      <button
-        onClick={() => { setOpen((v) => !v) }}
-        className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
-      >
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        <Camera size={12} />
-        <span className="flex-1 text-left">{t('thumb.title')}</span>
-        {usingCustom && <span className="rounded-full bg-accent-600/30 px-1.5 normal-case text-accent-300">{t('thumb.customBadge')}</span>}
-        {busy && <Loader2 size={11} className="animate-spin" />}
-      </button>
-
-      {open && (
-        <div className="mt-2 flex flex-col gap-2 text-xs">
-          {hasCustom && (
-            <div className="flex overflow-hidden rounded bg-fg/5">
-              {[
-                { label: t('thumb.custom'), original: false },
-                { label: t('thumb.original'), original: true }
-              ].map(({ label, original }) => (
-                <button
-                  key={label}
-                  onClick={() => void showOriginal(original)}
-                  disabled={busy !== null || usingCustom === !original}
-                  className={clsx(
-                    'flex-1 py-1',
-                    usingCustom === !original ? 'bg-accent-600 text-white' : 'text-gray-400 hover:bg-fg/10'
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className="flex flex-wrap gap-1.5">
-            {canGenerate && (
+    <SidebarSection icon={Camera} title={t('thumb.title')} busy={busy !== null} badge={usingCustom && <CustomBadge label={t('thumb.customBadge')} />}>
+      <div className="mt-2 flex flex-col gap-2 text-xs">
+        {hasCustom && (
+          <div className="flex overflow-hidden rounded bg-fg/5">
+            {[
+              { label: t('thumb.custom'), original: false },
+              { label: t('thumb.original'), original: true }
+            ].map(({ label, original }) => (
               <button
-                onClick={() => void run('generate', () => window.electronAPI.wallpaper.generateThumbnail(wallpaper.id))}
-                disabled={busy !== null}
-                title={t('thumb.captureHint')}
-                className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10 disabled:opacity-50"
+                key={label}
+                onClick={() => void showOriginal(original)}
+                disabled={busy !== null || usingCustom === !original}
+                className={clsx(
+                  'flex-1 py-1',
+                  usingCustom === !original ? 'bg-accent-600 text-white' : 'text-gray-400 hover:bg-fg/10'
+                )}
               >
-                <Camera size={11} />
-                {busy === 'generate' ? t('thumb.capturing') : t('thumb.capture')}
+                {label}
               </button>
-            )}
+            ))}
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-1.5">
+          {canGenerate && (
             <button
-              onClick={() => void run('pick', () => window.electronAPI.wallpaper.pickThumbnail(wallpaper.id))}
+              onClick={() => void run('generate', () => window.electronAPI.wallpaper.generateThumbnail(wallpaper.id))}
               disabled={busy !== null}
+              title={t('thumb.captureHint')}
               className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10 disabled:opacity-50"
             >
-              <ImagePlus size={11} />
-              {t('thumb.choose')}
+              <Camera size={11} />
+              {busy === 'generate' ? t('thumb.capturing') : t('thumb.capture')}
             </button>
-            {hasCustom && (
-              <button
-                onClick={() => void run('delete', () => window.electronAPI.wallpaper.deleteThumbnail(wallpaper.id))}
-                disabled={busy !== null}
-                className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-red-500/20 hover:text-red-400 disabled:opacity-50"
-              >
-                <ImageOff size={11} />
-                {t('thumb.removeCustom')}
-              </button>
-            )}
-          </div>
-          {canGenerate && (
-            <p className="text-[11px] text-gray-600">
-              {t('thumb.captureNote')}
-            </p>
+          )}
+          <button
+            onClick={() => void run('pick', () => window.electronAPI.wallpaper.pickThumbnail(wallpaper.id))}
+            disabled={busy !== null}
+            className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-fg/10 disabled:opacity-50"
+          >
+            <ImagePlus size={11} />
+            {t('thumb.choose')}
+          </button>
+          {hasCustom && (
+            <button
+              onClick={() => void run('delete', () => window.electronAPI.wallpaper.deleteThumbnail(wallpaper.id))}
+              disabled={busy !== null}
+              className="flex items-center gap-1 rounded bg-fg/5 px-2 py-1 text-gray-300 hover:bg-red-500/20 hover:text-red-400 disabled:opacity-50"
+            >
+              <ImageOff size={11} />
+              {t('thumb.removeCustom')}
+            </button>
           )}
         </div>
-      )}
-    </div>
+        {canGenerate && (
+          <p className="text-[11px] text-gray-600">
+            {t('thumb.captureNote')}
+          </p>
+        )}
+      </div>
+    </SidebarSection>
   )
 }

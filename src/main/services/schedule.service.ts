@@ -4,10 +4,8 @@ import { randomUUID } from 'crypto'
 import { IpcChannels } from '@shared/ipc-channels'
 import type { ScheduleRule } from '@shared/types'
 import { dueTimeRules } from '@shared/schedule'
-import { getWallpaper, updateWallpaper } from './library.service'
-import { getPlaylist } from './playlist.service'
-import { expandScreen, isShownOn, setBusyWallpaperSource, showWallpaper, stopDisplay } from './display.service'
-import { startPlaylist, stopPlaylist } from './playlist-player.service'
+import { setBusyWallpaperSource } from './display.service'
+import { runAction, runningWallpaperIds } from './rule-actions.service'
 
 interface ScheduleStore {
   rules: ScheduleRule[]
@@ -27,7 +25,6 @@ const MAX_CATCH_UP_MS = 7 * 24 * 60 * 60 * 1000
 let win: BrowserWindow | null = null
 let timer: ReturnType<typeof setInterval> | null = null
 let lastDark: boolean | null = null
-const runningWallpapers = new Map<string, number>()
 
 export function getScheduleRules(): ScheduleRule[] {
   return store.get('rules')
@@ -48,32 +45,8 @@ export function deleteScheduleRule(id: string): void {
 }
 
 export async function runRule(rule: ScheduleRule): Promise<void> {
-  const { action, screen } = rule
-  console.log(`[Schedule] Running "${rule.name}" on ${screen}`)
-
-  if (action.type === 'wallpaper') {
-    const wallpaper = getWallpaper(action.wallpaperId)
-    if (!wallpaper) throw new Error('The scheduled wallpaper is no longer in the library')
-    for (const s of expandScreen(screen)) stopPlaylist(s)
-    runningWallpapers.set(wallpaper.id, (runningWallpapers.get(wallpaper.id) ?? 0) + 1)
-    try {
-      await showWallpaper(wallpaper, screen, { dependencyPrompt: 'once' })
-    } finally {
-      const left = (runningWallpapers.get(wallpaper.id) ?? 1) - 1
-      if (left > 0) runningWallpapers.set(wallpaper.id, left)
-      else runningWallpapers.delete(wallpaper.id)
-    }
-    if (isShownOn(wallpaper.id, screen)) {
-      updateWallpaper(wallpaper.id, { appliedCount: (wallpaper.appliedCount ?? 0) + 1, lastAppliedAt: Date.now() })
-    }
-  } else if (action.type === 'playlist') {
-    if (!getPlaylist(action.playlistId)) throw new Error('The scheduled playlist no longer exists')
-    startPlaylist(action.playlistId, screen)
-  } else {
-    stopPlaylist(screen)
-    await stopDisplay(screen)
-  }
-
+  console.log(`[Schedule] Running "${rule.name}" on ${rule.screen}`)
+  await runAction(rule.action, rule.screen)
   if (win && !win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_SCHEDULE_FIRED, rule.name)
 }
 
@@ -115,7 +88,7 @@ export function takeCatchUp(now = Date.now()): ScheduleRule[] {
 /** Call after the playlist player resumed, so a rule that came due while closed (takeCatchUp) wins over it */
 export function initSchedule(window: BrowserWindow, catchUp: readonly ScheduleRule[]): void {
   win = window
-  setBusyWallpaperSource('schedule', () => [...runningWallpapers.keys()])
+  setBusyWallpaperSource('schedule', runningWallpaperIds)
   lastDark = nativeTheme.shouldUseDarkColors
   nativeTheme.on('updated', onThemeChanged)
   void runAll(catchUp)

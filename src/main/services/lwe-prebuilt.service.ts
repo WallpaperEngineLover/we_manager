@@ -1,5 +1,3 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import * as fs from 'fs'
 import * as path from 'path'
 import type { BrowserWindow } from 'electron'
@@ -12,8 +10,7 @@ import { isFlatpak } from '../utils/flatpak'
 import { downloadVerified, fetchLatestRelease, fetchReleaseByTag, isVersionTag, type GithubRelease } from '../utils/github'
 import { buildCleanBuildEnv, isOstreeSystem, pacmanHasSyncDatabases, parseOsReleaseIds, readPrebuiltRelease, resetLweDetection } from './lwe.service'
 import { t } from '../i18n'
-
-const execFileAsync = promisify(execFile)
+import { execFileAsync } from '../utils/exec'
 
 /** bundles all but desktop libraries, needs glibc 2.35+ */
 type PrebuiltDistro = 'ubuntu-24.04' | 'fedora-44' | 'portable'
@@ -197,6 +194,10 @@ async function findMissingLibraries(binary: string): Promise<string[]> {
   return [...missing]
 }
 
+function manualInstallError(missing: string[]): Error {
+  return new Error(`These system libraries are missing: ${missing.join(', ')}. Install the packages providing them with your package manager.`)
+}
+
 /** true when layered with rpm-ostree, which needs a reboot */
 async function installMissingLibraries(distro: PrebuiltDistro, missing: string[]): Promise<boolean> {
   const ids = parseOsReleaseIds(fs.existsSync('/etc/os-release') ? fs.readFileSync('/etc/os-release', 'utf8') : '')
@@ -211,9 +212,7 @@ async function installMissingLibraries(distro: PrebuiltDistro, missing: string[]
   let command: string[]
   if (distro === 'ubuntu-24.04') {
     const absent = await absentDebianPackages(RUNTIME_DEPS_UBUNTU.map(name => [name]))
-    if (absent.length === 0) {
-      throw new Error(`These system libraries are missing: ${missing.join(', ')}. Install the packages providing them with your package manager.`)
-    }
+    if (absent.length === 0) throw manualInstallError(missing)
     command = ['apt-get', 'install', '-y', ...absent]
   } else if (ids.includes('fedora') && isCommandAvailable('dnf')) {
     command = ['dnf', 'install', '-y', ...bySoname]
@@ -222,18 +221,14 @@ async function installMissingLibraries(distro: PrebuiltDistro, missing: string[]
   } else if (ids.includes('arch') && isCommandAvailable('pacman')) {
     // only what is absent: asking for installed ones would pull newer versions of core packages (a partial upgrade)
     const absent = await absentPacmanPackages(RUNTIME_DEPS_ARCH)
-    if (absent.length === 0) {
-      throw new Error(`These system libraries are missing: ${missing.join(', ')}. Install the packages providing them with your package manager.`)
-    }
+    if (absent.length === 0) throw manualInstallError(missing)
     command = ['pacman', pacmanHasSyncDatabases() ? '-S' : '-Sy', '--noconfirm', '--needed', ...absent]
   } else if (ids.includes('debian') && isCommandAvailable('apt-get')) {
     const absent = await absentDebianPackages(RUNTIME_DEPS_DEBIAN)
-    if (absent.length === 0) {
-      throw new Error(`These system libraries are missing: ${missing.join(', ')}. Install the packages providing them with your package manager.`)
-    }
+    if (absent.length === 0) throw manualInstallError(missing)
     command = ['apt-get', 'install', '-y', ...absent]
   } else {
-    throw new Error(`These system libraries are missing: ${missing.join(', ')}. Install the packages providing them with your package manager.`)
+    throw manualInstallError(missing)
   }
   await execFileAsync(elevate, command, { timeout: 600_000, maxBuffer: 10 * 1024 * 1024 })
   return false

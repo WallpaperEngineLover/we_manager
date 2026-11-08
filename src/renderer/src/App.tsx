@@ -17,6 +17,9 @@ import { useToast } from './components/common/Toast'
 import { screenLabel } from './utils/screens'
 import { UPDATE_STATUS_KEY, useConfig } from './hooks/queries'
 import { FAVORITE_STATUS_KEY } from './hooks/useFavorites'
+import { OptimizeVideoHost } from './components/common/OptimizeVideoModal'
+import QuickOptimizeNotice from './components/common/QuickOptimizeNotice'
+import BackgroundOptimizeNotice from './components/common/BackgroundOptimizeNotice'
 import { DISLIKED_IDS_KEY } from './hooks/useVotes'
 import { applyAppearance, onSystemThemeChange } from './utils/appearance'
 import { currentLanguage, setLanguage, t } from './i18n'
@@ -144,6 +147,10 @@ export default function App() {
   }, [showToast])
 
   useEffect(() => {
+    return window.electronAPI.on.appRule(({ name, state }) => { showToast(t(`appRule.${state}`, { name })) })
+  }, [showToast])
+
+  useEffect(() => {
     return window.electronAPI.on.updateStatus((status) => {
       queryClient.setQueryData(UPDATE_STATUS_KEY, status)
     })
@@ -170,6 +177,8 @@ export default function App() {
         <GnomeExtensionNotice />
         <GraphicsNotice />
         <UpdateNotice />
+        <QuickOptimizeNotice />
+        <BackgroundOptimizeNotice />
         <div className="flex flex-1 overflow-hidden">
           <Sidebar activeView={activeView} onNavigate={setActiveView} />
           <main className="flex-1 overflow-hidden">
@@ -190,6 +199,7 @@ export default function App() {
         <StatusBar />
         <UpdatePrompt />
         <PlayScreenPrompt />
+        <OptimizeVideoHost />
       </div>
     </ErrorBoundary>
   )

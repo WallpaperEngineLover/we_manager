@@ -1,5 +1,3 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import * as os from 'os'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -21,8 +19,7 @@ import { resolveEngineFlags } from '@shared/engineFlags'
 import { needsFreshLaunch } from '@shared/compat'
 import { videoSegmentsOf } from '@shared/videoTrim'
 import { applyHyprpaper, applySwaybg, applySwww, hasHyprpaper, prefersHyprpaper, swwwCommand } from './static-wallpaper.service'
-
-const execFileAsync = promisify(execFile)
+import { execFileAsync } from '../utils/exec'
 
 let envCache: WallpaperEnvironment | null = null
 

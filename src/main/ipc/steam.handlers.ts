@@ -87,7 +87,10 @@ function startDownloadPoll(win: BrowserWindow, itemId: string, intervalMs = 1000
   })
 }
 
+const pendingRemoval = new Map<string, symbol>()
+
 async function subscribeAndDownload(win: BrowserWindow, itemId: string): Promise<void> {
+  pendingRemoval.delete(itemId)
   await steam.subscribeToItem(BigInt(itemId))
   // subscribing doesn't always start the download
   await steam.downloadItem(BigInt(itemId))
@@ -113,6 +116,7 @@ const REPAIR_POLL_MS = 3000
 async function repairItem(win: BrowserWindow, itemId: string): Promise<{ done: Promise<void> } | null> {
   if (repairing.has(itemId)) return null
   repairing.add(itemId)
+  pendingRemoval.delete(itemId)
   let started: { done: Promise<void> } | null = null
   try {
     started = await startRepair(win, itemId)
@@ -214,6 +218,37 @@ async function removeLocalFiles(dir: string): Promise<void> {
   try { await fs.promises.rm(dir, { recursive: true, force: true }) } catch { }
 }
 
+// Steam still works on the folder for a moment after an unsubscribe and can put files back
+async function removeUnsubscribedFiles(itemId: string, dir: string): Promise<void> {
+  const mine = Symbol(itemId)
+  pendingRemoval.set(itemId, mine)
+  const current = (): boolean => pendingRemoval.get(itemId) === mine
+  let missing = 0
+  try {
+    for (let attempt = 0; attempt < 6 && current(); attempt++) {
+      await sleep(2000)
+      if (!current()) return
+      let subscribed: string[]
+      try {
+        subscribed = await steam.getSubscribedItems()
+      } catch {
+        continue
+      }
+      if (!current()) return
+      if (subscribed.includes(itemId)) continue
+      await removeLocalFiles(dir)
+      missing = fs.existsSync(dir) ? 0 : missing + 1
+      if (missing >= 2) return
+    }
+    if (fs.existsSync(dir) && current()) console.warn(`[Steam] Could not remove ${dir} after unsubscribing`)
+  } finally {
+    if (current()) pendingRemoval.delete(itemId)
+  }
+}
+
+// every item reports, which re-rendered the whole library thousands of times a second
+const VERIFY_PROGRESS_INTERVAL_MS = 150
+
 export function registerSteamHandlers(win: BrowserWindow): void {
   setDependencyInstaller((itemId) => subscribeAndDownload(win, itemId))
   void verify.restoreRepairStashes()
@@ -235,7 +270,10 @@ export function registerSteamHandlers(win: BrowserWindow): void {
       library.updateWallpaper(itemId, { subscribed: false, downloading: false, downloadFailed: false })
       return { ok: true }
     }
-    if (wallpaper?.localPath) await removeLocalFiles(wallpaper.localPath)
+    if (wallpaper?.localPath) {
+      await removeLocalFiles(wallpaper.localPath)
+      void removeUnsubscribedFiles(itemId, wallpaper.localPath)
+    }
     const backupDir = wallpaper?.backedUp ? backup.resolveBackupDir(wallpaper) : null
     if (wallpaper && backupDir && (await backup.hasBackupFiles(backupDir))) {
       library.updateWallpaper(itemId, {
@@ -260,7 +298,11 @@ export function registerSteamHandlers(win: BrowserWindow): void {
   })
 
   ipcMain.handle(IpcChannels.STEAM_VERIFY, (_e, itemIds?: string[]) => {
+    let lastSent = 0
     return verify.verifyItems(itemIds, (done, total) => {
+      const now = Date.now()
+      if (done > 0 && done < total && now - lastSent < VERIFY_PROGRESS_INTERVAL_MS) return
+      lastSent = now
       if (!win.isDestroyed()) win.webContents.send(IpcChannels.EVENT_VERIFY_PROGRESS, { done, total })
     })
   })

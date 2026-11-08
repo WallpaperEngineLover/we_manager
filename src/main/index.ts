@@ -16,6 +16,7 @@ import { checkEarlierRunEngines, blockLaunches, killAllLweProcesses, getLweStatu
 import { cancelRestore, expandScreen, getDisplayTargets, initDisplay, restoreAssignedWallpapers } from './services/display.service'
 import { mergeSkipScreens } from './services/restore-plan'
 import { initSchedule, takeCatchUp } from './services/schedule.service'
+import { initAppRules } from './services/app-rules.service'
 import { initUpdates } from './services/update.service'
 import { detectDesktopEnv, hasStatusNotifierHost } from './utils/platform'
 import { needsSoftwareCompositing, readGpuVendors } from './utils/gpuWorkaround'
@@ -33,7 +34,7 @@ if (needsSoftwareCompositing(detectDesktopEnv(), process.env.WAYLAND_DISPLAY, re
 }
 
 // fetch() for GIF still frames in PreviewImage.tsx
-protocol.registerSchemesAsPrivileged([{ scheme: 'wallpaper', privileges: { supportFetchAPI: true, corsEnabled: true } }])
+protocol.registerSchemesAsPrivileged([{ scheme: 'wallpaper', privileges: { supportFetchAPI: true, corsEnabled: true, stream: true } }])
 let isQuitting = false
 let hasKilledLweOnQuit = false
 
@@ -220,7 +221,8 @@ app.whenReady().then(async () => {
     }
 
     try {
-      const res = await net.fetch(pathToFileURL(filePath).toString())
+      const range = request.headers.get('range')
+      const res = await net.fetch(pathToFileURL(filePath).toString(), range ? { headers: { range } } : undefined)
       const headers = new Headers(res.headers)
       headers.set('Access-Control-Allow-Origin', '*')
       return new Response(res.body, { status: res.status, headers })
@@ -241,8 +243,8 @@ app.whenReady().then(async () => {
   registerAllHandlers(win)
   startWatcher(win)
   startBackgroundSync(win)
-  initDesktopIcons()
   await checkEarlierRunEngines()
+  initDesktopIcons()
   initDisplay(win)
   const resumed = initPlaylistPlayer(win)
   const targets = getDisplayTargets()
@@ -264,6 +266,7 @@ app.whenReady().then(async () => {
   const catchUp = takeCatchUp()
   const scheduleScreens = catchUp.flatMap((rule) => expandScreen(rule.screen, targets))
   initSchedule(win, catchUp)
+  initAppRules(win)
   initUpdates(win)
 
   const playlistScreens = playlistRestoreSkipScreens().flatMap((screen) => expandScreen(screen, targets))

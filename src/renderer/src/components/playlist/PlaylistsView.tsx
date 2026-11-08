@@ -16,10 +16,11 @@ import {
   Shuffle,
   Film,
   Heart,
-  ArrowDownWideNarrow
+  ArrowDownWideNarrow,
+  CalendarClock
 } from 'lucide-react'
 import clsx from 'clsx'
-import type { PlaylistSettings, ScreenTarget } from '@shared/types'
+import type { PlaylistMode, PlaylistSettings, ScreenTarget } from '@shared/types'
 import PlaylistItemRow from './PlaylistItemRow'
 import WallpaperPickerModal from './WallpaperPickerModal'
 import DetailSidebar from '../common/DetailSidebar'
@@ -33,6 +34,19 @@ import { useDisplayTargets } from '../../hooks/useDisplayTargets'
 import { screenLabel } from '../../utils/screens'
 import { t } from '../../i18n'
 import type { MessageKey } from '@shared/i18n'
+
+const MODE_OPTIONS: { value: PlaylistMode; label: MessageKey }[] = [
+  { value: 'timer', label: 'playlist.modeTimer' },
+  { value: 'daytime', label: 'playlist.modeDaytime' },
+  { value: 'dayofweek', label: 'playlist.modeDayOfWeek' },
+  { value: 'logon', label: 'playlist.modeLogon' }
+]
+
+const MODE_HINTS: Record<Exclude<PlaylistMode, 'timer'>, MessageKey> = {
+  daytime: 'playlist.modeDaytimeHint',
+  dayofweek: 'playlist.modeDayOfWeekHint',
+  logon: 'playlist.modeLogonHint'
+}
 
 const SORT_OPTIONS: { value: PlaylistSettings['sortBy']; label: MessageKey }[] = [
   { value: 'manual', label: 'playlist.sortManual' },
@@ -76,6 +90,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
   const unsubscribe = useUnsubscribe()
 
   const activePlaylist = playlists.find((p) => p.id === activePlaylistId) ?? null
+  const mode: PlaylistMode = activePlaylist?.settings.mode ?? 'timer'
   const favoriteIds = useFavoriteIds()
   const favoriteCount = activePlaylist?.items.filter((i) => favoriteIds.has(i.wallpaperId)).length ?? 0
 
@@ -133,7 +148,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
 
   async function handleUpdateItem(
     wallpaperId: string,
-    patch: { volume?: number; durationSec?: number }
+    patch: { volume?: number; durationSec?: number; endMinute?: number }
   ) {
     if (!activePlaylist) return
     await window.electronAPI.playlist.updateItem(activePlaylist.id, wallpaperId, patch)
@@ -398,6 +413,27 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
 
               <div className="mt-3 flex flex-wrap items-center gap-4">
                 <label className="flex items-center gap-2 text-xs text-gray-400">
+                  <CalendarClock size={12} />
+                  {t('playlist.mode')}
+                  <select
+                    value={mode}
+                    onChange={(e) => void updateSettings({ mode: e.target.value as PlaylistMode })}
+                    className="rounded bg-fg/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
+                  >
+                    {MODE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {t(o.label)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {mode !== 'timer' && (
+                  <p className="basis-full text-xs text-gray-600">{t(MODE_HINTS[mode])}</p>
+                )}
+
+                {mode === 'timer' && (
+                  <>
+                <label className="flex items-center gap-2 text-xs text-gray-400">
                   <Toggle on={activePlaylist.settings.randomize} onClick={() => void updateSettings({ randomize: !activePlaylist.settings.randomize })} />
                   <Shuffle size={12} />
                   {t('playlist.randomize')}
@@ -445,6 +481,9 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                   <Film size={12} />
                   {t('playlist.finishVideos')}
                 </label>
+
+                  </>
+                )}
 
                 <label
                   className="flex items-center gap-2 text-xs text-gray-400"
@@ -496,10 +535,12 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                   {t('playlist.empty')}
                 </div>
               )}
-              {activePlaylist.items.map((item, index) => (
+              {activePlaylist.items.map((item, index, items) => (
                 <PlaylistItemRow
                   key={item.wallpaperId}
                   item={item}
+                  earlierEnd={items.slice(0, index).reduce((end, other) => Math.max(end, other.endMinute ?? 0), 0)}
+                  isLast={index === items.length - 1}
                   wallpaper={wallpaperById.get(item.wallpaperId)}
                   index={index}
                   isPlaying={isPlaying}
@@ -513,6 +554,7 @@ export default function PlaylistsView({ onBrowseCreator }: PlaylistsViewProps) {
                   onContextMenu={(e) => { openItemCtxMenu(e, item.wallpaperId) }}
                   onOpenDetail={() => { setDetailId(item.wallpaperId) }}
                   defaultDurationSec={activePlaylist.settings.defaultDurationSec}
+                  mode={mode}
                   defaultVolume={activePlaylist.settings.defaultVolume}
                 />
               ))}

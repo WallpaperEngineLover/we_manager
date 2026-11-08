@@ -15,9 +15,14 @@ import FontSettings from './FontSettings'
 import LedSettings from './LedSettings'
 import LoaderSettings from './LoaderSettings'
 import ScheduleSettings from './ScheduleSettings'
+import AppRuleSettings from './AppRuleSettings'
+import ProfileSettings from './ProfileSettings'
+import AudioInputSettings from './AudioInputSettings'
 import UpdateSettings from './UpdateSettings'
 import DiagnosticsSettings from './DiagnosticsSettings'
+import VideoToolsSettings from './VideoToolsSettings'
 import SettingsCard from './SettingsCard'
+import VideoDefaultsSettings from './VideoDefaultsSettings'
 import SettingsTabs, { loadSettingsTab, saveSettingsTab, type SettingsTab } from './SettingsTabs'
 import CopyField from '../common/CopyField'
 import { useToast } from '../common/Toast'
@@ -93,6 +98,9 @@ function SettingsPanels({ onReset }: { onReset: () => void }) {
   const [killLweOnQuit, setKillLweOnQuit] = useState(false)
   const [skipPlaylistResume, setSkipPlaylistResume] = useState(false)
   const [freshProcessOnPathChange, setFreshProcessOnPathChange] = useState(false)
+  const [stopPlaylistsOnKillAll, setStopPlaylistsOnKillAll] = useState(false)
+  const [forgetOnKillAll, setForgetOnKillAll] = useState(false)
+  const [desktopIconsAuto, setDesktopIconsAuto] = useState(true)
   const [steamIdentity, setSteamIdentityState] = useState<SteamIdentity>('wallpaper-engine')
   const [steamIdentitySaved, setSteamIdentitySaved] = useState(false)
   const [autostartSupported, setAutostartSupported] = useState(false)
@@ -128,6 +136,8 @@ function SettingsPanels({ onReset }: { onReset: () => void }) {
       setKillLweOnQuit(cfg.killLweOnQuit)
       setSkipPlaylistResume(cfg.skipPlaylistResume)
       setFreshProcessOnPathChange(cfg.freshProcessOnPathChange)
+      setStopPlaylistsOnKillAll(cfg.stopPlaylistsOnKillAll)
+      setForgetOnKillAll(cfg.forgetOnKillAll)
       setSteamIdentityState(cfg.steamIdentity)
       setAutostartSupported(cfg.autostartSupported)
       setAutostartCompositorLine(cfg.autostartCompositorLine)
@@ -144,6 +154,7 @@ function SettingsPanels({ onReset }: { onReset: () => void }) {
     window.electronAPI.lwe.detectDistro().then(setDistro).catch(console.error)
     window.electronAPI.lwe.prebuiltTarget().then(setPrebuiltTarget).catch(console.error)
     window.electronAPI.desktopIcons.getEnabled().then(setDesktopIconsEnabled).catch(console.error)
+    window.electronAPI.desktopIcons.getAuto().then(setDesktopIconsAuto).catch(console.error)
     window.electronAPI.desktopIcons.getStatus().then(setDesktopIconsStatus).catch(console.error)
     window.electronAPI.playlist.getAll().then((all) => { setPlaylists(all.map((p) => ({ id: p.id, title: p.title }))); }).catch(console.error)
     window.electronAPI.lwe.listScreens().then(setScreens).catch(console.error)
@@ -343,6 +354,24 @@ function SettingsPanels({ onReset }: { onReset: () => void }) {
     await window.electronAPI.config.setKillLweOnQuit(newVal)
   }
 
+  async function handleStopPlaylistsOnKillAllToggle() {
+    const newVal = !stopPlaylistsOnKillAll
+    setStopPlaylistsOnKillAll(newVal)
+    await window.electronAPI.config.setStopPlaylistsOnKillAll(newVal)
+  }
+
+  async function handleForgetOnKillAllToggle() {
+    const newVal = !forgetOnKillAll
+    setForgetOnKillAll(newVal)
+    await window.electronAPI.config.setForgetOnKillAll(newVal)
+  }
+
+  async function handleDesktopIconsAutoToggle() {
+    const newVal = !desktopIconsAuto
+    setDesktopIconsAuto(newVal)
+    await window.electronAPI.desktopIcons.setAuto(newVal)
+  }
+
   async function handleSkipPlaylistResumeToggle() {
     const newVal = !skipPlaylistResume
     setSkipPlaylistResume(newVal)
@@ -449,6 +478,12 @@ function SettingsPanels({ onReset }: { onReset: () => void }) {
             <CardBorderSettings />
 
             <CardBadgeSettings />
+          </div>
+        )}
+
+        {tab === 'videoDefaults' && (
+          <div className="settings-sections max-w-lg">
+            <VideoDefaultsSettings />
           </div>
         )}
 
@@ -843,6 +878,16 @@ function SettingsPanels({ onReset }: { onReset: () => void }) {
                 </label>
 
                 <label className="mt-3 flex items-center gap-3 cursor-pointer">
+                  <Toggle on={stopPlaylistsOnKillAll} onClick={() => void handleStopPlaylistsOnKillAllToggle()} />
+                  <span className="text-sm text-gray-300">{t('settings.stopPlaylistsOnKillAll')}</span>
+                </label>
+
+                <label className="mt-3 flex items-center gap-3 cursor-pointer">
+                  <Toggle on={forgetOnKillAll} onClick={() => void handleForgetOnKillAllToggle()} />
+                  <span className="text-sm text-gray-300">{t('settings.forgetOnKillAll')}</span>
+                </label>
+
+                <label className="mt-3 flex items-center gap-3 cursor-pointer">
                   <Toggle on={skipPlaylistResume} onClick={() => void handleSkipPlaylistResumeToggle()} />
                   <span className="text-sm text-gray-300">{t('settings.skipPlaylistResume')}</span>
                 </label>
@@ -982,6 +1027,11 @@ function SettingsPanels({ onReset }: { onReset: () => void }) {
                   {desktopIconsEnabled ? t('settings.desktopIconsOn') : t('settings.desktopIconsOff')}
                 </span>
               </label>
+              <label className="mt-3 flex items-center gap-3 cursor-pointer">
+                <Toggle on={desktopIconsAuto} onClick={() => void handleDesktopIconsAutoToggle()} />
+                <span className="text-sm text-gray-300">{t('settings.desktopIconsAuto')}</span>
+              </label>
+              <p className="mt-1 text-xs text-gray-600">{t('settings.desktopIconsAutoHint')}</p>
               {desktopIconsStatus?.problem && (
                 <p className="mt-2 text-xs text-amber-400">
                   {t(`settings.desktopIcons_${desktopIconsStatus.problem}`)}
@@ -1118,6 +1168,12 @@ function SettingsPanels({ onReset }: { onReset: () => void }) {
 
             <AutomuteIgnoreSettings />
 
+            <AudioInputSettings />
+
+            <ProfileSettings />
+
+            <AppRuleSettings />
+
             <ScheduleSettings />
           </div>
         )}
@@ -1211,6 +1267,8 @@ function SettingsPanels({ onReset }: { onReset: () => void }) {
               </label>
               <p className="text-xs text-gray-600">{t('settings.scriptLimitsHint')}</p>
             </SettingsCard>
+
+            <VideoToolsSettings />
 
             <DiagnosticsSettings />
 

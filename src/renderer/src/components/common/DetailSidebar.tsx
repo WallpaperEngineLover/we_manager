@@ -460,9 +460,10 @@ export default function DetailSidebar({
     queryKey: ['author-info', creatorSteamId],
     queryFn: () => window.electronAPI.steam.getAuthorInfo(creatorSteamId!),
     enabled: !!creatorSteamId,
-    staleTime: Infinity,
-    retry: 3,
-    retryDelay: (attempt) => Math.min(2000 * 2 ** attempt, 15_000)
+    staleTime: (query) => (query.state.data ? Infinity : 5 * 60_000),
+    refetchInterval: (query) => (query.state.data === null ? 60_000 : false),
+    retry: 1,
+    retryDelay: 30_000
   })
 
   const { data: libraryMeta } = useQuery({

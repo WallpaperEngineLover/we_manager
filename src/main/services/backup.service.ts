@@ -7,8 +7,10 @@ import { IpcChannels } from '@shared/ipc-channels'
 import type { BackupProgressEvent, WallpaperMeta } from '@shared/types'
 import { getConfiguredBackupPath } from './config.service'
 import * as library from './library.service'
+import { isShaderCache } from '../utils/shaderCache'
 import { containedPath } from '../utils/contained'
-import { normalizeType, normalizeRating, type ProjectJson } from './library.service'
+import { readProjectJson } from '../utils/projectJson'
+import { normalizeType, normalizeRating } from './library.service'
 
 function getBackupDir(id: string): string {
   const backupPath = getConfiguredBackupPath()
@@ -40,14 +42,6 @@ export async function exists(p: string): Promise<boolean> {
     return true
   } catch {
     return false
-  }
-}
-
-async function readProjectJson(dir: string): Promise<ProjectJson | null> {
-  try {
-    return JSON.parse(await fs.promises.readFile(path.join(dir, 'project.json'), 'utf8')) as ProjectJson
-  } catch {
-    return null
   }
 }
 
@@ -122,11 +116,6 @@ function hashFile(filePath: string): Promise<string> {
   })
 }
 
-// WE writes compiled shaders into the folder
-function isShaderCache(relPath: string): boolean {
-  return /^shaders[\\/]blobs/i.test(relPath)
-}
-
 async function walkFiles(dirPath: string, baseDir = dirPath): Promise<{ relPath: string; size: number }[]> {
   const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
   const nested = await Promise.all(
@@ -156,13 +145,70 @@ export async function forEachLimit<T>(items: T[], limit: number, fn: (item: T) =
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
 }
 
-async function fsyncPath(p: string): Promise<void> {
+export async function fsyncPath(p: string): Promise<void> {
   const handle = await fs.promises.open(p, 'r')
   try {
     await handle.sync()
   } finally {
     await handle.close()
   }
+}
+
+const SYNC_TIMEOUT_MS = 120_000
+
+// fsync leaves atime updates from the hash reads, unlinks and directory changes in the journal, so the whole
+// filesystem is flushed (sync -f), with a plain sync where that flag is missing
+function syncOnce(target: string): Promise<void> {
+  const run = (args: string[]): Promise<{ code: number | null; timedOut: boolean }> =>
+    new Promise((resolve) => {
+      const child = spawn('sync', args, { stdio: 'ignore' })
+      // a sync stuck in uninterruptible I/O ignores signals, so the wait ends here and not on the exit
+      const giveUp = setTimeout(() => {
+        child.kill('SIGKILL')
+        resolve({ code: null, timedOut: true })
+      }, SYNC_TIMEOUT_MS)
+      child.on('error', () => {
+        clearTimeout(giveUp)
+        resolve({ code: null, timedOut: false })
+      })
+      child.on('close', (code, signal) => {
+        clearTimeout(giveUp)
+        resolve({ code, timedOut: code === null && signal !== null })
+      })
+    })
+  return run(['-f', target]).then(async (first) => {
+    if (first.timedOut) {
+      console.warn(`[Backup] sync of ${target} did not finish in ${SYNC_TIMEOUT_MS / 1000} s`)
+      return
+    }
+    if (first.code !== null && first.code !== 0) await run([])
+  })
+}
+
+interface SyncSlot {
+  running: Promise<void>
+  queued: Promise<void> | null
+}
+
+const syncSlots = new Map<number, SyncSlot>()
+
+function startSync(dev: number, target: string): Promise<void> {
+  const slot: SyncSlot = { running: syncOnce(target), queued: null }
+  syncSlots.set(dev, slot)
+  void slot.running.then(() => {
+    if (syncSlots.get(dev) === slot) syncSlots.delete(dev)
+  })
+  return slot.running
+}
+
+// copies run side by side and a sync flushes the whole filesystem: callers that arrive while one is running share
+// the next one, which starts after theirs wrote everything
+async function syncFilesystem(target: string): Promise<void> {
+  const dev = await fs.promises.stat(target).then((st) => st.dev, () => -1)
+  const slot = syncSlots.get(dev)
+  if (!slot) return startSync(dev, target)
+  slot.queued ??= slot.running.then(() => startSync(dev, target))
+  return slot.queued
 }
 
 // fsynced pages are clean, so iflag=nocache can evict them and the hash check reads the disk
@@ -216,6 +262,7 @@ export async function verifyOnDisk(sourcePath: string, destDir: string): Promise
   } catch {
     return false
   }
+  await syncFilesystem(destDir)
   await dropPageCache(destDir)
   return backupMatchesSource(sourcePath, destDir)
 }
@@ -365,6 +412,7 @@ async function stageAndSwap(
       })
     }
     for (const dir of await walkDirs(stagingDir)) await fsyncPath(dir)
+    await syncFilesystem(stagingDir)
     await dropPageCache(stagingDir)
 
     bytesDone = 0
@@ -407,6 +455,7 @@ async function stageAndSwap(
     }
     await fsyncPath(destRoot)
     await Promise.all([removeTree(oldDir), removeTree(verifiedMark)])
+    await syncFilesystem(destRoot)
   } catch (err) {
     await Promise.all([removeTree(stagingDir), removeTree(verifiedMark)].map((removal) => removal.catch(() => {})))
     sendProgress(win, {
@@ -543,9 +592,9 @@ export async function scanBackupFolder(): Promise<{
   const backupPath = getConfiguredBackupPath()
   const wallpapers = new Map(library.getAllWallpapers().map((w) => [w.id, w]))
   if (!backupPath || !(await isDir(backupPath))) {
-    const patches = await previewRepairs([...wallpapers.values()])
-    library.applyWallpaperChanges({ patches })
-    result.previewsFixed = patches.length
+    const previewPatches = await previewRepairs([...wallpapers.values()])
+    library.applyWallpaperChanges({ patches: [...previewPatches, ...(await library.sizeRepairs([...wallpapers.values()]))] })
+    result.previewsFixed = previewPatches.length
     return result
   }
 
@@ -619,11 +668,12 @@ export async function scanBackupFolder(): Promise<{
   })
 
   const reimported = new Set(upserts.map((m) => m.id))
-  const previewPatches = await previewRepairs(
-    [...wallpapers.values()].filter((w) => !reimported.has(w.id) && !deletes.includes(w.id))
-  )
+  const deleted = new Set(deletes)
+  const untouched = [...wallpapers.values()].filter((w) => !reimported.has(w.id) && !deleted.has(w.id))
+  const previewPatches = await previewRepairs(untouched)
   patches.push(...previewPatches)
   result.previewsFixed = previewPatches.length
+  patches.push(...(await library.sizeRepairs(untouched)))
 
   library.applyWallpaperChanges({
     upserts,

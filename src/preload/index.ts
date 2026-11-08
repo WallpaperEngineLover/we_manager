@@ -1,4 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type {
+  OptimizeOptions,
+  OptimizeProgress,
+  OptimizeResult,
+  QuickProgress,
+  QuickReport,
+  QuickTrim,
+  VideoProbe,
+  VideoToolSettings,
+  VideoToolsStatus
+} from '@shared/video-tools'
 import { IpcChannels } from '../shared/ipc-channels'
 import type { Appearance } from '../shared/appearance'
 import type { Language, LanguagePreference } from '../shared/i18n'
@@ -28,6 +39,9 @@ import type {
   LweAudioObject,
   LweSceneEffect,
   LweFontNeed,
+  AudioInputDevice,
+  AppRule,
+  Profile,
   UserFont,
   DesktopApplication,
   BackupProgressEvent,
@@ -105,7 +119,7 @@ const api = {
       ipcRenderer.invoke(IpcChannels.STEAM_GET_FAVORITE_IDS),
     getFavoriteStatus: (): Promise<FavoriteStatus> =>
       ipcRenderer.invoke(IpcChannels.STEAM_GET_FAVORITE_STATUS),
-    getAuthorInfo: (steamId: string): Promise<WorkshopAuthorInfo> =>
+    getAuthorInfo: (steamId: string): Promise<WorkshopAuthorInfo | null> =>
       ipcRenderer.invoke(IpcChannels.STEAM_GET_AUTHOR_INFO, steamId)
   },
 
@@ -131,7 +145,7 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LIBRARY_DISTINCT_TAGS),
     resetFpsOverrides: (): Promise<{ count: number }> =>
       ipcRenderer.invoke(IpcChannels.LIBRARY_RESET_FPS_OVERRIDES),
-    checkUnavailable: (): Promise<{ checked: number; unavailable: number; changed: boolean }> =>
+    checkUnavailable: (): Promise<{ checked: number; unavailable: number; changed: boolean; failed: boolean }> =>
       ipcRenderer.invoke(IpcChannels.LIBRARY_CHECK_UNAVAILABLE),
     transfer: (
       ids: string[],
@@ -187,6 +201,10 @@ const api = {
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_SKIP_PLAYLIST_RESUME, enabled),
     setFreshProcessOnPathChange: (enabled: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_FRESH_PROCESS_ON_PATH_CHANGE, enabled),
+    setStopPlaylistsOnKillAll: (enabled: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_STOP_PLAYLISTS_ON_KILL_ALL, enabled),
+    setForgetOnKillAll: (enabled: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.CONFIG_SET_FORGET_ON_KILL_ALL, enabled),
     setCardBorders: (borders: CardBorders): Promise<CardBorders> =>
       ipcRenderer.invoke(IpcChannels.CONFIG_SET_CARD_BORDERS, borders),
     setCardBadges: (badges: CardBadges): Promise<CardBadges> =>
@@ -245,7 +263,7 @@ const api = {
     updateItem: (
       id: string,
       wallpaperId: string,
-      patch: { volume?: number; durationSec?: number }
+      patch: { volume?: number; durationSec?: number; endMinute?: number }
     ): Promise<Playlist | null> =>
       ipcRenderer.invoke(IpcChannels.PLAYLIST_UPDATE_ITEM, id, wallpaperId, patch),
     start: (id: string, screen?: ScreenTarget): Promise<PlaylistPlaybackState[]> =>
@@ -356,6 +374,7 @@ const api = {
       ipcRenderer.invoke(IpcChannels.LWE_LIST_AUDIO_OBJECTS, wallpaperPath),
     listEffects: (wallpaperPath: string): Promise<LweSceneEffect[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_EFFECTS, wallpaperPath),
+    listAudioInputs: (): Promise<AudioInputDevice[]> => ipcRenderer.invoke(IpcChannels.LWE_LIST_AUDIO_INPUTS),
     listFonts: (wallpaperPath: string): Promise<LweFontNeed[]> =>
       ipcRenderer.invoke(IpcChannels.LWE_LIST_FONTS, wallpaperPath),
     listApplications: (): Promise<DesktopApplication[]> =>
@@ -370,6 +389,22 @@ const api = {
       ipcRenderer.invoke(IpcChannels.SCHEDULE_SAVE, rule),
     delete: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke(IpcChannels.SCHEDULE_DELETE, id),
     run: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke(IpcChannels.SCHEDULE_RUN, id)
+  },
+
+  appRules: {
+    getAll: (): Promise<AppRule[]> => ipcRenderer.invoke(IpcChannels.APP_RULES_GET_ALL),
+    save: (rule: Omit<AppRule, 'id'> & { id?: string }): Promise<AppRule> =>
+      ipcRenderer.invoke(IpcChannels.APP_RULES_SAVE, rule),
+    delete: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke(IpcChannels.APP_RULES_DELETE, id),
+    active: (): Promise<string[]> => ipcRenderer.invoke(IpcChannels.APP_RULES_ACTIVE),
+    audioAvailable: (): Promise<boolean> => ipcRenderer.invoke(IpcChannels.APP_RULES_AUDIO_AVAILABLE)
+  },
+
+  profiles: {
+    getAll: (): Promise<Profile[]> => ipcRenderer.invoke(IpcChannels.PROFILES_GET_ALL),
+    capture: (name: string): Promise<Profile> => ipcRenderer.invoke(IpcChannels.PROFILES_CAPTURE, name),
+    delete: (id: string): Promise<{ ok: boolean; disabled: number }> => ipcRenderer.invoke(IpcChannels.PROFILES_DELETE, id),
+    apply: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke(IpcChannels.PROFILES_APPLY, id)
   },
 
   backup: {
@@ -392,11 +427,33 @@ const api = {
       ipcRenderer.invoke(IpcChannels.BACKUP_REMOVE, itemIds)
   },
 
+  videoTools: {
+    status: (): Promise<VideoToolsStatus> => ipcRenderer.invoke(IpcChannels.VIDEO_TOOLS_STATUS),
+    download: (): Promise<{ ok: boolean }> => ipcRenderer.invoke(IpcChannels.VIDEO_TOOLS_DOWNLOAD),
+    remove: (): Promise<{ ok: boolean }> => ipcRenderer.invoke(IpcChannels.VIDEO_TOOLS_REMOVE),
+    probe: (itemId: string): Promise<VideoProbe> => ipcRenderer.invoke(IpcChannels.VIDEO_TOOLS_PROBE, itemId),
+    start: (itemId: string, options: OptimizeOptions): Promise<OptimizeResult> =>
+      ipcRenderer.invoke(IpcChannels.VIDEO_TOOLS_START, itemId, options),
+    cancel: (): Promise<{ ok: boolean }> => ipcRenderer.invoke(IpcChannels.VIDEO_TOOLS_CANCEL),
+    finish: (itemId: string, keep: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.VIDEO_TOOLS_FINISH, itemId, keep),
+    getSettings: (): Promise<VideoToolSettings> => ipcRenderer.invoke(IpcChannels.VIDEO_TOOLS_GET_SETTINGS),
+    setSettings: (settings: VideoToolSettings): Promise<VideoToolSettings> =>
+      ipcRenderer.invoke(IpcChannels.VIDEO_TOOLS_SET_SETTINGS, settings),
+    quick: (ids: string[], trim?: boolean): Promise<QuickReport> =>
+      ipcRenderer.invoke(IpcChannels.VIDEO_TOOLS_QUICK, ids, trim),
+    quickTrims: (ids: string[]): Promise<QuickTrim[]> => ipcRenderer.invoke(IpcChannels.VIDEO_TOOLS_QUICK_TRIMS, ids)
+  },
+
   desktopIcons: {
     setEnabled: (enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> =>
       ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_SET_ENABLED, enabled),
     getEnabled: (): Promise<boolean> =>
       ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_GET_ENABLED),
+    setAuto: (auto: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_SET_AUTO, auto),
+    getAuto: (): Promise<boolean> =>
+      ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_GET_AUTO),
     getStatus: (): Promise<DesktopIconsStatus> => ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_GET_STATUS),
     installDeps: (): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke(IpcChannels.DESKTOP_ICONS_INSTALL_DEPS)
@@ -487,6 +544,16 @@ const api = {
       ipcRenderer.on(IpcChannels.EVENT_REPAIR_PROGRESS, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_REPAIR_PROGRESS, listener)
     },
+    videoToolsProgress: (cb: (progress: OptimizeProgress) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, progress: OptimizeProgress) => { cb(progress) }
+      ipcRenderer.on(IpcChannels.EVENT_VIDEO_TOOLS_PROGRESS, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_VIDEO_TOOLS_PROGRESS, listener)
+    },
+    videoToolsQuick: (cb: (progress: QuickProgress) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, progress: QuickProgress) => { cb(progress) }
+      ipcRenderer.on(IpcChannels.EVENT_VIDEO_TOOLS_QUICK, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_VIDEO_TOOLS_QUICK, listener)
+    },
     backupProgress: (cb: (progress: BackupProgressEvent) => void): (() => void) => {
       const listener = (_: Electron.IpcRendererEvent, progress: BackupProgressEvent) => { cb(progress) }
       ipcRenderer.on(IpcChannels.EVENT_BACKUP_PROGRESS, listener)
@@ -541,6 +608,11 @@ const api = {
       const listener = (_: Electron.IpcRendererEvent, ruleName: string) => { cb(ruleName) }
       ipcRenderer.on(IpcChannels.EVENT_SCHEDULE_FIRED, listener)
       return () => ipcRenderer.off(IpcChannels.EVENT_SCHEDULE_FIRED, listener)
+    },
+    appRule: (cb: (event: { name: string; state: 'started' | 'ended' | 'restoreFailed' | 'failed' }) => void): (() => void) => {
+      const listener = (_: Electron.IpcRendererEvent, event: { name: string; state: 'started' | 'ended' | 'restoreFailed' | 'failed' }) => { cb(event) }
+      ipcRenderer.on(IpcChannels.EVENT_APP_RULE, listener)
+      return () => ipcRenderer.off(IpcChannels.EVENT_APP_RULE, listener)
     },
     updateStatus: (cb: (status: UpdateStatus) => void): (() => void) => {
       const listener = (_: Electron.IpcRendererEvent, status: UpdateStatus) => { cb(status) }

@@ -1,12 +1,9 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import * as fs from 'fs'
 import * as os from 'os'
 import type { GraphicsWarning } from '@shared/types'
 import { getEngineRenderer } from './lwe.service'
 import { hostAppPath, hostCommand, isFlatpak } from '../utils/flatpak'
-
-const execFileAsync = promisify(execFile)
+import { execFileAsync } from '../utils/exec'
 
 const SOFTWARE_RENDERER = /llvmpipe|softpipe|swrast/i
 const GLVND_DIR = '/usr/share/glvnd/egl_vendor.d'

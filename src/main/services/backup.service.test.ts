@@ -25,6 +25,27 @@ vi.mock('./library.service', () => ({
     for (const { id, patch } of c.patches ?? []) wallpapers.set(id, { ...wallpapers.get(id)!, ...patch })
     for (const id of c.deletes ?? []) wallpapers.delete(id)
   },
+  getDirSizeAsync: async function size(dir: string): Promise<number> {
+    let total = 0
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      total += e.isDirectory() ? await size(path.join(dir, e.name)) : fs.statSync(path.join(dir, e.name)).size
+    }
+    return total
+  },
+  sizeRepairs: async (list: WallpaperMeta[]) => {
+    const dirSize = (dir: string): number =>
+      fs.readdirSync(dir, { withFileTypes: true }).reduce(
+        (total, e) => total + (e.isDirectory() ? dirSize(path.join(dir, e.name)) : fs.statSync(path.join(dir, e.name)).size),
+        0
+      )
+    const patches: { id: string; patch: Partial<WallpaperMeta> }[] = []
+    for (const w of list) {
+      if (w.source === 'workshop' || w.downloading || !w.localPath || !fs.existsSync(w.localPath)) continue
+      const fileSize = dirSize(w.localPath)
+      if (fileSize > 0 && fileSize !== w.fileSize) patches.push({ id: w.id, patch: { fileSize } })
+    }
+    return patches
+  },
   normalizeType: (t?: string) => t ?? 'scene',
   normalizeRating: () => 'everyone',
 }))
@@ -260,6 +281,18 @@ describe('scanBackupFolder', () => {
     const again = await backup.scanBackupFolder()
     expect(again.imported).toBe(0)
     expect(again.skipped).toBe(3)
+  })
+
+  it('reads the file sizes again', async () => {
+    writeFiles(path.join(backupRoot, 'sized'), { 'project.json': '{"type":"video","file":"a.mp4"}', 'a.mp4': '12345' })
+    const local = path.join(tmp, 'local-copy')
+    writeFiles(local, { 'project.json': '{"type":"video","file":"a.mp4"}', 'a.mp4': '1234567' })
+    wallpapers.set('sized', { ...base, id: 'sized', source: 'backup', localPath: path.join(backupRoot, 'sized'), backedUp: true, fileSize: 1 })
+    wallpapers.set('123', { ...base, id: '123', source: 'local', localPath: local, fileSize: 99999 })
+    await backup.scanBackupFolder()
+    const jsonSize = fs.statSync(path.join(local, 'project.json')).size
+    expect(wallpapers.get('sized')?.fileSize).toBe(jsonSize + 5)
+    expect(wallpapers.get('123')?.fileSize).toBe(jsonSize + 7)
   })
 
   it('re-imports a backup entry that pointed at a folder in the old backup location', async () => {

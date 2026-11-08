@@ -1,5 +1,3 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import * as fs from 'fs'
 import * as os from 'os'
 import { app } from 'electron'
@@ -18,8 +16,8 @@ import { stopDisplay } from './display.service'
 import { getPlaybackStates, restoreVolume, suspendPlaylist } from './playlist-player.service'
 import { detectDesktopEnv, detectDisplayServer, getConnectedScreens, runningAppImage } from '../utils/platform'
 import { hostCommand, hostAppPath, isFlatpak } from '../utils/flatpak'
-
-const execFileAsync = promisify(execFile)
+import { setTimeout as sleep } from 'timers/promises'
+import { execFileAsync } from '../utils/exec'
 
 const DEFAULT_SECONDS = 20
 const SOFTWARE_RENDERER = /llvmpipe|softpipe|swrast/i
@@ -237,7 +235,7 @@ async function runTarget(target: DiagnosticsTarget, seconds: number, notes: stri
     }
     const deadline = Date.now() + seconds * 1000
     while (Date.now() < deadline && !(exit.at && Date.now() - exit.at > 1500)) {
-      await new Promise((resolve) => setTimeout(resolve, 250))
+      await sleep(250)
     }
     histories = getEngineHistory().filter((h) => h.screen === target.screen)
     if (histories.length > 0) snapshot = await snapshotInstances()
@@ -268,7 +266,7 @@ export async function collectDiagnostics(seconds = DEFAULT_SECONDS, target?: Dia
     setDiagnosticStats(true)
     try {
       notes.push(...(await restartPlaying()))
-      await new Promise((resolve) => setTimeout(resolve, seconds * 1000))
+      await sleep(seconds * 1000)
       histories = getEngineHistory()
       snapshot = await snapshotInstances()
     } finally {

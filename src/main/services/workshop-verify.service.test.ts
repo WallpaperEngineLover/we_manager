@@ -13,7 +13,8 @@ let installInfo: { folder: string; sizeOnDisk: number } | null = null
 const wallpapers = new Map<string, WallpaperMeta>()
 
 vi.mock('electron', () => ({ app: { getPath: () => os.tmpdir() } }))
-vi.mock('./config.service', () => ({ getConfiguredBackupPath: () => null }))
+let identity = 'wallpaper-engine'
+vi.mock('./config.service', () => ({ getConfiguredBackupPath: () => null, getSteamIdentity: () => identity }))
 vi.mock('../utils/paths', () => ({ getWorkshopPath: () => dir }))
 vi.mock('./steam.service', () => ({
   ITEM_STATE_INSTALLED: 4,
@@ -146,6 +147,8 @@ describe('verifyItems', () => {
     wallpapers.set('2', wallpaper('2', { localPath: path.join(dir, 'gone') }))
     wallpapers.set('3', wallpaper('3', { downloading: true }))
     wallpapers.set('4', wallpaper('4', { source: 'local' }))
+    wallpapers.set('8', wallpaper('8', { localPath: path.join(dir, 'empty') }))
+    subscribed = ['1', '2', '3']
     installInfo = null
 
     const progress: number[] = []
@@ -159,6 +162,7 @@ describe('verifyItems', () => {
 
   it('skips items Steam could not be asked about instead of calling them not installed', async () => {
     wallpapers.set('1', wallpaper('1'))
+    subscribed = ['1']
     steamDown = true
 
     const result = await verify.verifyItems(undefined, () => {})
@@ -181,6 +185,22 @@ describe('verifyItems', () => {
     expect(result.damaged.sort()).toEqual(['5', '6', '7'])
     expect(wallpapers.get('5')!.verifyProblem).toBeUndefined()
     expect(wallpapers.has('6')).toBe(false)
+  })
+
+  it('does not read the Spacewar subscriptions as the whole list', async () => {
+    identity = 'standalone'
+    try {
+      wallpapers.set('1', wallpaper('1', { verifyProblem: 'missingFolder' }))
+      subscribed = ['999']
+      installInfo = null
+      state = 0
+
+      await verify.verifyItems(['1'], () => {})
+
+      expect(wallpapers.get('1')!.verifyProblem).toBeDefined()
+    } finally {
+      identity = 'wallpaper-engine'
+    }
   })
 })
 

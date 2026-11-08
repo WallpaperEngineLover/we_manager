@@ -112,13 +112,14 @@ export function reorderPlaylistItems(id: string, orderedWallpaperIds: string[]):
 export function updatePlaylistItem(
   id: string,
   wallpaperId: string,
-  patch: { volume?: number; durationSec?: number }
+  patch: { volume?: number; durationSec?: number; endMinute?: number }
 ): Playlist | null {
   return updatePlaylist(id, (playlist) => {
     const item = playlist.items.find((i) => i.wallpaperId === wallpaperId)
     if (!item) return false
     if ('volume' in patch) item.volume = patch.volume
     if ('durationSec' in patch) item.durationSec = patch.durationSec
+    if ('endMinute' in patch) item.endMinute = patch.endMinute
   })
 }
 

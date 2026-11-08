@@ -6,12 +6,14 @@ import {
   ExternalLink,
   Eye,
   FolderOpen,
+  Film,
   HardDrive,
   Monitor,
   MoveRight,
   ShieldCheck,
   Trash2,
-  User
+  User,
+  Zap
 } from 'lucide-react'
 import type { ExtraLibrary, WallpaperMeta } from '@shared/types'
 import {
@@ -24,6 +26,8 @@ import {
   VoteMenuItems,
   FavoriteMenuItems
 } from './ContextMenu'
+import { openOptimizeVideo } from './OptimizeVideoModal'
+import { runQuickOptimize, useQuickOptimizeRunning } from '../../hooks/useQuickOptimize'
 import { useToast } from './Toast'
 import { useConfig, useFolders } from '../../hooks/queries'
 import { useDisplayTargets } from '../../hooks/useDisplayTargets'
@@ -35,6 +39,7 @@ import {
   backupSummary,
   canBrowseCreator,
   hasBackup,
+  isOptimizableVideo,
   isPlayable,
   resolveCreatorSteamId,
   transferSummary,
@@ -75,6 +80,10 @@ export default function WallpaperContextMenu({
   const backupable = wallpapers.filter((w) => w.source === 'workshop')
   const transferable = wallpapers.filter(isPlayable)
   const backups = wallpapers.filter(hasBackup)
+  // Steam puts workshop folders back when it validates them, only copies outside it can be changed
+  const optimizable = wallpapers.length === 1 && isOptimizableVideo(wallpapers[0]) && isPlayable(wallpapers[0]) ? wallpapers[0] : undefined
+  const quickable = wallpapers.filter(isOptimizableVideo)
+  const quickRunning = useQuickOptimizeRunning()
   const video = wallpapers.map(videoPath).find(Boolean)
   const splittable = wallpapers.filter((w) => isPlayable(w) && ['scene', 'video', 'web'].includes(w.type))
   const creatorSource = wallpapers.length === 1 && canBrowseCreator(wallpapers[0]) ? wallpapers[0] : undefined
@@ -182,6 +191,19 @@ export default function WallpaperContextMenu({
           {t('backup.delete')}
         </MenuItem>
       )}
+      {optimizable && !quickRunning && (
+        <MenuItem icon={Film} onClick={run(() => { openOptimizeVideo(optimizable.id) })}>
+          {t('optimize.action')}
+        </MenuItem>
+      )}
+      {quickable.length > 0 && !quickRunning && (
+        <MenuItem
+          icon={Zap}
+          onClick={run(() => runQuickOptimize(quickable.map((w) => w.id), () => { void queryClient.invalidateQueries({ queryKey: ['library'] }) }))}
+        >
+          {t('quick.action')}
+        </MenuItem>
+      )}
       {backupable.length > 0 && (
         <MenuItem icon={ShieldCheck} onClick={run(async () => { showToast(await verifyFiles(backupable.map((w) => w.id), () => {})); })}>
           {t('verify.action')}
@@ -231,20 +253,15 @@ export default function WallpaperContextMenu({
       {libraries.length > 0 && transferable.length > 0 && (
         <>
           <MenuSeparator />
-          <SubMenu icon={Copy} label={t('transfer.copyTo')}>
-            {libraries.map((l) => (
-              <MenuItem key={l.path} icon={HardDrive} onClick={run(() => transfer(l, 'copy'))}>
-                <span title={l.path}>{l.name}</span>
-              </MenuItem>
-            ))}
-          </SubMenu>
-          <SubMenu icon={MoveRight} label={t('transfer.moveTo')}>
-            {libraries.map((l) => (
-              <MenuItem key={l.path} icon={HardDrive} onClick={run(() => transfer(l, 'move'))}>
-                <span title={l.path}>{l.name}</span>
-              </MenuItem>
-            ))}
-          </SubMenu>
+          {([['copy', Copy, 'transfer.copyTo'], ['move', MoveRight, 'transfer.moveTo']] as const).map(([action, icon, label]) => (
+            <SubMenu key={action} icon={icon} label={t(label)}>
+              {libraries.map((l) => (
+                <MenuItem key={l.path} icon={HardDrive} onClick={run(() => transfer(l, action))}>
+                  <span title={l.path}>{l.name}</span>
+                </MenuItem>
+              ))}
+            </SubMenu>
+          ))}
         </>
       )}
 

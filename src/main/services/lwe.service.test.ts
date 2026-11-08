@@ -34,6 +34,7 @@ const {
   nodeDevelPackage,
   parsePacmanRepos,
   parseCustomArgs,
+  parseAudioInputList,
   parseOsReleaseIds
 } = await import('./lwe.service')
 
@@ -105,6 +106,24 @@ describe('buildLweArgs', () => {
     expect(args[start + 15]).toBe('center')
     expect(args).not.toContain('--screen-root')
     expect(args.slice(-3)).toEqual(['--fps', '30', '/w/a'])
+  })
+})
+
+describe('audio input', () => {
+  it('writes the hotswap keys', () => {
+    expect(buildHotswapLines({ audioInput: 'default', audioInputVolume: 50, audioInputThreshold: 0 })).toEqual([
+      'audio-input=default',
+      'audio-input-volume=50',
+      'audio-input-threshold=0'
+    ])
+  })
+
+  it('reads the engine list', () => {
+    const out = 'a.monitor\tmonitor\tMonitor of A\nmic\tinput\tUSB\tMic\n\nbroken line\nx\tother\ty\n'
+    expect(parseAudioInputList(out)).toEqual([
+      { name: 'a.monitor', description: 'Monitor of A', monitor: true },
+      { name: 'mic', description: 'USB\tMic', monitor: false }
+    ])
   })
 })
 

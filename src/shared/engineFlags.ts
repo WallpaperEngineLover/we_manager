@@ -91,6 +91,11 @@ export function engineFlagArgs(flags: EngineFlags): string[] {
   if (flags.webFrames && flags.webFrames !== 'auto') args.push('--web-frames', flags.webFrames)
   if (flags.frameLimiter && flags.frameLimiter !== 'budget') args.push('--frame-limiter', flags.frameLimiter)
   if (flags.hrtf && flags.hrtf !== 'auto') args.push('--hrtf', flags.hrtf)
+  if (flags.audioInput && flags.audioInput !== 'default') args.push('--audio-input', flags.audioInput)
+  if (flags.audioInputVolume !== undefined && flags.audioInputVolume !== 50) {
+    args.push('--audio-input-volume', String(flags.audioInputVolume))
+  }
+  if (flags.audioInputThreshold) args.push('--audio-input-threshold', String(flags.audioInputThreshold))
   if (flags.transition && flags.transition !== 'none') {
     args.push('--transition', flags.transition)
     if (flags.transitionDuration && flags.transitionDuration !== '600') {

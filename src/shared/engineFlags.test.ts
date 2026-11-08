@@ -42,6 +42,14 @@ describe('engineFlagArgs', () => {
     expect(engineFlagArgs({ frameLimiter: 'budget' })).toEqual([])
     expect(engineFlagArgs({ hrtf: 'on' })).toEqual(['--hrtf', 'on'])
     expect(engineFlagArgs({ hrtf: 'auto' })).toEqual([])
+    expect(engineFlagArgs({ audioInput: 'alsa_input.mic' })).toEqual(['--audio-input', 'alsa_input.mic'])
+    expect(engineFlagArgs({ audioInput: 'default', audioInputVolume: 50, audioInputThreshold: 0 })).toEqual([])
+    expect(engineFlagArgs({ audioInputVolume: 80, audioInputThreshold: 120 })).toEqual([
+      '--audio-input-volume',
+      '80',
+      '--audio-input-threshold',
+      '120'
+    ])
     expect(engineFlagArgs({ batteryFps: '15' })).toEqual(['--fps-battery', '15'])
     expect(engineFlagArgs({ batteryFps: 'pause' })).toEqual(['--pause-on-battery'])
     expect(engineFlagArgs({ batteryFps: 'off' })).toEqual([])

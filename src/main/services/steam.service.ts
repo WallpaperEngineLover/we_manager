@@ -237,8 +237,13 @@ export async function downloadItem(itemId: bigint, highPriority = true): Promise
   }
 }
 
-export async function unsubscribeFromItem(itemId: bigint): Promise<void> {
-  await steamCall('workshop.unsubscribe', itemId)
+// Steam drops overlapping workshop calls, so unsubscribes go one after another
+let unsubscribeQueue: Promise<unknown> = Promise.resolve()
+
+export function unsubscribeFromItem(itemId: bigint): Promise<void> {
+  const turn = unsubscribeQueue.then(() => steamCall<void>('workshop.unsubscribe', itemId))
+  unsubscribeQueue = turn.catch(() => {})
+  return turn
 }
 
 function isSteamOnline(): Promise<boolean> {
@@ -640,17 +645,45 @@ function authorInfoCache(): ReturnType<typeof openStore<{ authors: Record<string
 }
 const PROFILE_FETCH_TIMEOUT_MS = 15_000
 
-const authorInfoInflight = new Map<string, Promise<WorkshopAuthorInfo>>()
+const authorInfoInflight = new Map<string, Promise<WorkshopAuthorInfo | null>>()
 
-// throws on any failure (429 when Steam rate limits, timeouts, private profile without avatar),
-// so the renderer retries instead of caching a null forever
-export function getAuthorInfo(steamId: string): Promise<WorkshopAuthorInfo> {
+const PROFILE_COOLDOWN_BASE_MS = 5 * 60_000
+const PROFILE_COOLDOWN_MAX_MS = 60 * 60_000
+const PROFILE_FAIL_TTL_MS = 60_000
+let profileCooldownUntil = 0
+let profileCooldownMs = 0
+const profileFailedAt = new Map<string, number>()
+
+class ProfileThrottledError extends Error {}
+
+function startProfileCooldown(retryAfterSeconds: number): void {
+  profileCooldownMs =
+    retryAfterSeconds > 0
+      ? Math.min(retryAfterSeconds * 1000, PROFILE_COOLDOWN_MAX_MS)
+      : Math.min(profileCooldownMs ? profileCooldownMs * 2 : PROFILE_COOLDOWN_BASE_MS, PROFILE_COOLDOWN_MAX_MS)
+  profileCooldownUntil = Date.now() + profileCooldownMs
+}
+
+/** test hook */
+export function resetAuthorThrottle(): void {
+  profileCooldownUntil = 0
+  profileCooldownMs = 0
+  profileFailedAt.clear()
+}
+
+// null = no profile for now (Steam is rate limiting, or the lookup failed a moment ago), the UI shows the SteamID
+export function getAuthorInfo(steamId: string): Promise<WorkshopAuthorInfo | null> {
   const cached = authorInfoCache().get('authors')[steamId]
   if (cached?.fetchedAt && Date.now() - cached.fetchedAt < AUTHOR_CACHE_TTL_MS) return Promise.resolve(cached)
+  if (Date.now() < profileCooldownUntil) return Promise.resolve(cached ?? null)
+  const failedAt = profileFailedAt.get(steamId)
+  if (failedAt !== undefined && Date.now() - failedAt < PROFILE_FAIL_TTL_MS) return Promise.resolve(cached ?? null)
   let pending = authorInfoInflight.get(steamId)
   if (!pending) {
     pending = queueProfileFetch(steamId)
       .catch((err: unknown) => {
+        if (err instanceof ProfileThrottledError) return cached ?? null
+        profileFailedAt.set(steamId, Date.now())
         if (cached) return cached
         throw err
       })
@@ -661,37 +694,28 @@ export function getAuthorInfo(steamId: string): Promise<WorkshopAuthorInfo> {
 }
 
 const PROFILE_GAP_MS = 1000
-const PROFILE_MAX_RETRY_WAIT_MS = 10_000
 let profileQueue: Promise<unknown> = Promise.resolve()
 
 function queueProfileFetch(steamId: string): Promise<WorkshopAuthorInfo> {
   const run = profileQueue.then(async () => {
+    if (Date.now() < profileCooldownUntil) throw new ProfileThrottledError()
     try {
       return await fetchAuthorInfo(steamId)
     } finally {
-      await new Promise((resolve) => setTimeout(resolve, PROFILE_GAP_MS))
+      await sleep(PROFILE_GAP_MS)
     }
   })
   profileQueue = run.catch(() => undefined)
   return run
 }
 
-async function fetchProfileXml(steamId: string): Promise<Response> {
-  const url = `https://steamcommunity.com/profiles/${steamId}?xml=1`
-  let res = await fetch(url, { signal: AbortSignal.timeout(PROFILE_FETCH_TIMEOUT_MS) })
-  if (res.status === 429) {
-    const retryAfter = Number(res.headers.get('retry-after'))
-    const waitMs = retryAfter > 0 ? retryAfter * 1000 : 3000
-    if (waitMs <= PROFILE_MAX_RETRY_WAIT_MS) {
-      await new Promise((resolve) => setTimeout(resolve, waitMs))
-      res = await fetch(url, { signal: AbortSignal.timeout(PROFILE_FETCH_TIMEOUT_MS) })
-    }
-  }
-  return res
-}
-
 async function fetchAuthorInfo(steamId: string): Promise<WorkshopAuthorInfo> {
-  const res = await fetchProfileXml(steamId)
+  const url = `https://steamcommunity.com/profiles/${steamId}?xml=1`
+  const res = await fetch(url, { signal: AbortSignal.timeout(PROFILE_FETCH_TIMEOUT_MS) })
+  if (res.status === 429) {
+    startProfileCooldown(Number(res.headers.get('retry-after')))
+    throw new ProfileThrottledError()
+  }
   if (!res.ok) throw new Error(`Steam profile ${steamId}: HTTP ${res.status}`)
   const xml = await res.text()
   const name = xml.match(/<steamID><!\[CDATA\[([\s\S]*?)\]\]><\/steamID>/)?.[1]
@@ -699,6 +723,8 @@ async function fetchAuthorInfo(steamId: string): Promise<WorkshopAuthorInfo> {
   if (!name || !avatarUrl) throw new Error(`Steam profile ${steamId}: no ${name ? 'avatar' : 'name'} in response`)
   const info = { steamId, name, avatarUrl }
   authorInfoCache().set(`authors.${steamId}`, { ...info, fetchedAt: Date.now() })
+  profileCooldownMs = 0
+  profileFailedAt.delete(steamId)
   return info
 }
 

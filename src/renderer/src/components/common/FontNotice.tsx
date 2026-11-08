@@ -1,11 +1,10 @@
-import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Type } from 'lucide-react'
+import { useFontAdd } from '../../hooks/useFontAdd'
 import { t } from '../../i18n'
 
 export default function FontNotice({ wallpaperPath, revision }: { wallpaperPath: string; revision?: number }) {
-  const queryClient = useQueryClient()
-  const [status, setStatus] = useState<string | null>(null)
+  const { status, add } = useFontAdd(() => t('fonts.addedNotice'))
   const { data: needs = [] } = useQuery({
     queryKey: ['lwe-fonts', wallpaperPath, revision],
     queryFn: () => window.electronAPI.lwe.listFonts(wallpaperPath),
@@ -15,19 +14,6 @@ export default function FontNotice({ wallpaperPath, revision }: { wallpaperPath:
   const missing = needs.filter((need) => need.status === 'missing')
 
   if (missing.length === 0) return null
-
-  async function handleAdd() {
-    const result = await window.electronAPI.fonts.add()
-    setStatus(
-      result.rejected.length > 0
-        ? t('fonts.rejected', { files: result.rejected.join(', ') })
-        : result.added.length > 0
-          ? t('fonts.addedNotice')
-          : null
-    )
-    await queryClient.invalidateQueries({ queryKey: ['user-fonts'] })
-    await queryClient.invalidateQueries({ queryKey: ['lwe-fonts'] })
-  }
 
   return (
     <div className="border-t border-fg/5 pt-3">
@@ -47,7 +33,7 @@ export default function FontNotice({ wallpaperPath, revision }: { wallpaperPath:
         ))}
       </ul>
       <button
-        onClick={() => void handleAdd()}
+        onClick={() => void add()}
         className="mt-2 flex items-center gap-1.5 rounded bg-fg/10 px-2 py-1 text-xs text-gray-300 hover:bg-fg/15"
       >
         <Type size={11} />

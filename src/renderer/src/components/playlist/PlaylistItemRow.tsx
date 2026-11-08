@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { GripVertical, Trash2, Volume2, Clock, ChevronDown, ChevronUp, Play, Pause } from 'lucide-react'
 import clsx from 'clsx'
 import CompatBadge from '../common/CompatBadge'
-import type { PlaylistItem, WallpaperMeta } from '@shared/types'
+import type { PlaylistItem, PlaylistMode, WallpaperMeta } from '@shared/types'
 import { getPreviewSrc } from '../../utils/preview'
 import { t } from '../../i18n'
+import { parseTime } from '@shared/schedule'
 
 interface PlaylistItemRowProps {
   item: PlaylistItem
@@ -17,11 +18,25 @@ interface PlaylistItemRowProps {
   onDrop: () => void
   onPlay: () => void
   onRemove: () => void
-  onUpdate: (patch: { volume?: number; durationSec?: number }) => void
+  onUpdate: (patch: { volume?: number; durationSec?: number; endMinute?: number }) => void
   onContextMenu: (e: React.MouseEvent) => void
   onOpenDetail: () => void
   defaultDurationSec: number
+  mode: PlaylistMode
   defaultVolume: number
+  earlierEnd: number
+  isLast: boolean
+}
+
+function formatMinute(minute: number): string {
+  const clamped = Math.min(Math.max(Math.round(minute), 0), 1439)
+  return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`
+}
+
+function parseMinute(time: string): number | undefined {
+  const parsed = parseTime(time)
+  const minute = parsed ? parsed.hours * 60 + parsed.minutes : 0
+  return minute > 0 ? minute : undefined
 }
 
 export default function PlaylistItemRow({
@@ -39,7 +54,10 @@ export default function PlaylistItemRow({
   onContextMenu,
   onOpenDetail,
   defaultDurationSec,
-  defaultVolume
+  mode,
+  defaultVolume,
+  earlierEnd,
+  isLast
 }: PlaylistItemRowProps) {
   const [expanded, setExpanded] = useState(false)
 
@@ -97,7 +115,11 @@ export default function PlaylistItemRow({
             {wallpaper?.title ?? item.wallpaperId}
           </p>
           <p className="text-xs text-gray-600">
-            {t('playlist.itemSummary', { seconds: item.durationSec ?? defaultDurationSec, volume: item.volume ?? defaultVolume })}
+            {mode === 'timer'
+              ? t('playlist.itemSummary', { seconds: item.durationSec ?? defaultDurationSec, volume: item.volume ?? defaultVolume })
+              : mode === 'daytime' && (item.endMinute ?? 0) > 0
+                ? t('playlist.itemUntil', { time: formatMinute(item.endMinute ?? 0), volume: item.volume ?? defaultVolume })
+                : t('playlist.itemVolume', { volume: item.volume ?? defaultVolume })}
           </p>
         </button>
         <button
@@ -139,21 +161,51 @@ export default function PlaylistItemRow({
               </button>
             )}
           </label>
-          <label className="flex items-center gap-2 text-xs text-gray-400">
-            <Clock size={12} />
-            {t('playlist.durationSeconds')}
-            <input
-              type="number"
-              min={1}
-              placeholder={String(defaultDurationSec)}
-              value={item.durationSec ?? ''}
-              onChange={(e) => {
-                const v = e.target.value.trim()
-                onUpdate({ durationSec: v === '' ? undefined : Number(v) })
-              }}
-              className="w-20 rounded bg-fg/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
-            />
-          </label>
+          {mode === 'timer' && (
+            <label className="flex items-center gap-2 text-xs text-gray-400">
+              <Clock size={12} />
+              {t('playlist.durationSeconds')}
+              <input
+                type="number"
+                min={1}
+                placeholder={String(defaultDurationSec)}
+                value={item.durationSec ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value.trim()
+                  onUpdate({ durationSec: v === '' ? undefined : Number(v) })
+                }}
+                className="w-20 rounded bg-fg/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
+              />
+            </label>
+          )}
+          {mode === 'daytime' && (
+            <label className="flex items-center gap-2 text-xs text-gray-400">
+              <Clock size={12} />
+              {t('playlist.until')}
+              <input
+                type="time"
+                defaultValue={(item.endMinute ?? 0) > 0 ? formatMinute(item.endMinute ?? 0) : ''}
+                onChange={(e) => {
+                  const minute = parseMinute(e.target.value)
+                  if (minute !== undefined) {
+                    onUpdate({ endMinute: minute })
+                  } else if (e.target.value === '00:00' && item.endMinute !== undefined) {
+                    e.target.value = ''
+                    onUpdate({ endMinute: undefined })
+                  }
+                }}
+                onBlur={(e) => {
+                  if (e.target.value === '' && item.endMinute !== undefined) onUpdate({ endMinute: undefined })
+                }}
+                className="rounded bg-fg/5 px-2 py-1 text-gray-200 outline-none focus:ring-1 focus:ring-accent-500"
+              />
+              {!isLast && earlierEnd > 0 && (item.endMinute ?? 0) > 0 && (item.endMinute ?? 0) <= earlierEnd ? (
+                <span className="text-amber-400">{t('playlist.untilNotLater', { time: formatMinute(earlierEnd) })}</span>
+              ) : (
+                <span className="text-gray-600">{t('playlist.untilHint')}</span>
+              )}
+            </label>
+          )}
         </div>
       )}
     </div>

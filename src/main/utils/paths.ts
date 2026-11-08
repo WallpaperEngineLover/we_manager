@@ -75,6 +75,12 @@ export function getLwePrebuiltDir(): string {
   return path.join(dataHome, 'linux-wallpaperengine-kde')
 }
 
+/** Where the downloaded ffmpeg lives, outside the app's own data so the AppImage and .deb share it */
+export function getFfmpegDir(): string {
+  const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share')
+  return path.join(dataHome, 'we-manager', 'ffmpeg')
+}
+
 export function getLweManifestPath(): string {
   return path.join(getDataPath(), 'lwe-install-manifest.json')
 }

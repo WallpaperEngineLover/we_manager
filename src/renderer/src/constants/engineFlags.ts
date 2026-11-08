@@ -19,7 +19,14 @@ type ChoiceFlag =
 // kdeBackgroundLayer, windowed and windowBackground are global only
 type BooleanFlag = Exclude<
   keyof EngineFlags,
-  'fullscreenPause' | 'kdeBackgroundLayer' | 'windowed' | 'windowBackground' | ChoiceFlag
+  | 'fullscreenPause'
+  | 'kdeBackgroundLayer'
+  | 'windowed'
+  | 'windowBackground'
+  | 'audioInput'
+  | 'audioInputVolume'
+  | 'audioInputThreshold'
+  | ChoiceFlag
 >
 
 export const BOOLEAN_FLAGS: { key: BooleanFlag; label: MessageKey; hint?: MessageKey }[] = [

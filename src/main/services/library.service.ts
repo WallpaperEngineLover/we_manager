@@ -3,10 +3,14 @@ import type { WallpaperMeta, WallpaperType, ContentRating, LibraryFilters, Wallp
 import { getExtraLibraryRoots, getThumbnailsPath, getWorkshopPath } from '../utils/paths'
 import { findLocalWallpapers, localWallpaperId } from '../utils/localLibrary'
 import { containedPath } from '../utils/contained'
+import { readProjectJsonSync } from '../utils/projectJson'
 import * as path from 'path'
 import * as fs from 'fs'
 import { randomUUID } from 'crypto'
+import { getSteamIdentity } from './config.service'
+import { isShaderCache } from '../utils/shaderCache'
 import { cleanupPlaylists } from './playlist.service'
+import { backupMatchesSource, hasBackupFiles } from './backup.service'
 import { getWorkshopDetails, getUnavailableWorkshopItems, type WorkshopDetails } from './workshop.service'
 import { findAndMutate } from '../utils/collections'
 import { resolutionsFromTags } from '@shared/resolutions'
@@ -239,14 +243,7 @@ export interface ProjectJson {
   dependency?: string | number
 }
 
-export function readProjectJson(localPath: string): ProjectJson | null {
-  try {
-    const raw = fs.readFileSync(path.join(localPath, 'project.json'), 'utf8')
-    return JSON.parse(raw) as ProjectJson
-  } catch {
-    return null
-  }
-}
+export const readProjectJson = readProjectJsonSync
 
 export function normalizeType(raw?: string): WallpaperType {
   switch (raw?.toLowerCase()) {
@@ -318,8 +315,10 @@ function getDirSize(dirPath: string): number {
   return total
 }
 
+const SIZE_CHECK_BATCH = 4
+
 // extra folders are often on HDDs, don't block the main process
-export async function getDirSizeAsync(dirPath: string): Promise<number> {
+export async function getDirSizeAsync(dirPath: string, skipShaderCache = false, baseDir = dirPath): Promise<number> {
   let total = 0
   let entries: fs.Dirent[]
   try {
@@ -330,7 +329,8 @@ export async function getDirSizeAsync(dirPath: string): Promise<number> {
   for (const entry of entries) {
     const full = path.join(dirPath, entry.name)
     if (entry.isDirectory()) {
-      total += await getDirSizeAsync(full)
+      if (skipShaderCache && isShaderCache(path.relative(baseDir, full))) continue
+      total += await getDirSizeAsync(full, skipShaderCache, baseDir)
     } else if (entry.isFile()) {
       try { total += (await fs.promises.stat(full)).size } catch { }
     }
@@ -450,7 +450,7 @@ async function buildLocalMeta(
 ): Promise<WallpaperMeta | null> {
   const pj = readProjectJson(localPath)
   if (!pj) return null
-  const fileSize = await getDirSizeAsync(localPath)
+  const fileSize = await getDirSizeAsync(localPath, true)
   const authorSteamId = existing?.authorSteamId ?? details?.authorSteamId
   return {
     ...buildMeta(id, localPath, pj, existing, details?.timeUpdated, authorSteamId, details?.tags, fileSize),
@@ -479,6 +479,97 @@ export async function importLocalWallpaper(localPath: string): Promise<Wallpaper
   return meta
 }
 
+const backupChecks = new Map<string, { sourceDir: string; backupDir: string; stamp: string; holds: boolean }>()
+
+async function folderStamp(dir: string): Promise<string> {
+  const stat = await fs.promises.stat(dir).catch(() => null)
+  return stat ? `${stat.mtimeMs}:${await newestEntryMtime(dir, stat.mtimeMs)}` : ''
+}
+
+// a folder that did not match is looked at again only after one of the two changed, hashing takes minutes
+async function backupHoldsEverything(id: string, sourceDir: string, backupDir: string): Promise<boolean> {
+  const stamp = `${await folderStamp(sourceDir)}|${await folderStamp(backupDir)}`
+  const known = backupChecks.get(id)
+  if (known && known.sourceDir === sourceDir && known.backupDir === backupDir && known.stamp === stamp) return known.holds
+  const holds = (await hasBackupFiles(backupDir)) && (await backupMatchesSource(sourceDir, backupDir))
+  backupChecks.set(id, { sourceDir, backupDir, stamp, holds })
+  return holds
+}
+
+interface SizeSeen {
+  mtimeMs: number
+  projectMtimeMs: number
+  size: number
+}
+
+const sizeStore = openStore<{ seen: Record<string, SizeSeen> }>({ name: 'size-cache', defaults: { seen: {} } })
+const sizeSeen = new Map<string, SizeSeen>(Object.entries(sizeStore.get('seen')))
+
+const NEWEST_MTIME_DEPTH = 3
+
+async function newestEntryMtime(dir: string, folderMtimeMs: number, depth = NEWEST_MTIME_DEPTH): Promise<number> {
+  let newest = folderMtimeMs
+  const entries = await fs.promises.readdir(dir).catch(() => [] as string[])
+  const stats = await Promise.all(entries.map((name) => fs.promises.stat(path.join(dir, name)).catch(() => null)))
+  const nested: Promise<number>[] = []
+  stats.forEach((stat, i) => {
+    if (!stat) return
+    if (stat.mtimeMs > newest) newest = stat.mtimeMs
+    if (depth > 1 && stat.isDirectory()) nested.push(newestEntryMtime(path.join(dir, entries[i]), stat.mtimeMs, depth - 1))
+  })
+  for (const mtime of await Promise.all(nested)) if (mtime > newest) newest = mtime
+  return newest
+}
+
+type SizePatches = { id: string; patch: Partial<WallpaperMeta> }[]
+
+// scans and backup scans can overlap, one run at a time keeps them from repeating the walk and overwriting each other's cache
+let sizeQueue: Promise<unknown> = Promise.resolve()
+
+export function sizeRepairs(list: WallpaperMeta[], pruneUnlisted = false): Promise<SizePatches> {
+  const run = sizeQueue.then(() => measureSizes(list, pruneUnlisted))
+  sizeQueue = run.catch(() => undefined)
+  return run
+}
+
+async function measureSizes(list: WallpaperMeta[], pruneUnlisted: boolean): Promise<SizePatches> {
+  const patches: SizePatches = []
+  const measured = list.filter((w) => w.source !== 'workshop' && !w.downloading && w.localPath)
+  let cacheChanged = false
+  if (pruneUnlisted) {
+    const listed = new Set(measured.map((w) => w.localPath))
+    for (const dir of sizeSeen.keys()) {
+      if (listed.has(dir)) continue
+      sizeSeen.delete(dir)
+      cacheChanged = true
+    }
+  }
+  for (let i = 0; i < measured.length; i += SIZE_CHECK_BATCH) {
+    await Promise.all(
+      measured.slice(i, i + SIZE_CHECK_BATCH).map(async (w) => {
+        const dir = w.localPath!
+        const [stat, project] = await Promise.all([
+          fs.promises.stat(dir).catch(() => null),
+          fs.promises.stat(path.join(dir, 'project.json')).catch(() => null)
+        ])
+        if (!stat?.isDirectory()) return
+        const projectMtimeMs = project?.mtimeMs ?? 0
+        const mtimeMs = await newestEntryMtime(dir, stat.mtimeMs)
+        const seen = sizeSeen.get(dir)
+        if (seen && seen.mtimeMs === mtimeMs && seen.projectMtimeMs === projectMtimeMs && seen.size === w.fileSize) return
+        const fileSize = await getDirSizeAsync(dir, true)
+        // a folder that could not be read comes back as 0
+        if (fileSize <= 0) return
+        sizeSeen.set(dir, { mtimeMs, projectMtimeMs, size: fileSize })
+        cacheChanged = true
+        if (fileSize !== w.fileSize) patches.push({ id: w.id, patch: { fileSize } })
+      })
+    )
+  }
+  if (cacheChanged) sizeStore.set('seen', Object.fromEntries(sizeSeen))
+  return patches
+}
+
 export async function scanLibrary(): Promise<{ imported: number; skipped: number; removed: number }> {
   const workshopPath = getWorkshopPath()
   // unmounted drive must not empty the library
@@ -487,16 +578,63 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
   const entries = workshopMounted
     ? fs.readdirSync(workshopPath, { withFileTypes: true }).filter((e) => !e.name.startsWith('.'))
     : []
-  const onDisk = new Set(entries.filter(e => e.isDirectory()).map(e => e.name))
-  const subscribedIds = isSteamRunning()
-    ? new Set(await getSubscribedItems().catch(() => []))
-    : new Set<string>()
+  let subscriptionsKnown = false
+  const subscribedIds = new Set<string>()
+  if (isSteamRunning()) {
+    try {
+      for (const id of await getSubscribedItems()) subscribedIds.add(id)
+      // an empty answer is what Steam gives before it has synced, it must not read as "unsubscribed from everything",
+      // and as Spacewar the list is not Wallpaper Engine's
+      subscriptionsKnown = subscribedIds.size > 0 && getSteamIdentity() === 'wallpaper-engine'
+    } catch {
+      // unknown, keep every folder
+    }
+  }
+  // folders Steam left behind after an unsubscribe
+  const leftovers = new Set(
+    subscriptionsKnown ? entries.filter((e) => e.isDirectory() && !subscribedIds.has(e.name)).map((e) => e.name) : []
+  )
+  const onDisk = new Set(entries.filter((e) => e.isDirectory()).map((e) => e.name))
+
+  // hashing both folders can take minutes, so it happens before the library is read for this scan
+  const backupComplete = new Map<string, boolean>()
+  const stored = store.get('wallpapers')
+  for (const id of leftovers) {
+    const w = stored[id]
+    const dir = path.join(workshopPath, id)
+    if ((w?.source !== 'backup' && w?.source !== 'workshop') || !w.backedUp || !w.backupDir || path.resolve(w.backupDir) === path.resolve(dir)) continue
+    backupComplete.set(id, await backupHoldsEverything(id, dir, w.backupDir))
+  }
 
   const wallpapers = { ...store.get('wallpapers') }
   let imported = 0
   let skipped = 0
   let removed = 0
   let resynced = false
+
+  if (subscriptionsKnown) {
+    for (const [id, w] of Object.entries(wallpapers)) {
+      if (w.source !== 'workshop' || subscribedIds.has(id)) continue
+      const backupDir = w.backedUp ? w.backupDir : undefined
+      if (backupDir && fs.existsSync(path.join(backupDir, 'project.json'))) {
+        const pj = readProjectJson(backupDir)
+        const preview = containedPath(backupDir, pj?.preview)
+        wallpapers[id] = {
+          ...w,
+          source: 'backup',
+          localPath: backupDir,
+          previewLocal: preview && fs.existsSync(preview) ? preview : w.previewLocal,
+          subscribed: false,
+          downloading: false,
+          downloadFailed: false
+        }
+        resynced = true
+      } else if (w.subscribed) {
+        wallpapers[id] = { ...w, subscribed: false }
+        resynced = true
+      }
+    }
+  }
 
   // drop workshop items whose folder is gone, unless still subscribed (tracked below)
   for (const id of Object.keys(wallpapers)) {
@@ -507,17 +645,39 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     }
   }
 
+  // Steam leaves the folder behind after an unsubscribe, the backup is the copy to keep
+  const backedUpLeftovers = new Set<string>()
+  let subscribedNow: Set<string> | null | undefined
+  for (const id of leftovers) {
+    const w = wallpapers[id]
+    const dir = path.join(workshopPath, id)
+    if (w?.source !== 'backup' || !w.backedUp || !w.backupDir || path.resolve(w.backupDir) === path.resolve(dir)) continue
+    if (!backupComplete.get(id)) continue
+    if (subscribedNow === undefined) {
+      subscribedNow = await getSubscribedItems().then((ids) => new Set(ids)).catch(() => null)
+    }
+    if (!subscribedNow || subscribedNow.has(id)) continue
+    backedUpLeftovers.add(id)
+    try {
+      await fs.promises.rm(dir, { recursive: true, force: true })
+      console.log(`[Library] Removed ${dir}, ${id} is unsubscribed and backed up`)
+    } catch (err) {
+      console.warn(`[Library] Could not remove ${dir}:`, err)
+    }
+  }
+
   const incomplete: { id: string; localPath: string }[] = []
   const toRebuild: { entry: fs.Dirent; localPath: string; pj: ProjectJson }[] = []
   const cacheHits: string[] = []
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue
+    if (!entry.isDirectory() || backedUpLeftovers.has(entry.name)) continue
+    if (leftovers.has(entry.name) && wallpapers[entry.name]?.source === 'backup') continue
 
     const localPath = path.join(workshopPath, entry.name)
     const pj = readProjectJson(localPath)
 
     if (!pj) {
-      incomplete.push({ id: entry.name, localPath })
+      if (!leftovers.has(entry.name)) incomplete.push({ id: entry.name, localPath })
       continue
     }
 
@@ -662,6 +822,9 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
         patch.contentRating = stricter
       }
     }
+    if (subscriptionsKnown && subscribedIds.has(id) && wallpapers[id].source === 'workshop' && !wallpapers[id].subscribed) {
+      patch.subscribed = true
+    }
     if (live) {
       const resolutions = resolutionsFromTags(live)
       if (!sameTags(wallpapers[id].resolutions, resolutions)) {
@@ -674,9 +837,23 @@ export async function scanLibrary(): Promise<{ imported: number; skipped: number
     }
   }
 
+  for (const id of leftovers) {
+    const w = wallpapers[id]
+    if (w?.source === 'workshop' && w.subscribed) {
+      wallpapers[id] = { ...w, subscribed: false }
+      resynced = true
+    }
+  }
+
   if (imported > 0 || removed > 0 || resynced) {
     store.set('wallpapers', wallpapers)
   }
+
+  void sizeRepairs(Object.values(wallpapers), true)
+    .then((sizePatches) => {
+      if (sizePatches.length > 0) applyWallpaperChanges({ patches: sizePatches })
+    })
+    .catch((err: unknown) => { console.warn('[Library] Size check failed:', err) })
 
   console.log(`[Library] Scan complete: ${imported} imported, ${skipped} skipped, ${removed} removed`)
 
@@ -692,20 +869,21 @@ export async function checkUnavailableWallpapers(): Promise<{
   checked: number
   unavailable: number
   changed: boolean
+  failed: boolean
 }> {
-  if (!isSteamRunning()) return { checked: 0, unavailable: 0, changed: false }
+  if (!isSteamRunning()) return { checked: 0, unavailable: 0, changed: false, failed: true }
 
   const wallpapers = store.get('wallpapers')
   const candidates = Object.values(wallpapers).filter(
     (w) => w.source === 'workshop' && !!w.localPath && !w.downloading
   )
-  if (candidates.length === 0) return { checked: 0, unavailable: 0, changed: false }
+  if (candidates.length === 0) return { checked: 0, unavailable: 0, changed: false, failed: false }
 
   let unavailableIds: Set<string>
   try {
     unavailableIds = await getUnavailableWorkshopItems(candidates.map((w) => w.id))
   } catch {
-    return { checked: 0, unavailable: 0, changed: false }
+    return { checked: 0, unavailable: 0, changed: false, failed: true }
   }
 
   let changed = false
@@ -718,7 +896,7 @@ export async function checkUnavailableWallpapers(): Promise<{
   }
   if (changed) store.set('wallpapers', wallpapers)
 
-  return { checked: candidates.length, unavailable: unavailableIds.size, changed }
+  return { checked: candidates.length, unavailable: unavailableIds.size, changed, failed: false }
 }
 
 function isFromWorkshop(w: WallpaperMeta): boolean {

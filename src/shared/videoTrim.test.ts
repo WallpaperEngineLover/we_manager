@@ -5,6 +5,7 @@ import {
   formatVideoTimeExact,
   normalizeVideoSegments,
   parseVideoTime,
+  trimAsCut,
   trimmedVideoLength,
   videoSegmentsOf
 } from './videoTrim'
@@ -117,5 +118,22 @@ describe('normalizeVideoSegments', () => {
 describe('formatVideoSegments', () => {
   it('writes what --video-segments reads', () => {
     expect(formatVideoSegments([{ start: 120, end: 180 }, { start: 240.25 }])).toBe('120-180,240.25-')
+  })
+})
+
+describe('trimAsCut', () => {
+  it('gives the range of a single part and closes an open end at the duration', () => {
+    expect(trimAsCut({ videoSegments: [{ start: 10, end: 80 }] }, 120)).toEqual({ start: 10, end: 80 })
+    expect(trimAsCut({ videoStart: 5 }, 60)).toEqual({ start: 5, end: 60 })
+  })
+
+  it('gives nothing without a trim, for the whole video or for several parts', () => {
+    expect(trimAsCut({}, 60)).toBeNull()
+    expect(trimAsCut({ videoSegments: [{ start: 0 }] }, 60)).toBeNull()
+    expect(trimAsCut({ videoSegments: [{ start: 1, end: 5 }, { start: 10, end: 20 }] }, 60)).toBeNull()
+  })
+
+  it('keeps an end past the video inside it', () => {
+    expect(trimAsCut({ videoSegments: [{ start: 10, end: 500 }] }, 60)).toEqual({ start: 10, end: 60 })
   })
 })

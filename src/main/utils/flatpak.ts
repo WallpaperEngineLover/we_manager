@@ -17,11 +17,18 @@ function sessionEnvArgs(env: NodeJS.ProcessEnv = process.env): string[] {
 }
 
 /** Runs on the host, through flatpak-spawn inside a Flatpak */
-export function hostCommand(cmd: string, args: string[] = []): [string, string[]] {
-  return isFlatpak() ? ['flatpak-spawn', ['--host', ...sessionEnvArgs(), cmd, ...args]] : [cmd, args]
+export function hostCommand(cmd: string, args: string[] = [], opts: { dieWithApp?: boolean } = {}): [string, string[]] {
+  if (!isFlatpak()) return [cmd, args]
+  // SIGKILL cannot reach the host through flatpak-spawn, --watch-bus ends the command when this app's bus connection goes
+  const watch = opts.dieWithApp ? ['--watch-bus'] : []
+  return ['flatpak-spawn', ['--host', ...watch, ...sessionEnvArgs(), cmd, ...args]]
 }
 
 const hostCommandCache = new Map<string, boolean>()
+
+export function invalidateHostCommandCache(cmd: string): void {
+  hostCommandCache.delete(cmd)
+}
 
 export function isHostCommandAvailable(cmd: string): boolean {
   const cached = hostCommandCache.get(cmd)
