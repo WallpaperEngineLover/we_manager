@@ -231,6 +231,8 @@ export async function showWallpaper(
   return appliedPath
 }
 
+export class SplitUnavailableError extends Error {}
+
 /** One fresh engine for all slots of the screen, beforeLaunch runs once the split is known to be showable */
 export async function showSplitScreen(
   screen: ScreenTarget,
@@ -238,9 +240,9 @@ export async function showSplitScreen(
   dependencyPrompt: 'always' | 'once' | 'never' = 'always',
   skipMissing = false
 ): Promise<void> {
-  if (getDisplayMode() !== 'per-screen' || screen === ALL_SCREENS) throw new Error(t('split.needsPerScreen'))
-  if (!getDisplayTargets().includes(screen)) throw new Error(`Screen ${screen} is not connected`)
-  if (!supportsSplitScreens()) throw new Error(t('split.engineTooOld'))
+  if (getDisplayMode() !== 'per-screen' || screen === ALL_SCREENS) throw new SplitUnavailableError(t('split.needsPerScreen'))
+  if (!getDisplayTargets().includes(screen)) throw new SplitUnavailableError(`Screen ${screen} is not connected`)
+  if (!supportsSplitScreens()) throw new SplitUnavailableError(t('split.engineTooOld'))
   const claim = { stamp: claimScreen(screen) }
   try {
     await launchSplit(screen, claim, beforeLaunch, dependencyPrompt, skipMissing)
@@ -278,7 +280,7 @@ async function launchSplit(
     })
     shown.push(wallpaper)
   }
-  if (slots.length === 0 || !split) throw new Error(t('split.empty'))
+  if (slots.length === 0 || !split) throw new SplitUnavailableError(t('split.empty'))
   if (newerLaunchTakes(screen, claim.stamp)) {
     // restore leaves the screen to whoever took it, a split somebody asked for goes on
     if (!beforeLaunch) return

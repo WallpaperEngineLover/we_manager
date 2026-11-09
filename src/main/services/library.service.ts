@@ -14,6 +14,7 @@ import { backupMatchesSource, hasBackupFiles } from './backup.service'
 import { getWorkshopDetails, getUnavailableWorkshopItems, type WorkshopDetails } from './workshop.service'
 import { findAndMutate } from '../utils/collections'
 import { resolutionsFromTags } from '@shared/resolutions'
+import { normalizeWallpaperFlags } from '@shared/engineFlags'
 import { detectFeatures, type WallpaperFeatures } from '../utils/hdr'
 import {
   isSteamRunning,
@@ -61,16 +62,22 @@ const store = {
 
 export function initLibrary(): void {
   console.log('[Library] Store initialized at', store.path)
-  repairStaleDownloadFlags()
+  repairStoredWallpapers()
 }
 
-function repairStaleDownloadFlags(): void {
+function repairStoredWallpapers(): void {
   const wallpapers = store.get('wallpapers')
   let changed = false
   for (const wallpaper of Object.values(wallpapers)) {
     if (!wallpaper.subscribed && (wallpaper.downloading || wallpaper.downloadFailed)) {
       wallpaper.downloading = false
       wallpaper.downloadFailed = false
+      changed = true
+    }
+    const flags = wallpaper.engineFlags
+    const kept = flags && normalizeWallpaperFlags(flags)
+    if (flags && (!kept || Object.keys(kept).length !== Object.keys(flags).length)) {
+      wallpaper.engineFlags = kept
       changed = true
     }
   }
@@ -133,7 +140,7 @@ export function getWallpaper(id: string): WallpaperMeta | null {
 
 export function upsertWallpaper(meta: WallpaperMeta): void {
   const wallpapers = store.get('wallpapers')
-  wallpapers[meta.id] = meta
+  wallpapers[meta.id] = meta.engineFlags ? { ...meta, engineFlags: normalizeWallpaperFlags(meta.engineFlags) } : meta
   store.set('wallpapers', wallpapers)
 }
 

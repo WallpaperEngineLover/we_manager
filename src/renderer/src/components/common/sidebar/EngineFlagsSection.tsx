@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { Gauge, TriangleAlert } from 'lucide-react'
-import type { EngineFlags, FullscreenPauseMode, WallpaperMeta } from '@shared/types'
-import { hasEngineFlags } from '@shared/engineFlags'
+import type { EngineFlags, FullscreenPauseMode, WallpaperEngineFlags, WallpaperMeta } from '@shared/types'
+import { hasEngineFlags, normalizeWallpaperFlags } from '@shared/engineFlags'
 import { BOOLEAN_FLAGS, CHOICE_FLAGS, FULLSCREEN_PAUSE_OPTIONS, optionLabel, presetName } from '../../../constants/engineFlags'
 import { useConfig } from '../../../hooks/queries'
 import { t } from '../../../i18n'
 import SidebarSection, { CustomBadge } from './SidebarSection'
 
 interface Props {
-  flags?: EngineFlags
+  flags?: WallpaperEngineFlags
   onChange: (patch: Pick<WallpaperMeta, 'engineFlags' | 'fpsOverride'>) => Promise<void>
 }
 
@@ -33,18 +33,21 @@ export default function EngineFlagsSection({ flags = {}, onChange }: Props) {
     }
   }
 
-  function setFlag<K extends keyof EngineFlags>(key: K, value: EngineFlags[K] | undefined) {
+  function setFlag<K extends keyof WallpaperEngineFlags>(key: K, value: WallpaperEngineFlags[K] | undefined) {
     const next = { ...flags, [key]: value }
     if (value === undefined) delete next[key]
-    void commit({ engineFlags: hasEngineFlags(next) ? next : undefined })
+    void commit({ engineFlags: normalizeWallpaperFlags(next) })
   }
 
   function applyPreset(id: string) {
     const preset = presets.find((p) => p.id === id)
     if (!preset) return
-    const patch: Pick<WallpaperMeta, 'engineFlags' | 'fpsOverride'> = { engineFlags: { ...flags, ...preset.flags } }
+    const presetFlags = normalizeWallpaperFlags(preset.flags)
+    // engine flags in a patch restart a playing engine, so they only go in when the preset has some for a wallpaper
+    const patch: Pick<WallpaperMeta, 'engineFlags' | 'fpsOverride'> = {}
+    if (presetFlags) patch.engineFlags = { ...flags, ...presetFlags }
     if (preset.fps !== undefined) patch.fpsOverride = preset.fps ?? undefined
-    void commit(patch)
+    if (Object.keys(patch).length > 0) void commit(patch)
   }
 
   return (

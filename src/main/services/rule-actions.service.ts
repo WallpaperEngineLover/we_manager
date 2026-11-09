@@ -1,7 +1,8 @@
 import type { Profile, ScheduleAction, ScreenAction, ScreenTarget } from '@shared/types'
 import { getWallpaper, updateWallpaper } from './library.service'
 import { getPlaylist } from './playlist.service'
-import { expandScreen, getDisplayTargets, isShownOn, showWallpaper, stopDisplay } from './display.service'
+import { getSplitScreens } from './config.service'
+import { expandScreen, getDisplayTargets, isShownOn, showSplitScreen, showWallpaper, SplitUnavailableError, stopDisplay } from './display.service'
 import { startPlaylist, stopPlaylist } from './playlist-player.service'
 import { getProfile } from './profile.service'
 import { t } from '../i18n'
@@ -13,21 +14,37 @@ export function runningWallpaperIds(): string[] {
   return [...runningWallpapers.keys()]
 }
 
+async function whileStarting<T>(ids: string[], work: () => Promise<T>): Promise<T> {
+  for (const id of ids) runningWallpapers.set(id, (runningWallpapers.get(id) ?? 0) + 1)
+  try {
+    return await work()
+  } finally {
+    for (const id of ids) {
+      const left = (runningWallpapers.get(id) ?? 1) - 1
+      if (left > 0) runningWallpapers.set(id, left)
+      else runningWallpapers.delete(id)
+    }
+  }
+}
+
 export async function runScreenAction(action: ScreenAction, screen: ScreenTarget): Promise<void> {
   if (action.type === 'wallpaper') {
     const wallpaper = getWallpaper(action.wallpaperId)
     if (!wallpaper) throw new Error(t('rules.wallpaperGone'))
     for (const s of expandScreen(screen)) stopPlaylist(s)
-    runningWallpapers.set(wallpaper.id, (runningWallpapers.get(wallpaper.id) ?? 0) + 1)
-    try {
-      await showWallpaper(wallpaper, screen, { dependencyPrompt: 'once' })
-    } finally {
-      const left = (runningWallpapers.get(wallpaper.id) ?? 1) - 1
-      if (left > 0) runningWallpapers.set(wallpaper.id, left)
-      else runningWallpapers.delete(wallpaper.id)
-    }
+    await whileStarting([wallpaper.id], () => showWallpaper(wallpaper, screen, { dependencyPrompt: 'once' }))
     if (isShownOn(wallpaper.id, screen)) {
       updateWallpaper(wallpaper.id, { appliedCount: (wallpaper.appliedCount ?? 0) + 1, lastAppliedAt: Date.now() })
+    }
+  } else if (action.type === 'split') {
+    const slotIds = (getSplitScreens()[screen]?.slots ?? []).map((slot) => slot.wallpaperId)
+    try {
+      // nobody is there to see a launch fail on a drive that is not mounted, so those slots are left out
+      await whileStarting(slotIds, () => showSplitScreen(screen, () => { stopPlaylist(screen) }, 'once', true))
+    } catch (err) {
+      if (!(err instanceof SplitUnavailableError)) throw err
+      console.error(`[Rules] the split on ${screen} can't be shown, going back to its first wallpaper:`, err)
+      await runScreenAction({ type: 'wallpaper', wallpaperId: action.wallpaperId }, screen)
     }
   } else if (action.type === 'playlist') {
     if (!getPlaylist(action.playlistId)) throw new Error(t('rules.playlistGone'))
@@ -43,8 +60,7 @@ export async function runScreenAction(action: ScreenAction, screen: ScreenTarget
  * A profile from the other display mode or with a monitor that is gone is not lost: entries for screens that are
  * not there are skipped, and in shared mode (one '*' target) the first of them stands in for all screens
  */
-function profileEntries(profile: Profile): [ScreenTarget, ScreenAction][] {
-  const targets = getDisplayTargets()
+function profileEntries(profile: Profile, targets = getDisplayTargets()): [ScreenTarget, ScreenAction][] {
   const entries = Object.entries(profile.screens)
   const known = entries.filter(([screen]) => screen === '*' || targets.includes(screen))
   if (known.length === 0 && targets.includes('*') && entries.length > 0) known.push(['*', entries[0][1]])
@@ -52,10 +68,10 @@ function profileEntries(profile: Profile): [ScreenTarget, ScreenAction][] {
 }
 
 /** The screens an action touches: a profile names its own, anything else the screen of the rule */
-export function actionScreens(action: ScheduleAction, screen: ScreenTarget): ScreenTarget[] {
-  if (action.type !== 'profile') return expandScreen(screen)
+export function actionScreens(action: ScheduleAction, screen: ScreenTarget, targets = getDisplayTargets()): ScreenTarget[] {
+  if (action.type !== 'profile') return expandScreen(screen, targets)
   const profile = getProfile(action.profileId)
-  return profile ? profileEntries(profile).flatMap(([s]) => expandScreen(s)) : []
+  return profile ? profileEntries(profile, targets).flatMap(([s]) => expandScreen(s, targets)) : []
 }
 
 export async function applyProfile(profileId: string): Promise<void> {

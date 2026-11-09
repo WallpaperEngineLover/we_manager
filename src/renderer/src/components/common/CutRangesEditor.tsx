@@ -32,6 +32,9 @@ export function cutProblem(parts: CutPartText[], duration: number): 'range' | 'o
 const SEAM_LEAD = 2
 const SLIDER_STEP = 10
 
+// whole milliseconds, 1.1 * 10 is 11.000000000000002 and would count as a step more
+const toSteps = (seconds: number): number => Math.round(seconds * 1000) / (1000 / SLIDER_STEP)
+
 interface Props {
   parts: CutPartText[]
   duration: number
@@ -48,6 +51,10 @@ export default function CutRangesEditor({ parts, duration, previewUrl, onChange 
   const parsed = parseParts(parts)
   const problem = cutProblem(parts, duration)
   const valid = parsed.filter((r): r is CutRange => r !== null && r.end > r.start)
+  const steps = toSteps(duration)
+  const endMax = Math.max(1, Math.ceil(steps))
+  // the end of the video sits on the last step, which can be short of a whole one, any other time on the nearest
+  const endStep = (end: number): number => (Math.abs(end - duration) < 0.001 ? endMax : Math.min(Math.round(toSteps(end)), endMax))
   const kept = valid.reduce((sum, r) => sum + Math.min(r.end, duration) - r.start, 0)
   const validRef = useRef<CutRange[]>([])
   const validKey = valid.map((r) => `${r.start}-${r.end}`).join(',')
@@ -168,7 +175,7 @@ export default function CutRangesEditor({ parts, duration, previewUrl, onChange 
           <input
             type="range"
             min={0}
-            max={Math.max(1, Math.floor(duration * SLIDER_STEP))}
+            max={Math.max(1, Math.floor(steps))}
             value={Math.round(part.start * SLIDER_STEP)}
             onChange={(e) => { setPart(index, { start: formatVideoTimeExact(Number(e.target.value) / SLIDER_STEP) }) }}
             className="w-full"
@@ -176,9 +183,9 @@ export default function CutRangesEditor({ parts, duration, previewUrl, onChange 
           <input
             type="range"
             min={0}
-            max={Math.max(1, Math.floor(duration * SLIDER_STEP))}
-            value={Math.round(part.end * SLIDER_STEP)}
-            onChange={(e) => { setPart(index, { end: formatVideoTimeExact(Number(e.target.value) / SLIDER_STEP) }) }}
+            max={endMax}
+            value={endStep(part.end)}
+            onChange={(e) => { setPart(index, { end: formatVideoTimeExact(Math.min(Number(e.target.value) / SLIDER_STEP, duration)) }) }}
             className="w-full"
           />
         </>

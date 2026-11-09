@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   assignments: {} as Record<string, string>,
   gate: null as Promise<string> | null,
   overtaken: false,
+  crashed: new Set<string>(),
   release: (_value: string) => {},
   playlist: {
     id: 'p',
@@ -38,7 +39,16 @@ vi.mock('./playlist.service', () => ({
   getAllPlaylists: () => [h.playlist]
 }))
 vi.mock('./library.service', () => ({
-  getWallpaper: (id: string) => ({ id, title: id, type: 'scene', localPath: `/w/${id}` }),
+  getWallpaper: (id: string) =>
+    id === 'ghost'
+      ? null
+      : {
+          id,
+          title: id,
+          type: 'scene',
+          localPath: `/w/${id}`,
+          compat: h.crashed.has(id) ? { freshLaunch: 'crash' } : undefined
+        },
   updateWallpaper: () => {}
 }))
 vi.mock('./lwe.service', () => ({ getLweStatus: () => ({ installed: true }), ALL_SCREENS: '*' }))
@@ -108,6 +118,7 @@ beforeEach(() => {
   h.assignments = {}
   h.gate = null
   h.overtaken = false
+  h.crashed.clear()
   h.playlist.items = [{ wallpaperId: 'a' }, { wallpaperId: 'b', volume: 30 }, { wallpaperId: 'c' }]
   showWallpaper.mockClear()
 })
@@ -574,5 +585,307 @@ describe('stopping during an apply', () => {
     await vi.advanceTimersByTimeAsync(3_600_000)
 
     expect(showWallpaper).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('items that crash', () => {
+  it('are still tried when the only other item is gone from the library', async () => {
+    h.playlist.items = [{ wallpaperId: 'a' }, { wallpaperId: 'ghost' }]
+    h.crashed.add('a')
+    const service = await boot()
+
+    service.startPlaylist('p', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(h.assignments['DP-1']).toBe('a')
+  })
+})
+
+describe('a daytime playlist', () => {
+  const settings = h.playlist.settings as Record<string, unknown>
+
+  beforeEach(() => {
+    settings.mode = 'daytime'
+  })
+
+  afterEach(() => {
+    delete settings.mode
+    showWallpaper.mockReset()
+  })
+
+  it('keeps a pick made while the first apply was still waiting', async () => {
+    vi.setSystemTime(new Date(2026, 0, 5, 10, 0))
+    h.gate = new Promise<string>((resolve) => {
+      h.release = resolve
+    })
+    const service = await boot()
+
+    service.startPlaylist('p', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+    h.gate = null
+    void service.playItem('p', 'a', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+    h.overtaken = true
+    h.release('')
+    await vi.advanceTimersByTimeAsync(0)
+    showWallpaper.mockClear()
+
+    await vi.advanceTimersByTimeAsync(120_000)
+
+    expect(showWallpaper).not.toHaveBeenCalled()
+  })
+
+  it('tries only the clock item again after it failed, the stand-in stays on the screen', async () => {
+    vi.setSystemTime(new Date(2026, 0, 5, 7, 0))
+    const service = await boot()
+    service.startPlaylist('p', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+
+    showWallpaper.mockImplementation(async (wallpaper, screen) => {
+      if (wallpaper.id === 'b') throw new Error('declined')
+      h.assignments[screen] = wallpaper.id
+      return ''
+    })
+    showWallpaper.mockClear()
+    vi.setSystemTime(new Date(2026, 0, 5, 10, 0))
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(showWallpaper.mock.calls.map(([wallpaper]) => wallpaper.id)).toEqual(['b', 'c'])
+
+    showWallpaper.mockClear()
+    await vi.advanceTimersByTimeAsync(300_000)
+
+    const shown = showWallpaper.mock.calls.map(([wallpaper]) => wallpaper.id)
+    expect(shown.length).toBeGreaterThan(0)
+    expect(new Set(shown)).toEqual(new Set(['b']))
+  })
+
+  it('tries the clock item again when every item is flagged as crashing, as it was not skipped on purpose', async () => {
+    vi.setSystemTime(new Date(2026, 0, 5, 7, 0))
+    const service = await boot()
+    service.startPlaylist('p', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+
+    for (const id of ['a', 'b', 'c']) h.crashed.add(id)
+    showWallpaper.mockImplementation(async (wallpaper, screen) => {
+      if (wallpaper.id === 'b') throw new Error('declined')
+      h.assignments[screen] = wallpaper.id
+      return ''
+    })
+    showWallpaper.mockClear()
+    vi.setSystemTime(new Date(2026, 0, 5, 10, 0))
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(showWallpaper.mock.calls.map(([wallpaper]) => wallpaper.id)).toEqual(['b', 'c'])
+
+    showWallpaper.mockClear()
+    await vi.advanceTimersByTimeAsync(300_000)
+
+    const shown = showWallpaper.mock.calls.map(([wallpaper]) => wallpaper.id)
+    expect(shown.length).toBeGreaterThan(0)
+    expect(new Set(shown)).toEqual(new Set(['b']))
+  })
+
+  it('goes on from the stand-in when the failed item is skipped on purpose later', async () => {
+    vi.setSystemTime(new Date(2026, 0, 5, 7, 0))
+    const service = await boot()
+    service.startPlaylist('p', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+
+    showWallpaper.mockImplementation(async (wallpaper, screen) => {
+      if (wallpaper.id === 'b') throw new Error('declined')
+      h.assignments[screen] = wallpaper.id
+      return ''
+    })
+    vi.setSystemTime(new Date(2026, 0, 5, 10, 0))
+    await vi.advanceTimersByTimeAsync(10_000)
+    h.crashed.add('b')
+    await vi.advanceTimersByTimeAsync(70_000)
+    showWallpaper.mockClear()
+    const changed = vi.fn<() => void>()
+    service.onPlaybackStateChanged(changed)
+
+    await vi.advanceTimersByTimeAsync(600_000)
+
+    expect(showWallpaper).not.toHaveBeenCalled()
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('shows the stand-in again when the retry of the failed item took the screen with it', async () => {
+    vi.setSystemTime(new Date(2026, 0, 5, 7, 0))
+    const service = await boot()
+    service.startPlaylist('p', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+
+    let triedB = 0
+    showWallpaper.mockImplementation(async (wallpaper, screen) => {
+      if (wallpaper.id === 'b') {
+        if (++triedB > 1) {
+          delete h.assignments[screen]
+          h.crashed.add('b')
+        }
+        throw new Error('crashed')
+      }
+      h.assignments[screen] = wallpaper.id
+      return ''
+    })
+    vi.setSystemTime(new Date(2026, 0, 5, 10, 0))
+    await vi.advanceTimersByTimeAsync(300_000)
+
+    expect(h.assignments['DP-1']).toBe('c')
+  })
+
+  it('leaves the position of a pick alone when the retry it overtook fails', async () => {
+    vi.setSystemTime(new Date(2026, 0, 5, 7, 0))
+    const service = await boot()
+    service.startPlaylist('p', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+
+    let failRetry: ((reason: Error) => void) | undefined
+    let triedB = 0
+    showWallpaper.mockImplementation(async (wallpaper, screen) => {
+      if (wallpaper.id === 'b') {
+        if (++triedB === 1) throw new Error('declined')
+        return await new Promise<string>((_resolve, reject) => { failRetry = reject })
+      }
+      h.assignments[screen] = wallpaper.id
+      return ''
+    })
+    vi.setSystemTime(new Date(2026, 0, 5, 10, 0))
+    await vi.advanceTimersByTimeAsync(70_000)
+    expect(triedB).toBe(2)
+
+    void service.playItem('p', 'a', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+    failRetry?.(new Error('declined again'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(service.getPlaybackStates()[0].currentIndex).toBe(0)
+  })
+
+  it('remembers where the clock is when a pause came during the apply', async () => {
+    vi.setSystemTime(new Date(2026, 0, 5, 7, 0))
+    const service = await boot()
+    service.startPlaylist('p', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+
+    let launched: (() => void) | undefined
+    showWallpaper.mockImplementation(async (wallpaper, screen) => {
+      await new Promise<void>((resolve) => { launched = resolve })
+      h.assignments[screen] = wallpaper.id
+      return ''
+    })
+    vi.setSystemTime(new Date(2026, 0, 5, 10, 0))
+    await vi.advanceTimersByTimeAsync(10_000)
+    service.pausePlaylist('DP-1')
+    launched?.()
+    await vi.advanceTimersByTimeAsync(0)
+    showWallpaper.mockClear()
+
+    service.resumePlaylist('DP-1')
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(showWallpaper).not.toHaveBeenCalled()
+  })
+
+  it('tries the item that did not launch at the start again', async () => {
+    vi.setSystemTime(new Date(2026, 0, 5, 10, 0))
+    let triedB = 0
+    showWallpaper.mockImplementation(async (wallpaper, screen) => {
+      if (wallpaper.id === 'b' && ++triedB < 3) throw new Error('drive not mounted')
+      h.assignments[screen] = wallpaper.id
+      return ''
+    })
+    const service = await boot()
+
+    service.startPlaylist('p', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.assignments['DP-1']).toBe('c')
+
+    await vi.advanceTimersByTimeAsync(70_000)
+    expect(triedB).toBe(2)
+
+    await vi.advanceTimersByTimeAsync(70_000)
+    expect(h.assignments['DP-1']).toBe('b')
+  })
+
+  it('goes on trying the item that did not launch after a pause and resume', async () => {
+    vi.setSystemTime(new Date(2026, 0, 5, 10, 0))
+    let triedB = 0
+    showWallpaper.mockImplementation(async (wallpaper, screen) => {
+      if (wallpaper.id === 'b' && ++triedB < 3) throw new Error('drive not mounted')
+      h.assignments[screen] = wallpaper.id
+      return ''
+    })
+    const service = await boot()
+
+    service.startPlaylist('p', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+    service.pausePlaylist('DP-1')
+    service.resumePlaylist('DP-1')
+
+    await vi.advanceTimersByTimeAsync(70_000)
+    expect(triedB).toBe(2)
+
+    await vi.advanceTimersByTimeAsync(70_000)
+    expect(h.assignments['DP-1']).toBe('b')
+  })
+
+  it('tells the window when a pause came during the apply', async () => {
+    vi.setSystemTime(new Date(2026, 0, 5, 7, 0))
+    const service = await boot()
+    service.startPlaylist('p', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+
+    let launched: (() => void) | undefined
+    showWallpaper.mockImplementation(async (wallpaper, screen) => {
+      await new Promise<void>((resolve) => { launched = resolve })
+      h.assignments[screen] = wallpaper.id
+      return ''
+    })
+    vi.setSystemTime(new Date(2026, 0, 5, 10, 0))
+    await vi.advanceTimersByTimeAsync(10_000)
+    service.pausePlaylist('DP-1')
+    const changed = vi.fn<() => void>()
+    service.onPlaybackStateChanged(changed)
+    launched?.()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(service.getPlaybackStates()[0].currentItemId).toBe('b')
+    expect(changed).toHaveBeenCalled()
+  })
+
+  it('retries a wallpaper in the slot of the clock when it is in two slots', async () => {
+    h.playlist.items = [{ wallpaperId: 'a' }, { wallpaperId: 'b' }, { wallpaperId: 'a' }]
+    vi.setSystemTime(new Date(2026, 0, 5, 7, 0))
+    const service = await boot()
+    service.startPlaylist('p', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+
+    let triedA = 0
+    showWallpaper.mockImplementation(async (wallpaper, screen) => {
+      if (wallpaper.id === 'a' && ++triedA <= 2) throw new Error('drive not mounted')
+      h.assignments[screen] = wallpaper.id
+      return ''
+    })
+    vi.setSystemTime(new Date(2026, 0, 5, 20, 0))
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(h.assignments['DP-1']).toBe('b')
+
+    await vi.advanceTimersByTimeAsync(70_000)
+
+    expect(h.assignments['DP-1']).toBe('a')
+    expect(service.getPlaybackStates()[0].currentIndex).toBe(2)
+  })
+
+  it('saves what the clock put on the screen', async () => {
+    vi.setSystemTime(new Date(2026, 0, 5, 7, 0))
+    const service = await boot()
+    service.startPlaylist('p', 'DP-1')
+    await vi.advanceTimersByTimeAsync(0)
+
+    vi.setSystemTime(new Date(2026, 0, 5, 10, 0))
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    const saved = (h.disk.data as { players: Record<string, { shownId: string }> }).players
+    expect(saved['DP-1'].shownId).toBe('b')
   })
 })

@@ -1,5 +1,6 @@
 import type { EngineFlagPreset, EngineFlags, FullscreenPauseMode } from '@shared/types'
 import type { MessageKey } from '@shared/i18n'
+import type { GlobalOnlyFlag } from '@shared/engineFlags'
 import { t } from '../i18n'
 
 type ChoiceFlag =
@@ -16,18 +17,7 @@ type ChoiceFlag =
   | 'transitionDuration'
   | 'batteryFps'
   | 'idlePause'
-// kdeBackgroundLayer, windowed and windowBackground are global only
-type BooleanFlag = Exclude<
-  keyof EngineFlags,
-  | 'fullscreenPause'
-  | 'kdeBackgroundLayer'
-  | 'windowed'
-  | 'windowBackground'
-  | 'audioInput'
-  | 'audioInputVolume'
-  | 'audioInputThreshold'
-  | ChoiceFlag
->
+type BooleanFlag = Exclude<keyof EngineFlags, 'fullscreenPause' | GlobalOnlyFlag | ChoiceFlag>
 
 export const BOOLEAN_FLAGS: { key: BooleanFlag; label: MessageKey; hint?: MessageKey }[] = [
   { key: 'disableParticles', label: 'flags.disableParticles.label', hint: 'flags.disableParticles.hint' },

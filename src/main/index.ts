@@ -17,6 +17,7 @@ import { cancelRestore, expandScreen, getDisplayTargets, initDisplay, restoreAss
 import { mergeSkipScreens } from './services/restore-plan'
 import { initSchedule, takeCatchUp } from './services/schedule.service'
 import { initAppRules } from './services/app-rules.service'
+import { actionScreens } from './services/rule-actions.service'
 import { initUpdates } from './services/update.service'
 import { detectDesktopEnv, hasStatusNotifierHost } from './utils/platform'
 import { needsSoftwareCompositing, readGpuVendors } from './utils/gpuWorkaround'
@@ -264,7 +265,7 @@ app.whenReady().then(async () => {
     }
   }
   const catchUp = takeCatchUp()
-  const scheduleScreens = catchUp.flatMap((rule) => expandScreen(rule.screen, targets))
+  const scheduleScreens = catchUp.flatMap((rule) => actionScreens(rule.action, rule.screen, targets))
   initSchedule(win, catchUp)
   initAppRules(win)
   initUpdates(win)

@@ -300,9 +300,22 @@ function newestAsset(assets: GithubAsset[]): GithubAsset | undefined {
 }
 
 let downloading = false
+let removing = false
+
+function ffmpegFolderBusy(): boolean {
+  return downloading || removing
+}
+
+function optimizeBusy(): boolean {
+  return job !== null || staged !== null || ffmpegFolderBusy()
+}
+
+function downloadedFfmpegBusy(): boolean {
+  return ffmpegFolderBusy() || job !== null || quickRunning
+}
 
 export async function downloadFfmpeg(win: BrowserWindow): Promise<void> {
-  if (downloading) throw new OptimizeError('busy', t('optimize.errBusy'))
+  if (downloadedFfmpegBusy()) throw new OptimizeError('busy', t('optimize.errBusy'))
   downloading = true
   const send = (progress: Omit<OptimizeProgress, 'itemId'>) => {
     if (!win.isDestroyed())
@@ -360,15 +373,22 @@ export async function downloadFfmpeg(win: BrowserWindow): Promise<void> {
     send({ stage: 'error', percentage: 0, message: (err as Error).message })
     throw err
   } finally {
+    // the files of this run are gone before another download may use the same names
+    await fs.promises.rm(archive, { force: true }).catch(() => undefined)
+    await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => undefined)
     downloading = false
-    await fs.promises.rm(archive, { force: true })
-    await fs.promises.rm(staging, { recursive: true, force: true })
   }
 }
 
 export async function removeDownloadedFfmpeg(): Promise<void> {
-  await fs.promises.rm(getFfmpegDir(), { recursive: true, force: true })
-  encoderCache.delete('downloaded')
+  if (downloadedFfmpegBusy()) throw new OptimizeError('busy', t('optimize.errBusy'))
+  removing = true
+  try {
+    await fs.promises.rm(getFfmpegDir(), { recursive: true, force: true })
+    encoderCache.delete('downloaded')
+  } finally {
+    removing = false
+  }
 }
 
 interface FfprobeStream {
@@ -649,8 +669,6 @@ export async function startOptimize(
     return { ...result, skipped: [...new Set([...exclude, ...result.skipped])] }
   } catch (err) {
     if (err instanceof WrongPictureError && options.encoder === 'auto') {
-      // the next encoder's result is what counts, the rejected file would only sit in the folder
-      if (err.kept) await fs.promises.rm(err.kept, { force: true }).catch(() => undefined)
       return startOptimize(id, options, win, [...exclude, err.encoder])
     }
     throw err
@@ -663,11 +681,19 @@ async function runOptimize(
   win: BrowserWindow,
   exclude: HevcEncoder[]
 ): Promise<OptimizeResult> {
-  if (job || staged || downloading) throw new OptimizeError('busy', t('optimize.errBusy'))
+  if (optimizeBusy()) throw new OptimizeError('busy', t('optimize.errBusy'))
   const current: Job = { id, helpers: new Set(), cancelled: quickRunning && quickCancelled }
   job = current
   try {
     return await runOptimizeJob(current, id, options, win, exclude)
+  } catch (err) {
+    if (err instanceof WrongPictureError && options.encoder === 'auto') {
+      // the next encoder's result is what counts, the rejected file would only sit in the folder.
+      // The job is held until then, so nothing can start or be cancelled in between
+      if (err.kept) await fs.promises.rm(err.kept, { force: true }).catch(() => undefined)
+      if (current.cancelled) throw new OptimizeError('cancelled', t('optimize.errCancelled'))
+    }
+    throw err
   } finally {
     job = null
   }
@@ -980,12 +1006,12 @@ let quickCancelled = false
  * listed with the reason. The size never grows: a video that is not larger than the target keeps its size.
  */
 export async function quickOptimize(ids: string[], win: BrowserWindow, trimAnswer = false): Promise<QuickReport> {
-  if (quickRunning) throw new OptimizeError('busy', t('optimize.errBusy'))
-  quickRunning = true
-  quickCancelled = false
+  if (quickRunning || ffmpegFolderBusy()) throw new OptimizeError('busy', t('optimize.errBusy'))
   const report: QuickReport = { lines: [], optimized: 0, savedBytes: 0, originalsKept: false }
   let settings = getVideoToolSettings()
   const trim = settings.trimMode === 'auto' || (settings.trimMode === 'ask' && trimAnswer)
+  quickRunning = true
+  quickCancelled = false
   try {
     const { encoders } = await getVideoToolsStatus()
     if (settings.encoder !== 'auto' && !encoders.some((o) => o.encoder === settings.encoder)) {
@@ -1003,7 +1029,7 @@ export async function quickOptimize(ids: string[], win: BrowserWindow, trimAnswe
       if (!win.isDestroyed()) {
         win.webContents.send(IpcChannels.EVENT_VIDEO_TOOLS_QUICK, { done: index, total: ids.length, id, title })
       }
-      if (job || staged || downloading) {
+      if (optimizeBusy()) {
         skip(t('quick.reasonBusy'))
         continue
       }

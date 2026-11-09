@@ -4,7 +4,7 @@ import { openStore } from '../utils/safeStore'
 import { getWallpaper } from './library.service'
 import { getPlaybackStates } from './playlist-player.service'
 import { getDisplayTargets } from './display.service'
-import { getAssignments } from './wallpaper-state.service'
+import { getAssignments, isSplitActive } from './wallpaper-state.service'
 
 interface ProfileStore {
   profiles: Profile[]
@@ -37,14 +37,16 @@ export function deleteProfile(id: string): void {
   store.set('profiles', getProfiles().filter((p) => p.id !== id))
 }
 
-/** What a screen shows now: its playlist while one plays, else its wallpaper, else nothing */
+/** What a screen shows now: its playlist while one plays, else its split or wallpaper, else nothing */
 export function currentScreenAction(screen: ScreenTarget): ScreenAction {
   const playing = getPlaybackStates().find((s) => s.screen === screen && s.playlistId && s.isPlaying)
   if (playing?.playlistId) return { type: 'playlist', playlistId: playing.playlistId }
 
   const assignments = getAssignments()
   const wallpaperId = assignments[screen] ?? assignments['*']
-  if (wallpaperId && getWallpaper(wallpaperId)) return { type: 'wallpaper', wallpaperId }
+  if (wallpaperId && getWallpaper(wallpaperId)) {
+    return isSplitActive(screen) ? { type: 'split', wallpaperId } : { type: 'wallpaper', wallpaperId }
+  }
   return { type: 'stop' }
 }
 

@@ -57,7 +57,7 @@ import { useConfig, useLweInstalled } from '../../hooks/queries'
 import { useKeyedCommits } from '../../hooks/useKeyedCommits'
 import ScreenSelect from './ScreenSelect'
 import { getPreviewSrc } from '../../utils/preview'
-import { hasEngineFlags } from '@shared/engineFlags'
+import { normalizeWallpaperFlags } from '@shared/engineFlags'
 import EngineFlagsSection from './sidebar/EngineFlagsSection'
 import ImageAdjustmentsSection from './sidebar/ImageAdjustmentsSection'
 import VideoTrimSection from './sidebar/VideoTrimSection'
@@ -660,7 +660,7 @@ export default function DetailSidebar({
     else next.automute = false
     setTogglingAutomute(true)
     try {
-      await persistAndMaybeRelaunch({ engineFlags: hasEngineFlags(next) ? next : undefined })
+      await persistAndMaybeRelaunch({ engineFlags: normalizeWallpaperFlags(next) })
     } finally {
       setTogglingAutomute(false)
     }

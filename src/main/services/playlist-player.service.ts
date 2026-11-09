@@ -56,6 +56,7 @@ interface Player {
   clockItem: number | null
   clockWallpaper: string | null
   clockRetryAt: number
+  clockFellBack: string | null
   scheduledMode: string | null
 }
 
@@ -101,6 +102,10 @@ function firstWeekday(): number {
   } catch {
     return 0
   }
+}
+
+function wallpaperAt(playlist: Playlist, index: number): string | null {
+  return playlist.items[index]?.wallpaperId ?? null
 }
 
 /** The item the clock wants now, an index into the playlist's items (which is also the order of these modes) */
@@ -160,6 +165,14 @@ function persist(stopped: readonly ScreenTarget[] = [], prune = true): void {
   store.set('players', mergePlayers(saved, live, [...stopped, ...players.keys()]))
 }
 
+function savePlayers(): void {
+  try {
+    persist([], false)
+  } catch (err) {
+    console.error('[PlaylistPlayer] Could not save the playlist state:', err)
+  }
+}
+
 function clearTimer(player: Player): void {
   player.scheduleToken++
   if (player.timer) {
@@ -194,24 +207,33 @@ function known(id: string): boolean {
   return compatStatus(getWallpaper(id)?.compat) !== 'crashes'
 }
 
-/** True when applyCurrent would not have skipped this item on purpose, so not showing it means the launch failed */
-function wasPlayable(playlist: Playlist, order: string[], id: string): boolean {
-  return rotationFilter(playlist, order)(id) && known(id)
+function anyPlayableIn(order: string[], inRotation: (id: string) => boolean): boolean {
+  return order.some((id) => getWallpaper(id) !== null && inRotation(id) && known(id))
 }
 
-/** Skips crashing items and non-favorites while something else is left. `picked` always plays */
-async function applyCurrent(player: Player, playlist: Playlist, picked?: string): Promise<boolean> {
+/** True when applyCurrent would not have skipped this item on purpose, so not showing it means the launch failed */
+function wasPlayable(playlist: Playlist, order: string[], id: string): boolean {
+  const inRotation = rotationFilter(playlist, order)
+  return getWallpaper(id) !== null && inRotation(id) && (known(id) || !anyPlayableIn(order, inRotation))
+}
+
+/**
+ * Skips crashing items and non-favorites while something else is left. `picked` always plays.
+ * `only` is an index to try on its own: when it fails nothing else is shown and the position stays
+ */
+async function applyCurrent(player: Player, playlist: Playlist, mine: number, { picked, only }: { picked?: string; only?: number } = {}): Promise<boolean> {
   const { state } = player
   const count = state.order.length
+  const from = state.currentIndex
+  if (only !== undefined) state.currentIndex = only
   const inRotation = rotationFilter(playlist, state.order)
-  const anyPlayable = state.order.some((id) => inRotation(id) && known(id))
+  const anyPlayable = anyPlayableIn(state.order, inRotation)
 
-  const mine = ++player.applyId
   const stale = (): boolean => player.state !== state || players.get(state.screen) !== player || player.applyId !== mine
 
   player.applying = true
   try {
-    for (let tries = 0; tries < count; tries++, state.currentIndex = (state.currentIndex + 1) % count) {
+    for (let tries = 0; tries < (only === undefined ? count : 1); tries++, state.currentIndex = (state.currentIndex + 1) % count) {
       if (stale()) return false
       const wallpaper = getWallpaper(state.order[state.currentIndex])
       if (!wallpaper) continue
@@ -225,6 +247,8 @@ async function applyCurrent(player: Player, playlist: Playlist, picked?: string)
         })
       } catch (err) {
         console.error('[PlaylistPlayer] Failed to apply wallpaper:', err)
+        // the step to the next item would move the position of whatever overtook this apply
+        if (stale()) return false
         continue
       }
       if (stale()) return false
@@ -238,8 +262,11 @@ async function applyCurrent(player: Player, playlist: Playlist, picked?: string)
         player.lastShown = wallpaper.id
         return true
       }
+      if (only !== undefined) state.currentIndex = from
       return false
     }
+    // a newer apply set the position it needs, only this one's own step is undone
+    if (only !== undefined && !stale()) state.currentIndex = from
     return false
   } finally {
     if (player.applyId === mine) player.applying = false
@@ -248,15 +275,13 @@ async function applyCurrent(player: Player, playlist: Playlist, picked?: string)
 
 async function showCurrent(player: Player, playlist: Playlist, picked?: string, applied?: (shown: boolean) => void): Promise<void> {
   const state = player.state
-  const shown = await applyCurrent(player, playlist, picked)
-  if (player.state !== state) return
+  const mine = ++player.applyId
+  const shown = await applyCurrent(player, playlist, mine, { picked })
+  // a newer apply on this player decides what is shown and arms the timer
+  if (player.state !== state || player.applyId !== mine) return
   applied?.(shown)
   scheduleNext(player, playlist)
-  try {
-    persist([], false)
-  } catch (err) {
-    console.error('[PlaylistPlayer] Could not save the playlist state:', err)
-  }
+  savePlayers()
   emitState()
 }
 
@@ -330,40 +355,64 @@ async function followClock(player: Player, playlist: Playlist, mode: ScheduledMo
   }
 
   const target = clockIndex(current, mode)
-  const targetWallpaper = current.items[target]?.wallpaperId ?? null
+  const targetWallpaper = wallpaperAt(current, target)
   if ((target !== player.clockItem || targetWallpaper !== player.clockWallpaper) && !player.applying && Date.now() >= player.clockRetryAt) {
     const token = player.scheduleToken
-    player.state.order = buildOrder(current)
-    player.state.currentIndex = target
-    const shown = await applyCurrent(player, current)
-    const fellBack = shown && targetWallpaper !== null && player.state.currentItemId !== targetWallpaper && wasPlayable(current, player.state.order, targetWallpaper)
-    if (shown && !fellBack) {
-      player.clockItem = target
-      player.clockWallpaper = targetWallpaper
-    } else player.clockRetryAt = Date.now() + CLOCK_RETRY_MS
-    if (token !== player.scheduleToken || players.get(player.state.screen) !== player) return
-    emitState()
+    if (player.clockFellBack !== targetWallpaper) player.clockFellBack = null
+    // the clock's slot, not the first place the wallpaper has in the order: it may be in two slots
+    const retryIndex = player.state.order[target] === targetWallpaper ? target : player.state.order.indexOf(targetWallpaper ?? '')
+    const only = player.clockFellBack === null || retryIndex === -1 ? undefined : retryIndex
+    if (only === undefined) {
+      player.state.order = buildOrder(current)
+      player.state.currentIndex = target
+    }
+    const mine = ++player.applyId
+    const shown = await applyCurrent(player, current, mine, { only })
+    // a newer apply on this player decides what is shown, a pause only keeps the timer from being armed
+    if (players.get(player.state.screen) !== player || player.applyId !== mine) return
+    noteClockApply(player, current, target, shown, only !== undefined)
+    const changed = only === undefined || shown
+    if (changed) {
+      savePlayers()
+      emitState()
+    }
+    if (token !== player.scheduleToken) return
   }
   scheduleNext(player, current)
 }
 
-/** Only a shown item counts as the clock's position, a failed one is tried again after a while */
-function noteClockApply(player: Player, playlist: Playlist, target: number, shown: boolean): void {
-  if (shown) {
+function standsIn(player: Player, playlist: Playlist, wanted: string | null, shown: boolean): boolean {
+  return shown && wanted !== null && player.state.currentItemId !== wanted && wasPlayable(playlist, player.state.order, wanted)
+}
+
+/**
+ * Only a shown item counts as the clock's position. One that did not launch is tried again after a while, on its
+ * own while something stands in for it (`retried`: this apply was such a try)
+ */
+function noteClockApply(player: Player, playlist: Playlist, target: number, shown: boolean, retried = false): void {
+  const wanted = wallpaperAt(playlist, target)
+  const standIn = standsIn(player, playlist, wanted, shown)
+  const heldByStandIn = retried && owns(player)
+  const skipped = heldByStandIn && wanted !== null && !wasPlayable(playlist, player.state.order, wanted)
+
+  if ((shown && !standIn) || skipped) {
     player.clockItem = target
-    player.clockWallpaper = playlist.items[target]?.wallpaperId ?? null
-  } else {
-    player.clockItem = null
-    player.clockWallpaper = null
-    player.clockRetryAt = Date.now() + CLOCK_RETRY_MS
+    player.clockWallpaper = wanted
+    player.clockFellBack = null
+    return
   }
+  player.clockItem = null
+  player.clockWallpaper = null
+  player.clockRetryAt = Date.now() + CLOCK_RETRY_MS
+  player.clockFellBack = standIn || heldByStandIn ? wanted : null
 }
 
 /** A manual pick holds until the clock moves on from where it is now */
 function holdClock(player: Player, playlist: Playlist): void {
   const mode = clockMode(playlist)
   player.clockItem = mode ? clockIndex(playlist, mode) : null
-  player.clockWallpaper = player.clockItem === null ? null : (playlist.items[player.clockItem]?.wallpaperId ?? null)
+  player.clockWallpaper = player.clockItem === null ? null : wallpaperAt(playlist, player.clockItem)
+  player.clockFellBack = null
 }
 
 async function advance(player: Player): Promise<void> {
@@ -397,6 +446,7 @@ function playerFor(screen: ScreenTarget): Player {
       clockItem: null,
       clockWallpaper: null,
       clockRetryAt: 0,
+      clockFellBack: null,
       scheduledMode: null
     }
     players.set(screen, player)
@@ -435,6 +485,7 @@ function startOn(screen: ScreenTarget, playlist: Playlist, paused = false, shown
   player.clockItem = null
   player.clockWallpaper = null
   player.clockRetryAt = 0
+  player.clockFellBack = null
   player.state = {
     screen,
     playlistId: playlist.id,

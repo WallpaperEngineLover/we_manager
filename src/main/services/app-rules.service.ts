@@ -92,21 +92,44 @@ export function getActiveRuleIds(): string[] {
     .map(([id]) => id)
 }
 
-let ownHostPid: Promise<number | undefined> | undefined
+const HOST_PID_RETRY_MS = 60_000
+const HOST_PID_RETRY_MAX_MS = 15 * 60_000
 
-function ownHostPidOnce(): Promise<number | undefined> {
-  if (!isFlatpak()) return Promise.resolve(undefined)
-  ownHostPid ??= hostPidOf(process.pid)
-  return ownHostPid
+let ownHostPid: number | undefined
+let ownHostPidLookup: Promise<void> | null = null
+let ownHostPidFailures = 0
+let ownHostPidRetryAt = 0
+
+/**
+ * The first answer is waited for, until it is there the app's own sound would count as another app's.
+ * Only a found pid is kept. A failed lookup is tried again in the background, less often each time: it scans
+ * the processes of the host, takes up to 10 s, and the checks must not wait for it
+ */
+async function findOwnHostPid(): Promise<void> {
+  if (!isFlatpak() || ownHostPid !== undefined || ownHostPidLookup || Date.now() < ownHostPidRetryAt) return
+
+  const first = ownHostPidFailures === 0
+  ownHostPidLookup = hostPidOf(process.pid).then((pid) => {
+    ownHostPid = pid
+    ownHostPidLookup = null
+    if (pid === undefined) {
+      ownHostPidRetryAt = Date.now() + Math.min(HOST_PID_RETRY_MS * 2 ** ownHostPidFailures, HOST_PID_RETRY_MAX_MS)
+      ownHostPidFailures++
+    }
+  })
+  if (first) await ownHostPidLookup
 }
 
 async function observe(rules: AppRule[]): Promise<Observation> {
   const enabled = rules.filter((r) => r.enabled)
   const processes = enabled.some((r) => r.condition.type === 'process') ? await listProcessNames() : new Set<string>()
-  const owners = new Set([process.pid, ...getRunningInstances().flatMap((i) => (i.hostPid === null ? [i.pid] : [i.pid, i.hostPid]))])
-  const hostPid = await ownHostPidOnce()
-  if (hostPid) owners.add(hostPid)
-  const audioPlaying = enabled.some((r) => r.condition.type === 'audio') ? await isAudioPlaying(owners) : false
+  let audioPlaying = false
+  if (enabled.some((r) => r.condition.type === 'audio')) {
+    await findOwnHostPid()
+    const owners = new Set([process.pid, ...getRunningInstances().flatMap((i) => (i.hostPid === null ? [i.pid] : [i.pid, i.hostPid]))])
+    if (ownHostPid !== undefined) owners.add(ownHostPid)
+    audioPlaying = await isAudioPlaying(owners)
+  }
   return { processes, audioPlaying }
 }
 

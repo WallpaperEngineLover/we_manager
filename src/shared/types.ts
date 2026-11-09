@@ -2,6 +2,7 @@ import type { ImageAdjustments } from './imageAdjustments'
 import type { VideoSegment } from './videoTrim'
 import type { DesktopEnvironment } from './desktop'
 import type { Appearance } from './appearance'
+import type { GlobalOnlyFlag } from './engineFlags'
 import type { Language, LanguagePreference } from './i18n'
 import type { CardBorders } from './cardBorders'
 import type { CardBadges } from './cardBadges'
@@ -166,7 +167,7 @@ export interface WallpaperMeta {
   /** Extra launch arguments, changing them always restarts the engine */
   customArgs?: string
   /** Unset flags fall back to the global setting */
-  engineFlags?: EngineFlags
+  engineFlags?: WallpaperEngineFlags
   compat?: WallpaperCompat
   /** Scene with general.hdr on, or a PQ/HLG video. Unset until detected */
   hdr?: boolean
@@ -254,6 +255,9 @@ export interface EngineFlags {
   kdeBackgroundLayer?: boolean
 }
 
+/** What a wallpaper can override: the flags of a whole session are not per wallpaper */
+export type WallpaperEngineFlags = Omit<EngineFlags, GlobalOnlyFlag>
+
 export interface EngineFlagPreset {
   id: string
   name: string
@@ -316,12 +320,18 @@ export interface SplitScreen {
   slots: SplitSlot[]
 }
 
-export type ScreenAction =
+type PickedAction =
   | { type: 'wallpaper'; wallpaperId: string }
   | { type: 'playlist'; playlistId: string }
   | { type: 'stop' }
 
-export type ScheduleAction = ScreenAction | { type: 'profile'; profileId: string }
+/**
+ * What a screen can go back to: a captured screen may also have been a split, which is not a choice in the editors.
+ * It goes back to the screen's split as configured then, wallpaperId is its first slot, shown instead when it can't be shown any more
+ */
+export type ScreenAction = PickedAction | { type: 'split'; wallpaperId: string }
+
+export type ScheduleAction = PickedAction | { type: 'profile'; profileId: string }
 
 export interface Profile {
   id: string
