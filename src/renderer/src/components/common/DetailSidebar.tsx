@@ -48,7 +48,7 @@ import clsx from 'clsx'
 import { openWorkshopPage, openProfilePage, isWorkshopId } from '../../utils/steam'
 import { WE_TYPES, WE_AGE_RATINGS, canonicalResolutionTag, resolutionsFromTags } from '../../constants/weFilters'
 import { formatFileSize } from '../../utils/format'
-import { isRangeKey } from '../../utils/dom'
+import RangeInput from './RangeInput'
 import { useDislikedIds, useVoteAction, useVotedIds } from '../../hooks/useVotes'
 import { useFavoriteAction, useFavoriteIds, useItemFavoriteStatus } from '../../hooks/useFavorites'
 import { useConfig, useLweInstalled } from '../../hooks/queries'
@@ -264,17 +264,13 @@ function PropertyRow({
           </span>
           <span className="text-gray-500">{num}</span>
         </div>
-        <input
-          type="range"
+        <RangeInput
           min={property.min ?? 0}
           max={property.max ?? 100}
           step={property.step || 1}
           value={num}
-          onChange={(e) => { setDraft(Number(e.target.value)) }}
-          onMouseUp={(e) => { onCommit(e.currentTarget.value); setDraft(null) }}
-          onTouchEnd={(e) => { onCommit(e.currentTarget.value); setDraft(null) }}
-          onKeyUp={(e) => { if (!isRangeKey(e.key)) return; onCommit(e.currentTarget.value); setDraft(null) }}
-          className="w-full accent-accent-500"
+          onLive={setDraft}
+          onCommit={(v) => { onCommit(String(v)); setDraft(null) }}
         />
       </div>
     )
@@ -327,17 +323,13 @@ function AudioObjectRow({
         </span>
         <span className="text-gray-500">{percent === 0 ? 'locked' : `${percent}%`}</span>
       </div>
-      <input
-        type="range"
+      <RangeInput
         min={0}
         max={200}
         step={5}
         value={percent}
-        onChange={(e) => { setDraft(Number(e.target.value)) }}
-        onMouseUp={(e) => { onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
-        onTouchEnd={(e) => { onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
-        onKeyUp={(e) => { if (!isRangeKey(e.key)) return; onCommit(Number(e.currentTarget.value) / 100); setDraft(null) }}
-        className="w-full accent-accent-500"
+        onLive={setDraft}
+        onCommit={(v) => { onCommit(v / 100); setDraft(null) }}
       />
     </div>
   )
@@ -363,17 +355,13 @@ function SoundTrackRow({
         </span>
         <span className="text-gray-500">{value === 0 ? 'muted' : `${Math.round(value * 100)}%`}</span>
       </div>
-      <input
-        type="range"
+      <RangeInput
         min={0}
         max={1}
         step={0.1}
         value={value}
-        onChange={(e) => { setDraft(Number(e.target.value)) }}
-        onMouseUp={(e) => { onCommit(Number(e.currentTarget.value)); setDraft(null) }}
-        onTouchEnd={(e) => { onCommit(Number(e.currentTarget.value)); setDraft(null) }}
-        onKeyUp={(e) => { if (!isRangeKey(e.key)) return; onCommit(Number(e.currentTarget.value)); setDraft(null) }}
-        className="w-full accent-accent-500"
+        onLive={setDraft}
+        onCommit={(v) => { onCommit(v); setDraft(null) }}
       />
     </div>
   )
@@ -1106,22 +1094,14 @@ export default function DetailSidebar({
               {isCommittingZoom && <Loader2 size={11} className="animate-spin" />}
               <span className="normal-case text-gray-400">{zoomPercent}%</span>
             </div>
-            <input
-              type="range"
+            <RangeInput
               min={25}
               max={300}
               step={1}
               value={zoomPercent}
               disabled={isCommittingZoom}
-              onChange={(e) => {
-                const v = Number(e.target.value)
-                setZoomDraft(v)
-                previewLive({ zoom: v / 100 })
-              }}
-              onMouseUp={(e) => void commitZoom(Number(e.currentTarget.value))}
-              onTouchEnd={(e) => void commitZoom(Number(e.currentTarget.value))}
-              onKeyUp={(e) => void (isRangeKey(e.key) && commitZoom(Number(e.currentTarget.value)))}
-              className="w-full accent-accent-500 disabled:opacity-50"
+              onLive={(v) => { setZoomDraft(v); previewLive({ zoom: v / 100 }) }}
+              onCommit={(v) => { void commitZoom(v) }}
             />
           </div>
         )}
@@ -1140,22 +1120,14 @@ export default function DetailSidebar({
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-12 shrink-0 text-[10px] normal-case text-gray-500">{t('detail.leftRight')}</span>
-              <input
-                type="range"
+              <RangeInput
                 min={-100}
                 max={100}
                 step={1}
                 value={Math.round(offsetX * 100)}
                 disabled={isCommittingOffset}
-                onChange={(e) => {
-                  const v = Number(e.target.value) / 100
-                  setOffsetXDraft(v)
-                  previewLive({ offsetX: v, offsetY })
-                }}
-                onMouseUp={(e) => void commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
-                onTouchEnd={(e) => void commitOffset(Number(e.currentTarget.value) / 100, offsetY)}
-                onKeyUp={(e) => void (isRangeKey(e.key) && commitOffset(Number(e.currentTarget.value) / 100, offsetY))}
-                className="w-full accent-accent-500 disabled:opacity-50"
+                onLive={(v) => { const next = v / 100; setOffsetXDraft(next); previewLive({ offsetX: next, offsetY }) }}
+                onCommit={(v) => { void commitOffset(v / 100, offsetY) }}
               />
               <span className="w-8 shrink-0 text-right text-[10px] text-gray-400">
                 {Math.round(offsetX * 100)}
@@ -1163,22 +1135,14 @@ export default function DetailSidebar({
             </div>
             <div className="mt-1.5 flex items-center gap-1.5">
               <span className="w-12 shrink-0 text-[10px] normal-case text-gray-500">{t('detail.upDown')}</span>
-              <input
-                type="range"
+              <RangeInput
                 min={-100}
                 max={100}
                 step={1}
                 value={Math.round(offsetY * 100)}
                 disabled={isCommittingOffset}
-                onChange={(e) => {
-                  const v = Number(e.target.value) / 100
-                  setOffsetYDraft(v)
-                  previewLive({ offsetX, offsetY: v })
-                }}
-                onMouseUp={(e) => void commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
-                onTouchEnd={(e) => void commitOffset(offsetX, Number(e.currentTarget.value) / 100)}
-                onKeyUp={(e) => void (isRangeKey(e.key) && commitOffset(offsetX, Number(e.currentTarget.value) / 100))}
-                className="w-full accent-accent-500 disabled:opacity-50"
+                onLive={(v) => { const next = v / 100; setOffsetYDraft(next); previewLive({ offsetX, offsetY: next }) }}
+                onCommit={(v) => { void commitOffset(offsetX, v / 100) }}
               />
               <span className="w-8 shrink-0 text-right text-[10px] text-gray-400">
                 {Math.round(offsetY * 100)}
@@ -1253,23 +1217,15 @@ export default function DetailSidebar({
               />
               <span className="normal-case text-gray-400">%</span>
             </div>
-            <input
-              type="range"
+            <RangeInput
               min={10}
               max={200}
               step={5}
               value={speedPercent}
               disabled={isCommittingSpeed}
-              onChange={(e) => {
-                const v = Number(e.target.value)
-                setSpeedDraft(v)
-                previewLive({ speed: v / 100 })
-              }}
-              onMouseUp={(e) => void commitSpeed(Number(e.currentTarget.value))}
-              onTouchEnd={(e) => void commitSpeed(Number(e.currentTarget.value))}
-              onKeyUp={(e) => void (isRangeKey(e.key) && commitSpeed(Number(e.currentTarget.value)))}
               title={t('detail.speedHint')}
-              className="w-full accent-accent-500 disabled:opacity-50"
+              onLive={(v) => { setSpeedDraft(v); previewLive({ speed: v / 100 }) }}
+              onCommit={(v) => { void commitSpeed(v) }}
             />
           </div>
         )}
@@ -1349,21 +1305,13 @@ export default function DetailSidebar({
                 {t('detail.volumeHint')}
               </p>
             )}
-            <input
-              type="range"
+            <RangeInput
               min={0}
               max={128}
               value={volume}
               disabled={isCommittingVolume}
-              onChange={(e) => {
-                const v = Number(e.target.value)
-                setVolumeDraft(v)
-                previewLive({ volume: v })
-              }}
-              onMouseUp={(e) => void commitVolume(Number(e.currentTarget.value))}
-              onTouchEnd={(e) => void commitVolume(Number(e.currentTarget.value))}
-              onKeyUp={(e) => void (isRangeKey(e.key) && commitVolume(Number(e.currentTarget.value)))}
-              className="w-full accent-accent-500 disabled:opacity-50"
+              onLive={(v) => { setVolumeDraft(v); previewLive({ volume: v }) }}
+              onCommit={(v) => { void commitVolume(v) }}
             />
           </div>
         )}

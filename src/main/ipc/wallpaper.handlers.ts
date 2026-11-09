@@ -37,7 +37,7 @@ export function registerWallpaperHandlers(): void {
     if (!wallpaper) throw new Error(`Wallpaper ${options.wallpaperId} not found in library`)
 
     // a playlist would replace it again on its next switch
-    for (const screen of expandScreen(options.screen)) pausePlaylist(screen)
+    for (const target of expandScreen(options.screen)) pausePlaylist(target)
 
     const appliedPath = await showWallpaper(wallpaper, options.screen, { backend: options.backend })
 

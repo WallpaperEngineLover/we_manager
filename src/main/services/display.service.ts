@@ -1,4 +1,6 @@
 import type { BrowserWindow } from 'electron'
+import fs from 'fs'
+import path from 'path'
 import { IpcChannels } from '@shared/ipc-channels'
 import type {
   CrashEvent,
@@ -15,6 +17,7 @@ import { applyWallpaperMeta, isAnimatedWallpaper } from './wallpaper.service'
 import {
   ALL_SCREENS,
   getActiveScreens,
+  getLweStatus,
   getRunningInstances,
   hotswapLweSettings,
   launchLweAsync,
@@ -27,11 +30,22 @@ import {
 } from './lwe.service'
 import { resolveEngineFlags } from '@shared/engineFlags'
 import { clearAssignment, getAssignments, setAssignment } from './wallpaper-state.service'
-import { getDefaultFps, getDisplayMode, getGlobalEngineFlags, getSplitScreens } from './config.service'
+import { getDefaultFps, getDisplayMode, getGlobalEngineFlags, getSplitScreens, setSplitScreen } from './config.service'
+import { planRestore, restoreSuperseded } from './restore-plan'
 import { ensureDependencyInstalled } from './dependency.service'
 import { t } from '../i18n'
 
 const LAUNCH_CHECK_MS = 20_000
+// bumped when a screen is launched or stopped, so a later restore does not replace that
+const screenUse = new Map<string, number>()
+
+function markScreenUsed(screen: ScreenTarget): void {
+  screenUse.set(screen, (screenUse.get(screen) ?? 0) + 1)
+}
+
+function screenUseCount(screen: ScreenTarget): number {
+  return screenUse.get(screen) ?? 0
+}
 // automatic relaunches after a runtime crash, at most one per screen in this window
 const RELAUNCH_COOLDOWN_MS = 60_000
 
@@ -120,7 +134,7 @@ export async function showWallpaper(
   options: {
     volume?: number
     backend?: WallpaperBackend
-    dependencyPrompt?: 'always' | 'once'
+    dependencyPrompt?: 'always' | 'once' | 'never'
     forceFresh?: boolean
   } = {}
 ): Promise<string> {
@@ -129,8 +143,12 @@ export async function showWallpaper(
 
   let appliedPath = ''
   for (const target of targets) {
+    markScreenUsed(target)
     appliedPath = await applyWallpaperMeta(wallpaper, { ...options, screen: target })
     setAssignment(target, wallpaper.id)
+    // a single wallpaper replaces a split, or the next start would bring the split back
+    // whenever this wallpaper is also the split's first slot
+    setSplitScreen(target, null)
     // only a wallpaper that crashed on launch before needs its fresh launches watched
     if (wallpaper.compat?.freshLaunch === 'crash') watchLaunch(wallpaper.id, target)
   }
@@ -139,7 +157,11 @@ export async function showWallpaper(
 }
 
 /** One fresh engine for all slots of the screen, beforeLaunch runs once the split is known to be showable */
-export async function showSplitScreen(screen: ScreenTarget, beforeLaunch?: () => void): Promise<void> {
+export async function showSplitScreen(
+  screen: ScreenTarget,
+  beforeLaunch?: () => void,
+  dependencyPrompt: 'always' | 'once' | 'never' = 'always'
+): Promise<void> {
   if (getDisplayMode() !== 'per-screen' || screen === ALL_SCREENS) throw new Error(t('split.needsPerScreen'))
   if (!getDisplayTargets().includes(screen)) throw new Error(`Screen ${screen} is not connected`)
   if (!supportsSplitScreens()) throw new Error(t('split.engineTooOld'))
@@ -149,8 +171,8 @@ export async function showSplitScreen(screen: ScreenTarget, beforeLaunch?: () =>
   const shown: WallpaperMeta[] = []
   for (const slot of split?.slots ?? []) {
     const wallpaper = getWallpaper(slot.wallpaperId)
-    if (!wallpaper?.localPath || !isAnimatedWallpaper(wallpaper)) continue
-    await ensureDependencyInstalled(wallpaper)
+    if (!wallpaper?.localPath || !isAnimatedWallpaper(wallpaper) || !wallpaperIsOnDisk(wallpaper.localPath)) continue
+    await ensureDependencyInstalled(wallpaper, dependencyPrompt)
     slots.push({
       path: wallpaper.localPath,
       scalingMode: slot.scalingMode ?? wallpaper.scalingMode,
@@ -163,6 +185,7 @@ export async function showSplitScreen(screen: ScreenTarget, beforeLaunch?: () =>
     shown.push(wallpaper)
   }
   if (slots.length === 0 || !split) throw new Error(t('split.empty'))
+  markScreenUsed(screen)
   beforeLaunch?.()
 
   // overrides would hit every slot by id, so slots play as published
@@ -178,6 +201,7 @@ export async function showSplitScreen(screen: ScreenTarget, beforeLaunch?: () =>
 }
 
 export async function stopDisplay(screen?: ScreenTarget): Promise<void> {
+  for (const target of expandScreen(screen)) markScreenUsed(target)
   if (screen === undefined || screen === ALL_SCREENS) {
     await stopLwe()
     clearAssignment()
@@ -307,4 +331,71 @@ export function initDisplay(window: BrowserWindow): void {
   onLweExit((info) => {
     void handleExit(info).catch((err: unknown) => { console.error('[Display] Crash handling failed:', err) })
   })
+}
+
+/** A missing drive still has a library entry. Launching that path marks a healthy wallpaper as a launch crash. */
+function wallpaperIsOnDisk(localPath: string): boolean {
+  if (!fs.existsSync(localPath)) return false
+  try {
+    return fs.statSync(localPath).isFile() || fs.existsSync(path.join(localPath, 'project.json'))
+  } catch {
+    return false
+  }
+}
+
+/** The slot showSplitScreen would store as the assignment, when that folder is actually there */
+function splitSlotId(screen: ScreenTarget): string | null {
+  const split = getSplitScreens()[screen]
+  if (!split) return null
+  for (const slot of split.slots) {
+    const wallpaper = getWallpaper(slot.wallpaperId)
+    if (!wallpaper?.localPath || !isAnimatedWallpaper(wallpaper) || !wallpaperIsOnDisk(wallpaper.localPath)) continue
+    return wallpaper.id
+  }
+  return null
+}
+
+/**
+ * Puts the last animated wallpaper back on each screen after a restart. A live engine already showing
+ * it is left alone. A split comes back through showSplitScreen. Screens a playlist or schedule just
+ * claimed are skipped so the two launches do not run over each other.
+ */
+export async function restoreAssignedWallpapers(skipScreens: ReadonlySet<ScreenTarget> = new Set()): Promise<void> {
+  if (!getLweStatus().installed) return
+  const saved = getAssignments()
+  const useAtStart = new Map(Object.keys(saved).map((screen) => [screen, screenUseCount(screen)]))
+  const targets = new Set(getDisplayTargets())
+  const running = new Map(getRunningInstances().map((inst) => [inst.screen, inst]))
+  for (const [screen, wallpaperId] of Object.entries(saved)) {
+    const wallpaper = getWallpaper(wallpaperId)
+    const localPath = wallpaper?.localPath ?? ''
+    const inst = running.get(screen)
+    const plan = planRestore({
+      skipped: skipScreens.has(screen),
+      connected: targets.has(screen),
+      animated: !!wallpaper && isAnimatedWallpaper(wallpaper),
+      onDisk: !!localPath && wallpaperIsOnDisk(localPath),
+      localPath,
+      running: inst ? { split: !!inst.split, wallpaperPath: inst.wallpaperPath } : undefined,
+      splitSlotId: splitSlotId(screen),
+      wallpaperId
+    })
+    if (plan === 'skip' || !wallpaper) continue
+    // an earlier screen takes at least 2s. Play, the tray or a playlist may have taken this one since.
+    if (restoreSuperseded(wallpaperId, getAssignments()[screen], useAtStart.get(screen) ?? 0, screenUseCount(screen))) {
+      console.log(`[Display] Leaving ${screen}, it changed while restoring`)
+      continue
+    }
+    try {
+      if (plan === 'split') {
+        console.log(`[Display] Restoring split on ${screen}`)
+        await showSplitScreen(screen, undefined, 'never')
+      } else {
+        console.log(`[Display] Restoring ${wallpaper.title} on ${screen}`)
+        await showWallpaper(wallpaper, screen, { dependencyPrompt: 'never' })
+      }
+    } catch (err) {
+      console.error(`[Display] Could not restore ${wallpaper?.title ?? wallpaperId} on ${screen}:`, (err as Error).message)
+    }
+  }
 }
