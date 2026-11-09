@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { Play } from 'lucide-react'
 import { compatStatus } from '@shared/compat'
-import type { ScreenTarget } from '@shared/types'
+import type { ScreenTarget, WallpaperMeta } from '@shared/types'
 import { screenLabel } from '../../utils/screens'
 import { useDisplayTargets } from '../../hooks/useDisplayTargets'
+import { useWallpaperPicker } from '../../hooks/queries'
 import { PickerCard, PickerFrame, PickerGrid, PickerSearch } from '../common/PickerParts'
 import { CompatStatusIcon } from '../common/CompatBadge'
 import { t } from '../../i18n'
+
+const hasLocalFolder = (w: WallpaperMeta) => !!w.localPath
 
 export interface DiagnosticsChoice {
   wallpaperId: string
@@ -26,17 +28,11 @@ export default function DiagnosticsTargetModal({ seconds, onCollect, onClose }: 
   const { targets, perScreen } = useDisplayTargets()
   const [screen, setScreen] = useState<ScreenTarget | null>(null)
 
-  const { data: wallpapers = [], isLoading } = useQuery({
-    queryKey: ['library', { sortBy: 'title', sortDir: 'asc' }],
-    queryFn: () => window.electronAPI.library.getAll({ sortBy: 'title', sortDir: 'asc' })
-  })
-
+  const { matches, isLoading } = useWallpaperPicker(search, hasLocalFolder)
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    const list = wallpapers.filter((w) => w.localPath && (!q || w.title.toLowerCase().includes(q)))
-    const flagged = (w: (typeof list)[number]) => (compatStatus(w.compat) === 'ok' ? 1 : 0)
-    return [...list].sort((a, b) => flagged(a) - flagged(b))
-  }, [wallpapers, search])
+    const flagged = (w: (typeof matches)[number]) => (compatStatus(w.compat) === 'ok' ? 1 : 0)
+    return [...matches].sort((a, b) => flagged(a) - flagged(b))
+  }, [matches])
 
   const chosenScreen = screen && targets.includes(screen) ? screen : targets[0]
 

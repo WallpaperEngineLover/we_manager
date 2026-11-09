@@ -30,37 +30,35 @@ export function selectableReleases(releases: GithubRelease[]): GithubRelease[] {
   return releases.filter((r) => !r.draft && isVersionTag(r.tag_name))
 }
 
-export async function fetchLatestRelease(repo: string): Promise<GithubRelease | null> {
-  const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
-    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'we-manager' },
+const USER_AGENT = 'we-manager'
+
+async function githubGet(url: string, what: string, allowMissing: boolean): Promise<Response | null> {
+  const res = await fetch(url, {
+    headers: { Accept: 'application/vnd.github+json', 'User-Agent': USER_AGENT },
     signal: AbortSignal.timeout(20_000)
   })
-  if (res.status === 404) return null
-  if (!res.ok) throw new Error(`GitHub answered ${res.status} ${res.statusText} for the latest release of ${repo}.`)
-  return (await res.json()) as GithubRelease
+  if (allowMissing && res.status === 404) return null
+  if (!res.ok) throw new Error(`GitHub answered ${res.status} ${res.statusText} for ${what}.`)
+  return res
+}
+
+export async function fetchLatestRelease(repo: string): Promise<GithubRelease | null> {
+  const res = await githubGet(`https://api.github.com/repos/${repo}/releases/latest`, `the latest release of ${repo}`, true)
+  return res && ((await res.json()) as GithubRelease)
 }
 
 export async function fetchReleases(repo: string): Promise<GithubRelease[]> {
-  const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=100`, {
-    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'we-manager' },
-    signal: AbortSignal.timeout(20_000)
-  })
-  if (!res.ok) throw new Error(`GitHub answered ${res.status} ${res.statusText} for the releases of ${repo}.`)
-  return selectableReleases((await res.json()) as GithubRelease[])
+  const res = await githubGet(`https://api.github.com/repos/${repo}/releases?per_page=100`, `the releases of ${repo}`, false)
+  return selectableReleases((await res!.json()) as GithubRelease[])
 }
 
 export async function fetchReleaseByTag(repo: string, tag: string): Promise<GithubRelease | null> {
-  const res = await fetch(`https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(tag)}`, {
-    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'we-manager' },
-    signal: AbortSignal.timeout(20_000)
-  })
-  if (res.status === 404) return null
-  if (!res.ok) throw new Error(`GitHub answered ${res.status} ${res.statusText} for the ${tag} release of ${repo}.`)
-  return (await res.json()) as GithubRelease
+  const res = await githubGet(`https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(tag)}`, `the ${tag} release of ${repo}`, true)
+  return res && ((await res.json()) as GithubRelease)
 }
 
 export async function download(url: string, dest: string, total: number, onProgress: (fraction: number) => void): Promise<void> {
-  const res = await fetch(url, { headers: { 'User-Agent': 'we-manager' } })
+  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } })
   if (!res.ok || !res.body) throw new Error(`Download failed: ${res.status} ${res.statusText}`)
 
   const size = Number(res.headers.get('content-length')) || total

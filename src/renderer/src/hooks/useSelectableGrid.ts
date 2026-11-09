@@ -62,17 +62,21 @@ export function useSelectableGrid({ ids, dataAttr, onOpenDetail }: UseSelectable
     [ids, lastClickedId, onOpenDetail]
   )
 
+  const gridPoint = useCallback((e: React.MouseEvent) => {
+    const container = gridRef.current
+    if (!container) return null
+    const rect = container.getBoundingClientRect()
+    return { x: e.clientX - rect.left + container.scrollLeft, y: e.clientY - rect.top + container.scrollTop }
+  }, [])
+
   const handleMarqueeStart = useCallback(
     (e: React.MouseEvent) => {
       if ((e.target as HTMLElement).closest(`[${dataAttr}]`)) return
       if (e.button !== 0) return
 
-      const container = gridRef.current
-      if (!container) return
-
-      const rect = container.getBoundingClientRect()
-      const x = e.clientX - rect.left + container.scrollLeft
-      const y = e.clientY - rect.top + container.scrollTop
+      const point = gridPoint(e)
+      if (!point) return
+      const { x, y } = point
 
       marqueeActive.current = true
       setMarquee({ startX: x, startY: y, endX: x, endY: y })
@@ -81,23 +85,20 @@ export function useSelectableGrid({ ids, dataAttr, onOpenDetail }: UseSelectable
         setSelectedIds(new Set())
       }
     },
-    [dataAttr]
+    [dataAttr, gridPoint]
   )
 
   const handleMarqueeMove = useCallback(
     (e: React.MouseEvent) => {
       if (!marqueeActive.current || !marquee) return
 
-      const container = gridRef.current
-      if (!container) return
-
-      const rect = container.getBoundingClientRect()
-      const x = e.clientX - rect.left + container.scrollLeft
-      const y = e.clientY - rect.top + container.scrollTop
+      const point = gridPoint(e)
+      if (!point) return
+      const { x, y } = point
 
       setMarquee((prev) => (prev ? { ...prev, endX: x, endY: y } : null))
     },
-    [marquee]
+    [marquee, gridPoint]
   )
 
   const handleMarqueeEnd = useCallback(() => {

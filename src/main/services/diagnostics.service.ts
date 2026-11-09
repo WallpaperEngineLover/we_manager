@@ -1,5 +1,3 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import * as fs from 'fs'
 import * as os from 'os'
 import { app } from 'electron'
@@ -15,11 +13,11 @@ import {
   type EngineHistory
 } from './lwe.service'
 import { stopDisplay } from './display.service'
-import { getPlaybackStates, pausePlaylist, resumePlaylist } from './playlist-player.service'
+import { getPlaybackStates, restoreVolume, suspendPlaylist } from './playlist-player.service'
 import { detectDesktopEnv, detectDisplayServer, getConnectedScreens, runningAppImage } from '../utils/platform'
 import { hostCommand, hostAppPath, isFlatpak } from '../utils/flatpak'
-
-const execFileAsync = promisify(execFile)
+import { setTimeout as sleep } from 'timers/promises'
+import { execFileAsync } from '../utils/exec'
 
 const DEFAULT_SECONDS = 20
 const SOFTWARE_RENDERER = /llvmpipe|softpipe|swrast/i
@@ -120,7 +118,7 @@ async function restartPlaying(): Promise<string[]> {
       notes.push(`${inst.screen}: not restarted (${inst.split ? 'split screen' : 'not in the library'})`)
       continue
     }
-    await applyWallpaperMeta(wallpaper, { screen: inst.screen, forceFresh: true })
+    await applyWallpaperMeta(wallpaper, { screen: inst.screen, forceFresh: true, volume: restoreVolume(inst.screen, wallpaper.id) })
   }
   return notes
 }
@@ -213,7 +211,8 @@ async function runTarget(target: DiagnosticsTarget, seconds: number, notes: stri
   const pausedPlaylists = getPlaybackStates().filter(
     (s) => s.isPlaying && (s.screen === target.screen || s.screen === '*' || target.screen === '*')
   )
-  for (const state of pausedPlaylists) pausePlaylist(state.screen)
+  const volume = previous ? restoreVolume(target.screen, previous.id) : undefined
+  const resumes = pausedPlaylists.map((state) => suspendPlaylist(state.screen))
 
   const exits: EngineHistory[] = []
   const exit = { at: 0 }
@@ -236,7 +235,7 @@ async function runTarget(target: DiagnosticsTarget, seconds: number, notes: stri
     }
     const deadline = Date.now() + seconds * 1000
     while (Date.now() < deadline && !(exit.at && Date.now() - exit.at > 1500)) {
-      await new Promise((resolve) => setTimeout(resolve, 250))
+      await sleep(250)
     }
     histories = getEngineHistory().filter((h) => h.screen === target.screen)
     if (histories.length > 0) snapshot = await snapshotInstances()
@@ -244,12 +243,12 @@ async function runTarget(target: DiagnosticsTarget, seconds: number, notes: stri
     setDiagnosticStats(false)
     stopListening()
     try {
-      if (previous) await applyWallpaperMeta(previous, { screen: target.screen, forceFresh: true })
+      if (previous) await applyWallpaperMeta(previous, { screen: target.screen, forceFresh: true, volume })
       else await stopDisplay(target.screen)
     } catch (err) {
       notes.push(`could not restore the previous wallpaper: ${(err as Error).message}`)
     }
-    for (const state of pausedPlaylists) resumePlaylist(state.screen)
+    for (const resume of resumes) resume()
   }
   return { histories: histories.length > 0 ? histories : exits, snapshot }
 }
@@ -267,7 +266,7 @@ export async function collectDiagnostics(seconds = DEFAULT_SECONDS, target?: Dia
     setDiagnosticStats(true)
     try {
       notes.push(...(await restartPlaying()))
-      await new Promise((resolve) => setTimeout(resolve, seconds * 1000))
+      await sleep(seconds * 1000)
       histories = getEngineHistory()
       snapshot = await snapshotInstances()
     } finally {

@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { BellOff, X } from 'lucide-react'
 import { useAllWallpapers, useConfig } from '../../hooks/queries'
-import { hasEngineFlags } from '@shared/engineFlags'
+import { normalizeWallpaperFlags } from '@shared/engineFlags'
 import { t } from '../../i18n'
 
 export default function AutomuteIgnoreSettings() {
@@ -16,7 +16,7 @@ export default function AutomuteIgnoreSettings() {
     if (!wallpaper) return
     const next = { ...wallpaper.engineFlags }
     delete next.automute
-    await window.electronAPI.library.update(id, { engineFlags: hasEngineFlags(next) ? next : undefined })
+    await window.electronAPI.library.update(id, { engineFlags: normalizeWallpaperFlags(next) })
     void queryClient.invalidateQueries({ queryKey: ['library'] })
   }
 

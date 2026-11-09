@@ -1,33 +1,15 @@
-import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Type, X } from 'lucide-react'
+import { useFontAdd } from '../../hooks/useFontAdd'
 import { t } from '../../i18n'
 
 export default function FontSettings() {
-  const queryClient = useQueryClient()
   const { data: fonts = [] } = useQuery({
     queryKey: ['user-fonts'],
     queryFn: () => window.electronAPI.fonts.list(),
     staleTime: Infinity
   })
-  const [status, setStatus] = useState<string | null>(null)
-
-  async function refresh() {
-    await queryClient.invalidateQueries({ queryKey: ['user-fonts'] })
-    await queryClient.invalidateQueries({ queryKey: ['lwe-fonts'] })
-  }
-
-  async function handleAdd() {
-    const result = await window.electronAPI.fonts.add()
-    setStatus(
-      result.rejected.length > 0
-        ? t('fonts.rejected', { files: result.rejected.join(', ') })
-        : result.added.length > 0
-          ? t('fonts.added', { count: result.added.length })
-          : null
-    )
-    await refresh()
-  }
+  const { status, setStatus, add, refresh } = useFontAdd((count) => t('fonts.added', { count }))
 
   async function handleRemove(name: string) {
     await window.electronAPI.fonts.remove(name)
@@ -60,7 +42,7 @@ export default function FontSettings() {
         </ul>
       )}
       <button
-        onClick={() => void handleAdd()}
+        onClick={() => void add()}
         className="mt-3 flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
       >
         <Type size={16} />

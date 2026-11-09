@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { LweInstallProgress, WallpaperFolder } from '@shared/types'
+import type { LweInstallProgress, WallpaperFolder, WallpaperMeta } from '@shared/types'
 import { t } from '../i18n'
 
 export function useConfig() {
@@ -79,10 +79,30 @@ export function useAllWallpapers() {
   return data
 }
 
+export function useWallpaperPicker(search: string, keep: (wallpaper: WallpaperMeta) => boolean) {
+  const { data: wallpapers = [], isLoading } = useQuery({
+    queryKey: ['library', { sortBy: 'title', sortDir: 'asc' }],
+    queryFn: () => window.electronAPI.library.getAll({ sortBy: 'title', sortDir: 'asc' })
+  })
+  const matches = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return wallpapers.filter((w) => keep(w) && (!q || w.title.toLowerCase().includes(q)))
+  }, [wallpapers, search, keep])
+  return { matches, isLoading }
+}
+
 export function usePlaylists() {
   const { data = [] } = useQuery({
     queryKey: ['playlists'],
     queryFn: () => window.electronAPI.playlist.getAll()
+  })
+  return data
+}
+
+export function useProfiles() {
+  const { data = [] } = useQuery({
+    queryKey: ['profiles'],
+    queryFn: () => window.electronAPI.profiles.getAll()
   })
   return data
 }

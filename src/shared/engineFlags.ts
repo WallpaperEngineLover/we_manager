@@ -1,4 +1,4 @@
-import type { EngineFlagPreset, EngineFlags } from './types'
+import type { EngineFlagPreset, EngineFlags, WallpaperEngineFlags } from './types'
 
 export const BUILT_IN_PRESETS: EngineFlagPreset[] = [
   {
@@ -60,9 +60,31 @@ export const BUILT_IN_PRESETS: EngineFlagPreset[] = [
   }
 ]
 
+export const GLOBAL_ONLY_FLAGS = [
+  'audioInput',
+  'audioInputVolume',
+  'audioInputThreshold',
+  'windowed',
+  'windowBackground',
+  'kdeBackgroundLayer'
+] as const satisfies readonly (keyof EngineFlags)[]
+
+export type GlobalOnlyFlag = (typeof GLOBAL_ONLY_FLAGS)[number]
+
+export function withoutGlobalOnlyFlags(flags: EngineFlags): WallpaperEngineFlags {
+  const rest = { ...flags }
+  for (const key of GLOBAL_ONLY_FLAGS) delete rest[key]
+  return rest
+}
+
+export function normalizeWallpaperFlags(flags: EngineFlags): WallpaperEngineFlags | undefined {
+  const rest = withoutGlobalOnlyFlags(flags)
+  return Object.values(rest).some((value) => value !== undefined) ? rest : undefined
+}
+
 export function resolveEngineFlags(global: EngineFlags, wallpaper?: EngineFlags): EngineFlags {
   const resolved: EngineFlags = { ...global }
-  for (const [key, value] of Object.entries(wallpaper ?? {})) {
+  for (const [key, value] of Object.entries(wallpaper ? withoutGlobalOnlyFlags(wallpaper) : {})) {
     if (value !== undefined) (resolved as Record<string, unknown>)[key] = value
   }
   return resolved
@@ -91,6 +113,11 @@ export function engineFlagArgs(flags: EngineFlags): string[] {
   if (flags.webFrames && flags.webFrames !== 'auto') args.push('--web-frames', flags.webFrames)
   if (flags.frameLimiter && flags.frameLimiter !== 'budget') args.push('--frame-limiter', flags.frameLimiter)
   if (flags.hrtf && flags.hrtf !== 'auto') args.push('--hrtf', flags.hrtf)
+  if (flags.audioInput && flags.audioInput !== 'default') args.push('--audio-input', flags.audioInput)
+  if (flags.audioInputVolume !== undefined && flags.audioInputVolume !== 50) {
+    args.push('--audio-input-volume', String(flags.audioInputVolume))
+  }
+  if (flags.audioInputThreshold) args.push('--audio-input-threshold', String(flags.audioInputThreshold))
   if (flags.transition && flags.transition !== 'none') {
     args.push('--transition', flags.transition)
     if (flags.transitionDuration && flags.transitionDuration !== '600') {
@@ -116,5 +143,5 @@ export function filterSupportedArgs(args: string[], supports: (flag: string) => 
 }
 
 export function hasEngineFlags(flags: EngineFlags | undefined): boolean {
-  return !!flags && Object.values(flags).some((v) => v !== undefined)
+  return !!flags && normalizeWallpaperFlags(flags) !== undefined
 }

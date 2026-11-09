@@ -1,5 +1,3 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -12,8 +10,7 @@ import { isFlatpak } from '../utils/flatpak'
 import { downloadVerified, fetchReleaseByTag, type GithubAsset } from '../utils/github'
 import { detectDistro } from './lwe.service'
 import { t } from '../i18n'
-
-const execFileAsync = promisify(execFile)
+import { execFileAsync } from '../utils/exec'
 
 const LIBNODE_RELEASE_TAG = 'libnode-arch'
 const LIBNODE_ASSET = /^libnode-.+-x86_64\.pkg\.tar\.zst$/

@@ -1,15 +1,12 @@
-import { execFile } from 'child_process'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { promisify } from 'util'
 import type { GnomeExtensionStatus } from '@shared/types'
 import { detectDesktopEnv, isWaylandSession } from '../utils/platform'
 import { hostCommand, isFlatpak, toHostPath } from '../utils/flatpak'
 import { getLweStatus } from './lwe.service'
 import { t } from '../i18n'
-
-const execFileAsync = promisify(execFile)
+import { execFileAsync } from '../utils/exec'
 
 /** GNOME has no layer-shell, the engine's extension makes desktop windows. A fresh install needs a re-login */
 const GNOME_EXTENSION_UUID = 'linux-wallpaperengine@wallpaperenginelover.github.io'

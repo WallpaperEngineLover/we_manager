@@ -2,6 +2,7 @@ import type { ImageAdjustments } from './imageAdjustments'
 import type { VideoSegment } from './videoTrim'
 import type { DesktopEnvironment } from './desktop'
 import type { Appearance } from './appearance'
+import type { GlobalOnlyFlag } from './engineFlags'
 import type { Language, LanguagePreference } from './i18n'
 import type { CardBorders } from './cardBorders'
 import type { CardBadges } from './cardBadges'
@@ -166,7 +167,7 @@ export interface WallpaperMeta {
   /** Extra launch arguments, changing them always restarts the engine */
   customArgs?: string
   /** Unset flags fall back to the global setting */
-  engineFlags?: EngineFlags
+  engineFlags?: WallpaperEngineFlags
   compat?: WallpaperCompat
   /** Scene with general.hdr on, or a PQ/HLG video. Unset until detected */
   hdr?: boolean
@@ -234,6 +235,12 @@ export interface EngineFlags {
   webFrames?: WebFramesMode
   frameLimiter?: FrameLimiter
   hrtf?: HrtfMode
+  /** --audio-input: a source name or description, unset or 'default' is the default output */
+  audioInput?: string
+  /** --audio-input-volume, 0 to 100, 50 leaves the level alone */
+  audioInputVolume?: number
+  /** --audio-input-threshold, 0 is off */
+  audioInputThreshold?: number
   transition?: TransitionMode
   transitionDuration?: TransitionDuration
   /** --fps-battery / --pause-on-battery */
@@ -247,6 +254,9 @@ export interface EngineFlags {
   /** --layer background; key kept for stored configs */
   kdeBackgroundLayer?: boolean
 }
+
+/** What a wallpaper can override: the flags of a whole session are not per wallpaper */
+export type WallpaperEngineFlags = Omit<EngineFlags, GlobalOnlyFlag>
 
 export interface EngineFlagPreset {
   id: string
@@ -292,6 +302,7 @@ export type DisplayMode = 'shared' | 'per-screen'
 export interface ScreenAssignment {
   screen: ScreenTarget
   wallpaperId: string
+  split: boolean
 }
 
 /** How the slots of a split screen share it, see the engine's --split-layout */
@@ -309,10 +320,47 @@ export interface SplitScreen {
   slots: SplitSlot[]
 }
 
-export type ScheduleAction =
+type PickedAction =
   | { type: 'wallpaper'; wallpaperId: string }
   | { type: 'playlist'; playlistId: string }
   | { type: 'stop' }
+
+/**
+ * What a screen can go back to: a captured screen may also have been a split, which is not a choice in the editors.
+ * It goes back to the screen's split as configured then, wallpaperId is its first slot, shown instead when it can't be shown any more
+ */
+export type ScreenAction = PickedAction | { type: 'split'; wallpaperId: string }
+
+export type ScheduleAction = PickedAction | { type: 'profile'; profileId: string }
+
+export interface Profile {
+  id: string
+  name: string
+  screens: Record<ScreenTarget, ScreenAction>
+}
+
+export type AppRuleCondition =
+  /** any of these programs is running (process names, a trailing .exe is ignored) */
+  | { type: 'process'; names: string[] }
+  /** an application other than the wallpaper plays sound */
+  | { type: 'audio' }
+
+export interface AppRule {
+  id: string
+  name: string
+  enabled: boolean
+  condition: AppRuleCondition
+  action: ScheduleAction
+  screen: ScreenTarget
+  revert: boolean
+}
+
+/** --list-audio-inputs */
+export interface AudioInputDevice {
+  name: string
+  description: string
+  monitor: boolean
+}
 
 export type ScheduleTrigger =
   | { type: 'time'; time: string; days: number[] }
@@ -612,9 +660,18 @@ export interface PlaylistItem {
   volume?: number
   /** Overrides the playlist's defaultDurationSec when set */
   durationSec?: number
+  /** daytime mode: the time of day this item runs until, as minutes since midnight. Items without one share the time */
+  endMinute?: number
 }
 
+/**
+ * timer: one wallpaper after another (the default). daytime and dayofweek: the clock picks the item, in list order.
+ * logon: one item per login session.
+ */
+export type PlaylistMode = 'timer' | 'daytime' | 'dayofweek' | 'logon'
+
 export interface PlaylistSettings {
+  mode?: PlaylistMode
   /** Reshuffled on every loop */
   randomize: boolean
   /** Used when randomize is off */
@@ -681,6 +738,8 @@ export interface AppConfigSnapshot {
   killLweOnQuit: boolean
   skipPlaylistResume: boolean
   freshProcessOnPathChange: boolean
+  stopPlaylistsOnKillAll: boolean
+  forgetOnKillAll: boolean
   cardBorders: CardBorders
   cardBadges: CardBadges
   audioScreen: string | null

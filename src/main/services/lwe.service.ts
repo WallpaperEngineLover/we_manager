@@ -1,5 +1,4 @@
-import { execFile, execFileSync, spawn, type ChildProcess } from 'child_process'
-import { promisify } from 'util'
+import { execFileSync, spawn, type ChildProcess } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -21,6 +20,7 @@ import type {
   ScreenTarget,
   HwdecBackend,
   HrtfMode,
+  AudioInputDevice,
   TransitionDuration,
   TransitionMode,
   BatteryFps,
@@ -66,15 +66,15 @@ import {
   getDisabledScreens,
   getFreshProcessOnPathChange
 } from './config.service'
-import { DEFAULT_LWE_FPS, DEFAULT_LWE_REPO } from '@shared/constants'
+import { DEFAULT_ENGINE_VOLUME, DEFAULT_LWE_FPS, DEFAULT_LWE_REPO } from '@shared/constants'
 import { engineFlagArgs, filterSupportedArgs } from '@shared/engineFlags'
 import { imageAdjustmentArgs, imageAdjustmentLines, type ImageAdjustments } from '@shared/imageAdjustments'
 import { formatVideoSegments, type VideoSegment } from '@shared/videoTrim'
 import { t } from '../i18n'
+import { setTimeout as sleep } from 'timers/promises'
+import { execFileAsync } from '../utils/exec'
 
 export const ALL_SCREENS: ScreenTarget = '*'
-
-const execFileAsync = promisify(execFile)
 
 // AppRun points LD_LIBRARY_PATH etc. into /tmp/.mount_*, which CMake would cache
 const APPIMAGE_MOUNT = /^\/tmp\/\.mount_[^/]+(\/|$)/
@@ -1042,9 +1042,13 @@ function windowedGeometry(screen?: ScreenTarget): string {
   return getScreenGeometry(screen && screen !== ALL_SCREENS ? screen : undefined) ?? FALLBACK_WINDOW
 }
 
+export function getUnusedScreens(): string[] {
+  return [...getDisabledScreens(), ...getMirroredScreens()]
+}
+
 export function getActiveScreens(): string[] {
   const all = getConnectedScreens()
-  const off = new Set([...getDisabledScreens(), ...getMirroredScreens()])
+  const off = new Set(getUnusedScreens())
   const active = all.filter((s) => !off.has(s))
   return active.length > 0 ? active : all
 }
@@ -1490,16 +1494,18 @@ export interface RunningInstance {
   pid: number
   startedAt: number
   swappedAt: number | null
+  hostPid: number | null
 }
 
 export function getRunningInstances(): RunningInstance[] {
-  return liveInstances().map(({ screen, wallpaperPath, split, pid, startedAt, swappedAt }) => ({
+  return liveInstances().map(({ screen, wallpaperPath, split, pid, startedAt, swappedAt, hostPid }) => ({
     screen,
     wallpaperPath,
     split,
     pid,
     startedAt,
-    swappedAt
+    swappedAt,
+    hostPid
   }))
 }
 
@@ -1548,6 +1554,10 @@ function supportsHrtfHotswap(): boolean {
   return supportsFlag('hrtf=<mode>')
 }
 
+function supportsAudioInputHotswap(): boolean {
+  return supportsFlag('audio-input=<source>')
+}
+
 function supportsTransitionHotswap(): boolean {
   return supportsFlag('transition=<kind>')
 }
@@ -1575,6 +1585,9 @@ function launchKey(options: LweLaunchOptions): string {
       ...flags,
       ...(supportsHwdecHotswap() ? { hwdec: undefined } : {}),
       ...(supportsHrtfHotswap() ? { hrtf: undefined } : {}),
+      ...(supportsAudioInputHotswap()
+        ? { audioInput: undefined, audioInputVolume: undefined, audioInputThreshold: undefined }
+        : {}),
       ...(supportsTransitionHotswap() ? { transition: undefined, transitionDuration: undefined } : {}),
       ...(supportsPowerHotswap() ? { batteryFps: undefined, idlePause: undefined } : {})
     })
@@ -1590,6 +1603,9 @@ export interface HotswapOptions extends HotswapSettings {
   disableAnimations?: boolean
   hwdec?: HwdecBackend
   hrtf?: HrtfMode
+  audioInput?: string
+  audioInputVolume?: number
+  audioInputThreshold?: number
   transition?: TransitionMode
   transitionDuration?: TransitionDuration
   batteryFps?: BatteryFps
@@ -1613,6 +1629,9 @@ export function buildHotswapLines(options: HotswapOptions): string[] {
   if (options.disableAnimations !== undefined) lines.push(`disable-animations=${options.disableAnimations ? 'on' : 'off'}`)
   if (options.hwdec !== undefined) lines.push(`hwdec=${options.hwdec}`)
   if (options.hrtf !== undefined) lines.push(`hrtf=${options.hrtf}`)
+  if (options.audioInput !== undefined) lines.push(`audio-input=${options.audioInput}`)
+  if (options.audioInputVolume !== undefined) lines.push(`audio-input-volume=${options.audioInputVolume}`)
+  if (options.audioInputThreshold !== undefined) lines.push(`audio-input-threshold=${options.audioInputThreshold}`)
   if (options.transition !== undefined) lines.push(`transition=${options.transition}`)
   if (options.transitionDuration !== undefined) lines.push(`transition-duration=${options.transitionDuration}`)
   if (options.batteryFps !== undefined) lines.push(`fps-battery=${options.batteryFps}`)
@@ -1666,7 +1685,7 @@ function signalInstance(inst: LweInstance, lines: string[]): Promise<boolean> {
   const send = async (): Promise<boolean> => {
     if (lastSignal && lastSignal.pid !== inst.pid && lastSignal.file === file) {
       const wait = lastSignal.at + HOTSWAP_SETTLE_MS - Date.now()
-      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
+      if (wait > 0) await sleep(wait)
     }
     try {
       fs.writeFileSync(file, lines.join('\n') + '\n')
@@ -1716,10 +1735,28 @@ export async function hotswapLweSettings(
 
 export function liveEngineFlagOptions(
   flags: EngineFlags
-): Pick<HotswapOptions, 'hwdec' | 'hrtf' | 'transition' | 'transitionDuration' | 'batteryFps' | 'idlePause'> {
+): Pick<
+  HotswapOptions,
+  | 'hwdec'
+  | 'hrtf'
+  | 'audioInput'
+  | 'audioInputVolume'
+  | 'audioInputThreshold'
+  | 'transition'
+  | 'transitionDuration'
+  | 'batteryFps'
+  | 'idlePause'
+> {
   return {
     ...(supportsHwdecHotswap() ? { hwdec: flags.hwdec ?? 'auto' } : {}),
     ...(supportsHrtfHotswap() ? { hrtf: flags.hrtf ?? 'auto' } : {}),
+    ...(supportsAudioInputHotswap()
+      ? {
+          audioInput: flags.audioInput ?? 'default',
+          audioInputVolume: flags.audioInputVolume ?? 50,
+          audioInputThreshold: flags.audioInputThreshold ?? 0
+        }
+      : {}),
     ...(supportsTransitionHotswap()
       ? { transition: flags.transition ?? 'none', transitionDuration: flags.transitionDuration ?? '600' }
       : {}),
@@ -1754,9 +1791,8 @@ export function hotswapOptionsFor(wallpaperPath: string, options: LweLaunchOptio
       ...options.audioSensitivity
     },
     soundVolume: options.soundVolume ?? {},
-    // 0 must be sent. Leaving volume out keeps the previous wallpaper's level, so a muted wallpaper
-    // comes back audible when it is applied to another screen.
-    ...(options.volume !== undefined ? { volume: options.volume } : {}),
+    // a swap that sends no volume keeps the previous wallpaper's level, muted included
+    volume: options.volume ?? DEFAULT_ENGINE_VOLUME,
     ...(supportsEffectHotswap()
       ? { disabledEffects: options.disabledEffects ?? [], enabledEffects: options.enabledEffects ?? [] }
       : {}),
@@ -1765,7 +1801,6 @@ export function hotswapOptionsFor(wallpaperPath: string, options: LweLaunchOptio
   }
 }
 
-/** Same-path changes hotswap. A different path hotswaps too, unless the setting starts a new process. */
 export function canHotswapExisting(
   existing: { wallpaperPath: string; launchKey: string; controlFile: string | null } | undefined,
   options: { forceFresh?: boolean; customArgs?: string },
@@ -1781,8 +1816,16 @@ export function canHotswapExisting(
   return true
 }
 
+let launchesBlocked = false
+
+/** The app is quitting: an engine that starts now would outlive the shutdown kill */
+export function blockLaunches(): void {
+  launchesBlocked = true
+}
+
 /** Hotswaps the engine on the screen when possible, else restarts it. Resolves once it survived 2s */
 export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOptions = {}): Promise<void> {
+  if (launchesBlocked) throw new Error('WE Manager is quitting')
   const screen = options.screen ?? ALL_SCREENS
   const key = launchKey(options)
 
@@ -1806,6 +1849,7 @@ export async function launchLweAsync(wallpaperPath: string, options: LweLaunchOp
   }
 
   await stopLwe(screen)
+  if (launchesBlocked) throw new Error('WE Manager is quitting')
 
   const binaryPath = getLweBinaryPath()
   const controlFile = supportsFlag('--control-file') ? controlFileFor(screen) : null
@@ -1988,6 +2032,29 @@ export async function listLweFonts(wallpaperPath: string): Promise<LweFontNeed[]
   return parseLweFontList(stdout)
 }
 
+/** `name<TAB>input|monitor<TAB>description` per line */
+export function parseAudioInputList(output: string): AudioInputDevice[] {
+  const devices: AudioInputDevice[] = []
+  for (const line of output.split('\n')) {
+    const [name, kind, ...description] = line.split('\t')
+    if (!name || (kind !== 'input' && kind !== 'monitor')) continue
+    devices.push({ name, description: description.join('\t'), monitor: kind === 'monitor' })
+  }
+  return devices
+}
+
+export async function listAudioInputs(): Promise<AudioInputDevice[]> {
+  const status = getLweStatus()
+  if (!status.installed || !supportsFlag('--list-audio-inputs')) return []
+
+  const { stdout } = await execFileAsync('env', [...buildLweEnvVars(), getLweBinaryPath(), '--list-audio-inputs'], {
+    timeout: 10_000,
+    maxBuffer: 1024 * 1024,
+    encoding: 'utf8'
+  })
+  return parseAudioInputList(stdout)
+}
+
 // `  42 - Bloom (object=17 objectName="body" group="Lighting")`
 const EFFECT_LINE_RE = /^\s*(\S+)\s-\s(.*)\s\(object=(\S+)\sobjectName="(.*)"\sgroup="(.*)"\)\s*$/
 
@@ -2100,7 +2167,7 @@ async function pollUntilGone(target: EngineProcess, timeoutMs: number): Promise<
       }
     }
     // every check of another sandbox's engine is a flatpak-spawn round trip
-    await new Promise((resolve) => setTimeout(resolve, other ? 100 : 25))
+    await sleep(other ? 100 : 25)
   }
   return false
 }
@@ -2198,7 +2265,7 @@ export async function captureLweScreenshot(
     const deadline = Date.now() + SCREENSHOT_TIMEOUT_MS
     let lastSize = -1
     while (Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 250))
+      await sleep(250)
       if (child.exitCode !== null || child.signalCode !== null) {
         const msg = stderr.join('').trim().split('\n').slice(-3).join('\n')
         throw new Error(`linux-wallpaperengine exited before taking the screenshot${msg ? `: ${msg}` : ''}`)

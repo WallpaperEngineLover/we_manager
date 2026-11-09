@@ -1,6 +1,6 @@
 {
   "name": "we-manager",
-  "version": "0.9.9",
+  "version": "0.9.10",
   "type": "module",
   "description": "Wallpaper Engine workshop manager",
   "desktopName": "we-manager.desktop",
@@ -14,6 +14,7 @@
     "preview": "electron-vite preview",
     "dist": "npm run build && electron-builder",
     "dist:linux": "npm run build && electron-builder --linux",
+    "dist:rpm": "sh packaging/rpm/build-local.sh",
     "lint": "oxlint",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit"
@@ -34,7 +35,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.1.2",
-    "electron": "^45.1.0",
+    "electron": "^45.2.3",
     "electron-builder": "^26.15.3",
     "electron-vite": "^6.0.0",
     "oxlint": "^1.90.0",

@@ -1,6 +1,7 @@
 import { useState, useRef, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import FontNotice from './FontNotice'
+import { useToast } from './Toast'
 import {
   X,
   Star,
@@ -47,6 +48,7 @@ import {
 import clsx from 'clsx'
 import { openWorkshopPage, openProfilePage, isWorkshopId } from '../../utils/steam'
 import { WE_TYPES, WE_AGE_RATINGS, canonicalResolutionTag, resolutionsFromTags } from '../../constants/weFilters'
+import { DEFAULT_ENGINE_VOLUME } from '@shared/constants'
 import { formatFileSize } from '../../utils/format'
 import RangeInput from './RangeInput'
 import { useDislikedIds, useVoteAction, useVotedIds } from '../../hooks/useVotes'
@@ -55,7 +57,7 @@ import { useConfig, useLweInstalled } from '../../hooks/queries'
 import { useKeyedCommits } from '../../hooks/useKeyedCommits'
 import ScreenSelect from './ScreenSelect'
 import { getPreviewSrc } from '../../utils/preview'
-import { hasEngineFlags } from '@shared/engineFlags'
+import { normalizeWallpaperFlags } from '@shared/engineFlags'
 import EngineFlagsSection from './sidebar/EngineFlagsSection'
 import ImageAdjustmentsSection from './sidebar/ImageAdjustmentsSection'
 import VideoTrimSection from './sidebar/VideoTrimSection'
@@ -412,6 +414,7 @@ export default function DetailSidebar({
 }: DetailSidebarProps) {
   const workshopId = isWorkshopId(id)
   const queryClient = useQueryClient()
+  const { showToast } = useToast()
   const lweInstalled = useLweInstalled()
   const cachedLiked = useVotedIds().has(id)
   const isDisliked = useDislikedIds().has(id)
@@ -457,9 +460,10 @@ export default function DetailSidebar({
     queryKey: ['author-info', creatorSteamId],
     queryFn: () => window.electronAPI.steam.getAuthorInfo(creatorSteamId!),
     enabled: !!creatorSteamId,
-    staleTime: Infinity,
-    retry: 3,
-    retryDelay: (attempt) => Math.min(2000 * 2 ** attempt, 15_000)
+    staleTime: (query) => (query.state.data ? Infinity : 5 * 60_000),
+    refetchInterval: (query) => (query.state.data === null ? 60_000 : false),
+    retry: 1,
+    retryDelay: 30_000
   })
 
   const { data: libraryMeta } = useQuery({
@@ -478,9 +482,8 @@ export default function DetailSidebar({
 
   const { targets, perScreen } = useDisplayTargets()
   const [playScreen, setPlayScreen] = useState<ScreenTarget>('*')
-  const activeScreens = useScreenAssignments()
-    .filter((a) => a.wallpaperId === id)
-    .map((a) => a.screen)
+  const assignments = useScreenAssignments().filter((a) => a.wallpaperId === id)
+  const activeScreens = assignments.map((a) => a.screen)
   const isActive = activeScreens.length > 0
 
   const { data: objects = [], isLoading: objectsLoading } = useQuery({
@@ -584,7 +587,16 @@ export default function DetailSidebar({
             soundVolume: patch.soundVolume
           }, localPath)
       if (!ok) {
-        for (const screen of activeScreens) await window.electronAPI.wallpaper.apply({ wallpaperId: id, screen })
+        // a split takes the layout of its slots from the wallpaper and nothing else, and a single wallpaper would replace it
+        const reachesSplit = ['scalingMode', 'zoom', 'offsetX', 'offsetY', 'cornerColor', 'imageAdjustments'].some((key) => key in patch)
+        for (const { screen, split } of assignments) {
+          try {
+            if (!split) await window.electronAPI.wallpaper.apply({ wallpaperId: id, screen })
+            else if (reachesSplit) await window.electronAPI.wallpaper.showSplit(screen)
+          } catch (err) {
+            showToast((err as Error).message, { warning: true, durationMs: 6000 })
+          }
+        }
       }
       void queryClient.invalidateQueries({ queryKey: ['screen-assignments'] })
     }
@@ -648,7 +660,7 @@ export default function DetailSidebar({
     else next.automute = false
     setTogglingAutomute(true)
     try {
-      await persistAndMaybeRelaunch({ engineFlags: hasEngineFlags(next) ? next : undefined })
+      await persistAndMaybeRelaunch({ engineFlags: normalizeWallpaperFlags(next) })
     } finally {
       setTogglingAutomute(false)
     }
@@ -696,7 +708,7 @@ export default function DetailSidebar({
 
   const [volumeDraft, setVolumeDraft] = useState<number | null>(null)
   const [isCommittingVolume, setIsCommittingVolume] = useState(false)
-  const volume = volumeDraft ?? libraryMeta?.volumeOverride ?? 15
+  const volume = volumeDraft ?? libraryMeta?.volumeOverride ?? DEFAULT_ENGINE_VOLUME
 
   async function commitVolume(v: number) {
     setIsCommittingVolume(true)

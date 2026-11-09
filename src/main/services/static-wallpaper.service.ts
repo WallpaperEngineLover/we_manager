@@ -1,9 +1,7 @@
-import { execFile, execFileSync, spawn, type ChildProcess } from 'child_process'
+import { execFileSync, spawn, type ChildProcess } from 'child_process'
 import { setTimeout as sleep } from 'timers/promises'
-import { promisify } from 'util'
 import { hostCommand, isHostCommandAvailable } from '../utils/flatpak'
-
-const execFileAsync = promisify(execFile)
+import { execFileAsync } from '../utils/exec'
 
 export interface CommandResult {
   ok: boolean

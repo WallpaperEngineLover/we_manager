@@ -1,5 +1,3 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -24,8 +22,7 @@ import { isCommandAvailable, runningAppImage } from '../utils/platform'
 import { relaunchApp } from '../utils/relaunch'
 import { getDismissedUpdates, getUpdateChecks, setDismissedUpdates, setUpdateChecks } from './config.service'
 import { getLweStatus } from './lwe.service'
-
-const execFileAsync = promisify(execFile)
+import { execFileAsync } from '../utils/exec'
 
 const FIRST_CHECK_DELAY_MS = 15_000
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
@@ -245,8 +242,10 @@ async function installDeb(release: GithubRelease): Promise<void> {
     await verifyAsset(file, asset)
     setAppProgress({ stage: 'installing', percentage: 85 })
     // dpkg alone wouldn't resolve new dependencies
-    // apt refuses to go back to an older version unless told to, but only for a deliberate downgrade
-    const downgrade = (compareVersions(release.tag_name, app.getVersion()) ?? 0) < 0
+    // apt refuses to go back to an older version unless told to, but only for a deliberate downgrade. The installed
+    // package can be newer than the running app (updated, not restarted yet), so it is the one to compare against
+    const installed = packageVersion({ manager: 'dpkg', name: 'we-manager' }) ?? app.getVersion()
+    const downgrade = (compareVersions(release.tag_name, installed) ?? 0) < 0
     const command = isCommandAvailable('apt-get')
       ? ['apt-get', 'install', '-y', ...(downgrade ? ['--allow-downgrades'] : []), file]
       : ['dpkg', '-i', file]

@@ -40,7 +40,7 @@ export async function ensureDependencyInstalled(
 
   const title = wallpaper.title || wallpaper.id
 
-  // startup restore must not open a dialog, least of all over a minimized tray start
+  // 'never' is the startup restore, which must not open a dialog
   if (mode === 'never') throw new Error(t('dependency.skipped', { title, id: dependencyId }))
 
   if (mode === 'once' && alreadyAsked.has(dependencyId)) {

@@ -1,11 +1,12 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { IpcChannels } from '@shared/ipc-channels'
-import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, isLweRunning, killAllLweProcesses, listLweObjects, hotswapLweSettings, listLweProperties, listLweAudioObjects, listLweEffects, listLweFonts, listInputFiles, type HotswapOptions } from '../services/lwe.service'
+import { getLweStatus, detectDistro, installLweDeps, installLwe, uninstallLwe, launchLweAsync, isLweRunning, listLweObjects, hotswapLweSettings, listLweProperties, listLweAudioObjects, listLweEffects, listLweFonts, listAudioInputs, listInputFiles, type HotswapOptions } from '../services/lwe.service'
 import { getPrebuiltTarget, installLwePrebuilt } from '../services/lwe-prebuilt.service'
 import { installLibnode, libnodeNeeded } from '../services/lwe-libnode.service'
 import { addUserFonts, listUserFonts, removeUserFont } from '../services/fonts.service'
 import { stopDisplay } from '../services/display.service'
 import { stopPlaylist } from '../services/playlist-player.service'
+import { killAllEngines } from '../services/kill-all.service'
 import type { ScreenTarget } from '@shared/types'
 import { invalidateEnvCache } from '../services/wallpaper.service'
 import { refreshEngineUpdate } from '../services/update.service'
@@ -25,6 +26,15 @@ export function registerLweHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(IpcChannels.LWE_INSTALL_DEPS, async () => {
     return { ok: await installLweDeps(win) }
+  })
+
+  ipcMain.handle(IpcChannels.LWE_LIST_AUDIO_INPUTS, async () => {
+    try {
+      return await listAudioInputs()
+    } catch (err) {
+      console.warn('[LWE] list-audio-inputs failed:', (err as Error).message)
+      return []
+    }
   })
 
   ipcMain.handle(IpcChannels.LWE_LIST_FONTS, async (_e, wallpaperPath: string) => {
@@ -94,9 +104,7 @@ export function registerLweHandlers(win: BrowserWindow): void {
     return { ok: true }
   })
 
-  ipcMain.handle(IpcChannels.LWE_KILL_ALL, async () => {
-    return await killAllLweProcesses()
-  })
+  ipcMain.handle(IpcChannels.LWE_KILL_ALL, () => killAllEngines())
 
   ipcMain.handle(IpcChannels.LWE_LIST_OBJECTS, async (_e, wallpaperPath: string) => {
     // a parse failure means "no objects"

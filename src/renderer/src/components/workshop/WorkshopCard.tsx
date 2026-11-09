@@ -67,6 +67,12 @@ export default function WorkshopCard({
     }
   }
 
+  const downloadBar =
+    subscribeState === 'downloading' && downloadPercentage != null ? (
+      <ProgressBar percentage={downloadPercentage} className="absolute bottom-0 left-0 right-0 h-1 bg-black/40" />
+    ) : null
+  const stats = `${t('workshop.subscribers', { count: item.subscriptions, formatted: formatNumber(item.subscriptions) })}${fileSizeLabel ? ` · ${fileSizeLabel}` : ''}`
+
   const controls = (
     <>
     {canPlay && (
@@ -123,17 +129,14 @@ export default function WorkshopCard({
       >
         <div className="relative w-20 shrink-0">
           <CardPreview src={item.previewUrl} alt={item.title} dimmed={ignored} />
-          {subscribeState === 'downloading' && downloadPercentage != null && (
-            <ProgressBar percentage={downloadPercentage} className="absolute bottom-0 left-0 right-0 h-1 bg-black/40" />
-          )}
+          {downloadBar}
         </div>
         <div className="min-w-0 flex-1 px-3 py-1">
           <h3 className="truncate text-sm font-medium text-gray-200" title={item.title}>
             {item.title}
           </h3>
           <p className="truncate text-[11px] text-gray-500">
-            {t('workshop.subscribers', { count: item.subscriptions, formatted: formatNumber(item.subscriptions) })}
-            {fileSizeLabel ? ` · ${fileSizeLabel}` : ''}
+            {stats}
             {ignored ? ` · ${t('workshop.ignored')}` : ''}
           </p>
         </div>
@@ -162,9 +165,7 @@ export default function WorkshopCard({
             {t('workshop.ignored')}
           </div>
         )}
-        {subscribeState === 'downloading' && downloadPercentage != null && (
-          <ProgressBar percentage={downloadPercentage} className="absolute bottom-0 left-0 right-0 h-1 bg-black/40" />
-        )}
+        {downloadBar}
         {subscribeState === 'download-error' && (
           <button
             onClick={handleSubscribe}
@@ -194,11 +195,10 @@ export default function WorkshopCard({
         </h3>
         {!tiny && (
           <p className="mt-1 text-xs text-gray-500">
-            {t('workshop.subscribers', { count: item.subscriptions, formatted: formatNumber(item.subscriptions) })}
-            {fileSizeLabel ? ` · ${fileSizeLabel}` : ''}
+            {stats}
           </p>
         )}
-        <div className={clsx('flex items-center justify-center gap-1.5', tiny ? 'mt-1.5' : 'mt-2')}>
+        <div className={clsx('flex items-center justify-start gap-1.5', tiny ? 'mt-1.5' : 'mt-2')}>
           <LikeAction id={item.publishedFileId} isLiked={steam.isLiked} compact={tiny} />
           <SteamAction id={item.publishedFileId} compact={tiny} />
         </div>

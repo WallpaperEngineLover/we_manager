@@ -9,6 +9,7 @@ import { normalizeCardBadges, type CardBadges } from '@shared/cardBadges'
 import { normalizeLanguagePreference, type LanguagePreference } from '@shared/i18n'
 import { normalizeUpdateChecks } from '@shared/updates'
 import { DEFAULT_LOADER, normalizeLoader } from '@shared/loader'
+import { DEFAULT_VIDEO_SETTINGS, normalizeVideoSettings, type VideoToolSettings } from '@shared/video-tools'
 import type {
   DisplayMode,
   EngineFlagPreset,
@@ -38,8 +39,10 @@ interface AppConfig {
   autostartPlaylistId: string | null
   killLweOnQuit: boolean
   skipPlaylistResume: boolean
-  /** A path change starts a new engine instead of hotswapping. Off keeps transitions. */
   freshProcessOnPathChange: boolean
+  stopPlaylistsOnKillAll: boolean
+  forgetOnKillAll: boolean
+  videoTools: VideoToolSettings
   /** Legacy, only read to migrate into cardBorders */
   voteBorders: boolean
   cardBorders: CardBorders | null
@@ -94,6 +97,9 @@ const store = openStore<AppConfig>({
     killLweOnQuit: false,
     skipPlaylistResume: false,
     freshProcessOnPathChange: false,
+    stopPlaylistsOnKillAll: false,
+    forgetOnKillAll: false,
+    videoTools: DEFAULT_VIDEO_SETTINGS,
     voteBorders: true,
     cardBorders: null,
     cardBadges: null,
@@ -212,6 +218,32 @@ export function setFreshProcessOnPathChange(enabled: boolean): void {
 
 export function setSkipPlaylistResume(enabled: boolean): void {
   store.set('skipPlaylistResume', enabled)
+}
+
+export function getStopPlaylistsOnKillAll(): boolean {
+  return store.get('stopPlaylistsOnKillAll')
+}
+
+export function setStopPlaylistsOnKillAll(enabled: boolean): void {
+  store.set('stopPlaylistsOnKillAll', enabled)
+}
+
+export function getForgetOnKillAll(): boolean {
+  return store.get('forgetOnKillAll')
+}
+
+export function setForgetOnKillAll(enabled: boolean): void {
+  store.set('forgetOnKillAll', enabled)
+}
+
+export function getVideoToolSettings(): VideoToolSettings {
+  return normalizeVideoSettings(store.get('videoTools'))
+}
+
+export function setVideoToolSettings(settings: unknown): VideoToolSettings {
+  const clean = normalizeVideoSettings(settings)
+  store.set('videoTools', clean)
+  return clean
 }
 
 export function getAppearance(): Appearance {
@@ -402,7 +434,10 @@ const RESETS_WITH_ENGINE_SETTINGS: Record<keyof AppConfig, boolean> = {
   autostartPlaylistId: false,
   killLweOnQuit: false,
   skipPlaylistResume: false,
-  freshProcessOnPathChange: false,
+  freshProcessOnPathChange: true,
+  stopPlaylistsOnKillAll: false,
+  forgetOnKillAll: false,
+  videoTools: false,
   voteBorders: false,
   cardBorders: false,
   cardBadges: false,

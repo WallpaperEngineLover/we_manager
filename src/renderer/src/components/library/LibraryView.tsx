@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { runQuickOptimize, useQuickOptimizeRunning } from '../../hooks/useQuickOptimize'
+import { useLibraryTasks, runLibraryTask, type LibraryTask, setLibraryTaskStatus, clearFinishedLibraryTaskStatus } from '../../hooks/useLibraryTasks'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Loader2,
@@ -11,10 +13,12 @@ import {
   Trash2,
   Eraser,
   Archive,
+  Zap,
   WifiOff,
   ShieldAlert,
   ShieldCheck,
-  ChevronLeft
+  ChevronLeft,
+  X
 } from 'lucide-react'
 import WallpaperCard from './WallpaperCard'
 import ResizableWidth from '../common/ResizableWidth'
@@ -54,7 +58,7 @@ import { useApplyWallpaper, useSubscribe, useUnsubscribe, useVerifyFiles } from 
 import { useSelectableGrid } from '../../hooks/useSelectableGrid'
 import { toggle } from '../../utils/array'
 import { isEditingText } from '../../utils/dom'
-import { backupSummary, detailSidebarProps, hasDamagedFiles, isBackupOutdated, progressVerb } from '../../utils/wallpaper'
+import { backupSummary, detailSidebarProps, hasDamagedFiles, isBackupOutdated, isOptimizableVideo, progressVerb } from '../../utils/wallpaper'
 import { t, tagLabel } from '../../i18n'
 
 interface LibraryFilterState {
@@ -183,8 +187,6 @@ function dropWallpaperId(e: React.DragEvent): string {
   return e.dataTransfer.getData('text/wallpaper-id')
 }
 
-type BackgroundTask = 'backup-selection' | 'scan-backups' | 'check-unavailable' | 'backup-unavailable' | 'verify-files'
-
 interface LibraryViewProps {
   onBrowseCreator?: (creatorSteamId: string) => void
 }
@@ -198,8 +200,6 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   const [showFilters, setShowFilters] = usePersistentState('we-library-show-filters', true, (v) => v !== false)
   const [showFolders, setShowFolders] = usePersistentState('we-library-show-folders', true, (v) => v !== false)
   const [detailId, setDetailId] = useState<string | null>(null)
-  const [scanning, setScanning] = useState(false)
-  const [scanResult, setScanResult] = useState<{ imported: number; skipped: number; removed: number } | null>(null)
 
   const [page, setPage] = useSessionState('we-library-page', 1)
   const [pageSize, setPageSize] = usePersistentState('we-library-page-size', 50, loadPageSize)
@@ -461,8 +461,12 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     showToast(t('playlist.addedToCurrent'))
   }
 
-  const [runningTasks, setRunningTasks] = useState<Set<BackgroundTask>>(new Set())
-  const [backupStatus, setBackupStatus] = useState<string | null>(null)
+  const { running: runningTasks, status: backupStatus } = useLibraryTasks()
+  const quickRunning = useQuickOptimizeRunning()
+  const runTask = (task: LibraryTask, work: () => Promise<string>) =>
+    runLibraryTask(task, work).finally(() => { void queryClient.invalidateQueries({ queryKey: ['library'] }) })
+  const setBackupStatus = setLibraryTaskStatus
+  useEffect(() => clearFinishedLibraryTaskStatus, [])
   const [backupProgress, setBackupProgress] = useState<
     Map<string, { percentage: number; status: 'copying' | 'verifying'; action?: BackupProgressEvent['action'] }>
   >(new Map())
@@ -508,21 +512,6 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     liveProgress ??
     (backupTaskRunning ? (lingeringProgress ?? `${t('backup.backingUp')}...`) : (backupStatus ?? lingeringProgress))
 
-  async function runTask(task: BackgroundTask, work: () => Promise<string>) {
-    setRunningTasks((prev) => new Set(prev).add(task))
-    setBackupStatus(null)
-    try {
-      setBackupStatus(await work())
-    } finally {
-      setRunningTasks((prev) => {
-        const next = new Set(prev)
-        next.delete(task)
-        return next
-      })
-      void queryClient.invalidateQueries({ queryKey: ['library'] })
-    }
-  }
-
   function handleBackupSelection() {
     if (selectedIds.size === 0) return
     const toBackUp = wallpapers.filter((w) => selectedIds.has(w.id) && w.source === 'workshop')
@@ -552,6 +541,7 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
   function handleCheckUnavailable() {
     void runTask('check-unavailable', async () => {
       const result = await window.electronAPI.library.checkUnavailable()
+      if (result.failed) return t('library.checkUnavailableNoAnswer')
       return t('library.checkedUnavailable', { count: result.checked, unavailable: result.unavailable })
     })
   }
@@ -567,14 +557,14 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
     void runTask('verify-files', () => verifyFiles(undefined, setBackupStatus))
   }
 
-  async function handleScan() {
-    setScanning(true)
-    setScanResult(null)
-    const result = await window.electronAPI.library.scan()
-    setScanResult(result)
-    setScanning(false)
-    void queryClient.invalidateQueries({ queryKey: ['library'] })
-    void queryClient.invalidateQueries({ queryKey: ['library-tags'] })
+  function handleScan() {
+    void runTask('scan-library', async () => {
+      const result = await window.electronAPI.library.scan()
+      void queryClient.invalidateQueries({ queryKey: ['library-tags'] })
+      return result.removed > 0
+        ? t('library.scanCompleteRemoved', { imported: result.imported, removed: result.removed })
+        : t('library.scanComplete', { imported: result.imported })
+    })
   }
 
   const [creatingFolder, setCreatingFolder] = useState(false)
@@ -704,10 +694,10 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
         <div className="ml-auto" />
         <ToolbarButton
           icon={<RefreshCw size={14} />}
-          busy={scanning}
-          disabled={scanning}
+          busy={runningTasks.has('scan-library')}
+          disabled={runningTasks.has('scan-library')}
           title={t('library.scanHint')}
-          onClick={() => void handleScan()}
+          onClick={handleScan}
         >
           {t('library.scan')}
         </ToolbarButton>
@@ -769,6 +759,21 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
               {t('library.backupUnavailable', { count: unavailableNotBackedUp.length })}
             </button>
           )}
+          {selectedIds.size > 0 && wallpapers.some((w) => selectedIds.has(w.id) && isOptimizableVideo(w)) && (
+            <button
+              onClick={() => {
+                void runQuickOptimize(
+                  wallpapers.filter((w) => selectedIds.has(w.id) && isOptimizableVideo(w)).map((w) => w.id),
+                  () => { void queryClient.invalidateQueries({ queryKey: ['library'] }) }
+                )
+              }}
+              disabled={quickRunning}
+              className="flex items-center gap-1.5 rounded-lg bg-fg/5 px-3 py-1.5 text-xs text-gray-300 hover:bg-fg/10 disabled:opacity-50"
+            >
+              {quickRunning ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+              {t('quick.action')}
+            </button>
+          )}
           {selectedIds.size > 0 && (
             <button
               onClick={handleBackupSelection}
@@ -787,17 +792,18 @@ export default function LibraryView({ onBrowseCreator }: LibraryViewProps) {
         </div>
       </div>
 
-      {scanResult && (
-        <div className="border-b border-fg/5 px-4 py-2 text-xs text-gray-400">
-          {scanResult.removed > 0
-            ? t('library.scanCompleteRemoved', { imported: scanResult.imported, removed: scanResult.removed })
-            : t('library.scanComplete', { imported: scanResult.imported })}
-        </div>
-      )}
-
       {statusLine && (
-        <div className="truncate border-b border-fg/5 px-4 py-2 text-xs text-gray-400" title={statusLine}>
-          {statusLine}
+        <div className="flex items-center gap-2 border-b border-fg/5 px-4 py-2 text-xs text-gray-400">
+          <span className="min-w-0 flex-1 truncate" title={statusLine}>{statusLine}</span>
+          {!liveProgress && runningTasks.size === 0 && (
+            <button
+              onClick={() => { setBackupStatus(null); setLingeringProgress(null) }}
+              title={t('common.close')}
+              className="shrink-0 rounded p-0.5 text-gray-500 hover:bg-fg/10 hover:text-gray-200"
+            >
+              <X size={12} />
+            </button>
+          )}
         </div>
       )}
 

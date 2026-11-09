@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { engineFlagArgs, filterSupportedArgs, hasEngineFlags, resolveEngineFlags } from './engineFlags'
+import { engineFlagArgs, filterSupportedArgs, hasEngineFlags, normalizeWallpaperFlags, resolveEngineFlags, withoutGlobalOnlyFlags } from './engineFlags'
 
 describe('resolveEngineFlags', () => {
   it('lets a wallpaper override the global flags, unset ones fall through', () => {
@@ -8,6 +8,40 @@ describe('resolveEngineFlags', () => {
       { disableParticles: false, disableMouse: true, fullscreenPause: undefined }
     )
     expect(resolved).toEqual({ disableParticles: false, disableMouse: true, fullscreenPause: 'off' })
+  })
+})
+
+describe('withoutGlobalOnlyFlags', () => {
+  it('drops the settings of the whole engine and keeps the other flags', () => {
+    expect(
+      withoutGlobalOnlyFlags({
+        silent: true,
+        audioInput: 'usb-mic',
+        audioInputVolume: 70,
+        audioInputThreshold: 10,
+        windowed: true,
+        windowBackground: true,
+        kdeBackgroundLayer: true
+      })
+    ).toEqual({ silent: true })
+  })
+
+  it('keeps a wallpaper from overriding them or counting as customized because of them', () => {
+    expect(resolveEngineFlags({ audioInput: 'monitor', windowed: false }, { audioInput: 'usb-mic', windowed: true, silent: true })).toEqual({
+      audioInput: 'monitor',
+      windowed: false,
+      silent: true
+    })
+    expect(hasEngineFlags({ audioInput: 'usb-mic', windowed: true })).toBe(false)
+    expect(hasEngineFlags({ silent: false })).toBe(true)
+  })
+})
+
+describe('normalizeWallpaperFlags', () => {
+  it('keeps what a wallpaper may have and nothing when that is all gone', () => {
+    expect(normalizeWallpaperFlags({ silent: true, windowed: true })).toEqual({ silent: true })
+    expect(normalizeWallpaperFlags({ windowed: true, audioInput: 'usb-mic' })).toBeUndefined()
+    expect(normalizeWallpaperFlags({ silent: undefined })).toBeUndefined()
   })
 })
 
@@ -42,6 +76,14 @@ describe('engineFlagArgs', () => {
     expect(engineFlagArgs({ frameLimiter: 'budget' })).toEqual([])
     expect(engineFlagArgs({ hrtf: 'on' })).toEqual(['--hrtf', 'on'])
     expect(engineFlagArgs({ hrtf: 'auto' })).toEqual([])
+    expect(engineFlagArgs({ audioInput: 'alsa_input.mic' })).toEqual(['--audio-input', 'alsa_input.mic'])
+    expect(engineFlagArgs({ audioInput: 'default', audioInputVolume: 50, audioInputThreshold: 0 })).toEqual([])
+    expect(engineFlagArgs({ audioInputVolume: 80, audioInputThreshold: 120 })).toEqual([
+      '--audio-input-volume',
+      '80',
+      '--audio-input-threshold',
+      '120'
+    ])
     expect(engineFlagArgs({ batteryFps: '15' })).toEqual(['--fps-battery', '15'])
     expect(engineFlagArgs({ batteryFps: 'pause' })).toEqual(['--pause-on-battery'])
     expect(engineFlagArgs({ batteryFps: 'off' })).toEqual([])

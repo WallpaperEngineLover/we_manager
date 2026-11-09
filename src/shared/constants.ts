@@ -10,3 +10,5 @@ export const APP_RELEASE_REPO = 'WallpaperEngineLover/we_manager'
 export const RECOMMENDED_WEB_FPS = 60
 
 export const DEFAULT_LWE_FPS = 60
+
+export const DEFAULT_ENGINE_VOLUME = 15

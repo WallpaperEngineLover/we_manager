@@ -108,8 +108,7 @@ export default function WallpaperCard({
     setIsApplying(true)
     setError(null)
     try {
-      // no screen yet: the hook asks which monitor when per-screen mode has two or more
-      await applyWallpaper(wallpaper.id)
+      await applyWallpaper(wallpaper.id, undefined, setError)
     } finally {
       setIsApplying(false)
     }
@@ -357,31 +356,19 @@ export default function WallpaperCard({
             )}
           </CardOverlay>
         )}
-        {wallpaper.downloadFailed && (
+        {(wallpaper.downloadFailed || hasDamagedFiles(wallpaper)) && (
           <CardOverlay>
-            <AlertTriangle size={20} className="text-red-400" />
-            <span className="text-xs text-gray-300">{t('subscribe.downloadFailed')}</span>
+            <AlertTriangle size={20} className={wallpaper.downloadFailed ? 'text-red-400' : 'text-amber-400'} />
+            <span className="text-xs text-gray-300">
+              {wallpaper.downloadFailed ? t('subscribe.downloadFailed') : verifyProblemLabel(wallpaper.verifyProblem!)}
+            </span>
             <button
               onClick={(e) => void handleRedownload(e)}
               disabled={isRedownloading}
               className="flex items-center gap-1 rounded bg-accent-600/80 px-2 py-1 text-xs text-white transition-colors hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isRedownloading ? <Loader2 size={11} className="animate-spin" /> : <RotateCw size={11} />}
-              {t('subscribe.redownload')}
-            </button>
-          </CardOverlay>
-        )}
-        {hasDamagedFiles(wallpaper) && (
-          <CardOverlay>
-            <AlertTriangle size={20} className="text-amber-400" />
-            <span className="text-xs text-gray-300">{verifyProblemLabel(wallpaper.verifyProblem!)}</span>
-            <button
-              onClick={(e) => void handleRedownload(e)}
-              disabled={isRedownloading}
-              className="flex items-center gap-1 rounded bg-accent-600/80 px-2 py-1 text-xs text-white transition-colors hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isRedownloading ? <Loader2 size={11} className="animate-spin" /> : <RotateCw size={11} />}
-              {t('verify.repair')}
+              {wallpaper.downloadFailed ? t('subscribe.redownload') : t('verify.repair')}
             </button>
           </CardOverlay>
         )}
@@ -444,7 +431,7 @@ export default function WallpaperCard({
           />
         </div>
         {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
-        <div className={clsx('flex items-center justify-center', tiny ? 'mt-1.5' : 'mt-2', tiny ? 'gap-0.5' : compact ? 'gap-1' : 'gap-2')}>
+        <div className={clsx('flex items-center justify-start', tiny ? 'mt-1.5' : 'mt-2', tiny ? 'gap-0.5' : compact ? 'gap-1' : 'gap-2')}>
           {actionButtons}
         </div>
       </div>

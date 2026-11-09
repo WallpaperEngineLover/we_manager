@@ -8,6 +8,10 @@ export function isPlayable(w: Pick<WallpaperMeta, 'localPath' | 'downloading' | 
   return !!w.localPath && !w.downloading && !w.downloadFailed
 }
 
+export function isOptimizableVideo(w: Pick<WallpaperMeta, 'type' | 'source'>): boolean {
+  return w.type === 'video' && w.source !== 'workshop'
+}
+
 export function hasBackup(w: WallpaperMeta): boolean {
   return !!w.backedUp || w.source === 'backup'
 }

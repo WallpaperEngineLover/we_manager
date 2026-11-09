@@ -3,6 +3,7 @@ import * as path from 'path'
 import type { VerifyProblem, VerifyResult, WallpaperMeta } from '@shared/types'
 import * as library from './library.service'
 import * as steam from './steam.service'
+import { getSteamIdentity } from './config.service'
 import { exists, findFolderProblem, forEachLimit } from './backup.service'
 import { getWorkshopPath } from '../utils/paths'
 
@@ -132,15 +133,21 @@ export function restoreRepairStashes(): Promise<void> {
 
 // subscriptions too, which may have no workshop entry yet
 
-async function verifiableItems(ids?: string[]): Promise<{ wallpaper: WallpaperMeta; inLibrary: boolean }[]> {
+async function verifiableItems(
+  ids?: string[]
+): Promise<{ items: { wallpaper: WallpaperMeta; inLibrary: boolean }[]; stale: string[] }> {
   const wanted = ids ? new Set(ids) : null
   const all = library.getAllWallpapers()
   const byId = new Map(all.map((w) => [w.id, w]))
+  const subscribed = await steam.getSubscribedItems()
+  const subscribedIds = new Set(subscribed)
+  // an unsubscribed item can leave an empty folder behind, which is not damage; an empty answer is Steam not synced yet,
+  // and as Spacewar the list is not Wallpaper Engine's
+  const listKnown = subscribedIds.size > 0 && getSteamIdentity() === 'wallpaper-engine'
   const items = all
-    .filter((w) => w.source === 'workshop' && (!wanted || wanted.has(w.id)))
+    .filter((w) => w.source === 'workshop' && (!listKnown || subscribedIds.has(w.id)) && (!wanted || wanted.has(w.id)))
     .map((wallpaper) => ({ wallpaper, inLibrary: true }))
 
-  const subscribed = await steam.getSubscribedItems()
   for (const id of subscribed) {
     const existing = byId.get(id)
     if (existing?.source === 'workshop' || (wanted && !wanted.has(id))) continue
@@ -162,7 +169,12 @@ async function verifiableItems(ids?: string[]): Promise<{ wallpaper: WallpaperMe
       inLibrary: false
     })
   }
-  return items
+  const stale = listKnown
+    ? all
+        .filter((w) => w.source === 'workshop' && w.verifyProblem && !subscribedIds.has(w.id) && (!wanted || wanted.has(w.id)))
+        .map((w) => w.id)
+    : []
+  return { items, stale }
 }
 
 export async function verifyItems(
@@ -170,8 +182,11 @@ export async function verifyItems(
   onProgress: (done: number, total: number) => void
 ): Promise<VerifyResult> {
   if (!steam.isSteamRunning()) throw new Error('Steam is not running')
-  const items = await verifiableItems(ids)
-  const patches: { id: string; patch: Partial<WallpaperMeta> }[] = []
+  const { items, stale } = await verifiableItems(ids)
+  const patches: { id: string; patch: Partial<WallpaperMeta> }[] = stale.map((id) => ({
+    id,
+    patch: { verifyProblem: undefined }
+  }))
   const damaged: string[] = []
   let skipped = 0
   let done = 0

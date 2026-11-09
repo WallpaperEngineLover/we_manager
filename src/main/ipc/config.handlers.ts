@@ -44,6 +44,10 @@ import {
   setSkipPlaylistResume,
   getFreshProcessOnPathChange,
   setFreshProcessOnPathChange,
+  getStopPlaylistsOnKillAll,
+  setStopPlaylistsOnKillAll,
+  getForgetOnKillAll,
+  setForgetOnKillAll,
   getCardBorders,
   getCardBadges,
   getAppearance,
@@ -129,6 +133,8 @@ export function registerConfigHandlers(): void {
     killLweOnQuit: getKillLweOnQuit(),
     skipPlaylistResume: getSkipPlaylistResume(),
     freshProcessOnPathChange: getFreshProcessOnPathChange(),
+    stopPlaylistsOnKillAll: getStopPlaylistsOnKillAll(),
+    forgetOnKillAll: getForgetOnKillAll(),
     cardBorders: getCardBorders(),
     cardBadges: getCardBadges(),
     audioScreen: getAudioScreen(),
@@ -189,6 +195,16 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle(IpcChannels.CONFIG_SET_FRESH_PROCESS_ON_PATH_CHANGE, (_e, enabled: boolean) => {
     setFreshProcessOnPathChange(enabled)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_STOP_PLAYLISTS_ON_KILL_ALL, (_e, enabled: boolean) => {
+    setStopPlaylistsOnKillAll(enabled)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IpcChannels.CONFIG_SET_FORGET_ON_KILL_ALL, (_e, enabled: boolean) => {
+    setForgetOnKillAll(enabled)
     return { ok: true }
   })
 

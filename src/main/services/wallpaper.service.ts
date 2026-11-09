@@ -1,5 +1,3 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import * as os from 'os'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -21,8 +19,7 @@ import { resolveEngineFlags } from '@shared/engineFlags'
 import { needsFreshLaunch } from '@shared/compat'
 import { videoSegmentsOf } from '@shared/videoTrim'
 import { applyHyprpaper, applySwaybg, applySwww, hasHyprpaper, prefersHyprpaper, swwwCommand } from './static-wallpaper.service'
-
-const execFileAsync = promisify(execFile)
+import { execFileAsync } from '../utils/exec'
 
 let envCache: WallpaperEnvironment | null = null
 
@@ -250,6 +247,10 @@ export function isAnimatedWallpaper(wallpaper: WallpaperMeta): boolean {
   return wallpaper.type === 'scene' || wallpaper.type === 'web' || wallpaper.type === 'video'
 }
 
+export function usesEngine(wallpaper: WallpaperMeta): boolean {
+  return isAnimatedWallpaper(wallpaper) && os.platform() === 'linux' && getLweStatus().installed
+}
+
 /** linux-wallpaperengine when available, else a static image */
 export async function applyWallpaperMeta(
   wallpaper: WallpaperMeta,
@@ -266,7 +267,7 @@ export async function applyWallpaperMeta(
 
   await ensureDependencyInstalled(wallpaper, options.dependencyPrompt)
 
-  if (isAnimatedWallpaper(wallpaper) && os.platform() === 'linux' && getLweStatus().installed) {
+  if (usesEngine(wallpaper)) {
     await launchLweAsync(wallpaper.localPath, {
       ...(await lweOptionsFor(wallpaper, options)),
       screen: options.screen,

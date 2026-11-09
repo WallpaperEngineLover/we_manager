@@ -27,28 +27,41 @@ export function registerPlaylistHandlers(): void {
 
   ipcMain.handle(
     IpcChannels.PLAYLIST_UPDATE_SETTINGS,
-    (_e, id: string, patch: Partial<PlaylistSettings>) =>
-      playlists.updatePlaylistSettings(id, patch)
+    (_e, id: string, patch: Partial<PlaylistSettings>) => {
+      const updated = playlists.updatePlaylistSettings(id, patch)
+      player.playlistEdited(id)
+      return updated
+    }
   )
 
-  ipcMain.handle(IpcChannels.PLAYLIST_ADD_ITEMS, (_e, id: string, wallpaperIds: string[]) =>
-    playlists.addItemsToPlaylist(id, wallpaperIds)
-  )
+  ipcMain.handle(IpcChannels.PLAYLIST_ADD_ITEMS, (_e, id: string, wallpaperIds: string[]) => {
+    const updated = playlists.addItemsToPlaylist(id, wallpaperIds)
+    player.playlistEdited(id)
+    return updated
+  })
 
-  ipcMain.handle(IpcChannels.PLAYLIST_REMOVE_ITEMS, (_e, id: string, wallpaperIds: string[]) =>
-    playlists.removeItemsFromPlaylist(id, wallpaperIds)
-  )
+  ipcMain.handle(IpcChannels.PLAYLIST_REMOVE_ITEMS, (_e, id: string, wallpaperIds: string[]) => {
+    const updated = playlists.removeItemsFromPlaylist(id, wallpaperIds)
+    player.playlistEdited(id)
+    return updated
+  })
 
   ipcMain.handle(
     IpcChannels.PLAYLIST_REORDER_ITEMS,
-    (_e, id: string, orderedWallpaperIds: string[]) =>
-      playlists.reorderPlaylistItems(id, orderedWallpaperIds)
+    (_e, id: string, orderedWallpaperIds: string[]) => {
+      const updated = playlists.reorderPlaylistItems(id, orderedWallpaperIds)
+      player.playlistEdited(id)
+      return updated
+    }
   )
 
   ipcMain.handle(
     IpcChannels.PLAYLIST_UPDATE_ITEM,
-    (_e, id: string, wallpaperId: string, patch: { volume?: number; durationSec?: number }) =>
-      playlists.updatePlaylistItem(id, wallpaperId, patch)
+    (_e, id: string, wallpaperId: string, patch: { volume?: number; durationSec?: number; endMinute?: number }) => {
+      const updated = playlists.updatePlaylistItem(id, wallpaperId, patch)
+      player.playlistEdited(id)
+      return updated
+    }
   )
 
   ipcMain.handle(IpcChannels.PLAYLIST_START, (_e, id: string, screen?: ScreenTarget) =>

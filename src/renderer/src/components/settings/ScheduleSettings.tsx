@@ -1,14 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarClock, Moon, Pencil, Play, Plus, Sun, Trash2 } from 'lucide-react'
+import { CalendarClock, Moon, Play, Sun } from 'lucide-react'
 import clsx from 'clsx'
-import type { ScheduleAction, ScheduleRule, ScheduleTrigger } from '@shared/types'
+import type { ScheduleRule, ScheduleTrigger } from '@shared/types'
 import { nextFireTime, parseTime } from '@shared/schedule'
-import ScreenSelect from '../common/ScreenSelect'
-import { useDisplayTargets } from '../../hooks/useDisplayTargets'
-import { screenLabel } from '../../utils/screens'
+import { actionProblem, useDescribeAction } from './ActionPicker'
+import { AddRuleButton, RuleEditor, RuleIconButton, RuleRow } from './RuleParts'
+import { inputClass } from '../common/inputClass'
 import { useToast } from '../common/Toast'
-import { useAllWallpapers, usePlaylists } from '../../hooks/queries'
 import { t, currentLanguage } from '../../i18n'
 
 // 2024-01-07 was a Sunday, day 0 like Date.getDay()
@@ -27,8 +26,6 @@ const EMPTY_DRAFT: Draft = {
   screen: '*'
 }
 
-const inputClass = 'rounded-lg bg-fg/5 px-2 py-1.5 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-accent-500'
-
 function describeTrigger(trigger: ScheduleTrigger): string {
   if (trigger.type === 'theme') return trigger.theme === 'dark' ? t('schedule.whenDark') : t('schedule.whenLight')
   const labels = dayLabels()
@@ -43,9 +40,8 @@ const currentTime = (): Date => new Date()
 export default function ScheduleSettings() {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
-  const { targets, perScreen } = useDisplayTargets()
+  const describeAction = useDescribeAction()
   const [draft, setDraft] = useState<Draft | null>(null)
-  const [wallpaperFilter, setWallpaperFilter] = useState('')
   const [now, setNow] = useState(currentTime)
 
   useEffect(() => {
@@ -64,28 +60,6 @@ export default function ScheduleSettings() {
     queryKey: ['schedule'],
     queryFn: () => window.electronAPI.schedule.getAll()
   })
-  const wallpapers = useAllWallpapers()
-  const playlists = usePlaylists()
-
-  const wallpaperTitle = (id: string) => wallpapers.find((w) => w.id === id)?.title ?? t('schedule.missingWallpaper')
-  const playlistTitle = (id: string) => playlists.find((p) => p.id === id)?.title ?? t('schedule.missingPlaylist')
-
-  function describeAction(action: ScheduleAction): string {
-    if (action.type === 'wallpaper') return t('schedule.show', { title: wallpaperTitle(action.wallpaperId) })
-    if (action.type === 'playlist') return t('schedule.play', { title: playlistTitle(action.playlistId) })
-    return t('schedule.stop')
-  }
-
-  const selectedWallpaperId = draft?.action.type === 'wallpaper' ? draft.action.wallpaperId : ''
-  const wallpaperOptions = useMemo(() => {
-    const needle = wallpaperFilter.trim().toLowerCase()
-    const matches = wallpapers
-      .filter((w) => w.localPath && (!needle || w.title.toLowerCase().includes(needle)))
-      .slice(0, 100)
-    const selected = wallpapers.find((w) => w.id === selectedWallpaperId)
-    return selected && !matches.includes(selected) ? [selected, ...matches] : matches
-  }, [wallpapers, wallpaperFilter, selectedWallpaperId])
-
   function refresh() {
     setNow(currentTime())
     void queryClient.invalidateQueries({ queryKey: ['schedule'] })
@@ -97,12 +71,9 @@ export default function ScheduleSettings() {
       showToast(t('schedule.badTime'), { warning: true })
       return
     }
-    if (draft.action.type === 'wallpaper' && !draft.action.wallpaperId) {
-      showToast(t('schedule.pickWallpaper'), { warning: true })
-      return
-    }
-    if (draft.action.type === 'playlist' && !draft.action.playlistId) {
-      showToast(t('schedule.pickPlaylist'), { warning: true })
+    const problem = actionProblem(draft.action)
+    if (problem) {
+      showToast(t(problem), { warning: true })
       return
     }
     await window.electronAPI.schedule.save({ ...draft, name: draft.name.trim() || describeAction(draft.action) })
@@ -132,10 +103,6 @@ export default function ScheduleSettings() {
     setDraft((d) => (d ? { ...d, trigger } : d))
   }
 
-  function setAction(action: ScheduleAction) {
-    setDraft((d) => (d ? { ...d, action } : d))
-  }
-
   return (
     <div>
       <label className="block text-xs font-medium uppercase tracking-wide text-gray-500">{t('schedule.title')}</label>
@@ -147,50 +114,38 @@ export default function ScheduleSettings() {
         {rules.map((rule) => {
           const next = rule.enabled && rule.trigger.type === 'time' ? nextFireTime(rule, now) : null
           return (
-            <div
+            <RuleRow
               key={rule.id}
-              className={clsx('flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2', !rule.enabled && 'opacity-50')}
-            >
-              <input type="checkbox" checked={rule.enabled} onChange={() => void toggle(rule)} className="accent-accent-500" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm text-gray-200">{rule.name}</p>
-                <p className="truncate text-xs text-gray-500">
-                  {describeTrigger(rule.trigger)} · {describeAction(rule.action)}
-                  {perScreen && ` · ${screenLabel(rule.screen)}`}
-                  {next && ` · ${t('schedule.next', { time: next.toLocaleString(currentLanguage(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }) })}`}
-                </p>
-              </div>
-              <button onClick={() => void runNow(rule)} title={t('schedule.runNow')} className="rounded p-1 text-gray-500 hover:text-gray-200">
-                <Play size={13} />
-              </button>
-              <button onClick={() => { setDraft(rule) }} title={t('common.edit')} className="rounded p-1 text-gray-500 hover:text-gray-200">
-                <Pencil size={13} />
-              </button>
-              <button onClick={() => void remove(rule.id)} title={t('common.delete')} className="rounded p-1 text-gray-500 hover:text-red-400">
-                <Trash2 size={13} />
-              </button>
-            </div>
+              enabled={rule.enabled}
+              onToggle={() => void toggle(rule)}
+              name={rule.name}
+              condition={describeTrigger(rule.trigger)}
+              action={rule.action}
+              screen={rule.screen}
+              suffix={next && t('schedule.next', { time: next.toLocaleString(currentLanguage(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }) })}
+              extraButtons={
+                <RuleIconButton title={t('schedule.runNow')} onClick={() => void runNow(rule)}>
+                  <Play size={13} />
+                </RuleIconButton>
+              }
+              onEdit={() => { setDraft(rule) }}
+              onDelete={() => void remove(rule.id)}
+            />
           )
         })}
       </div>
 
       {!draft ? (
-        <button
-          onClick={() => { setDraft(EMPTY_DRAFT) }}
-          className="mt-2 flex items-center gap-2 rounded-lg bg-fg/5 px-3 py-2 text-sm text-gray-300 hover:bg-fg/10"
-        >
-          <Plus size={14} />
-          {t('schedule.add')}
-        </button>
+        <AddRuleButton label={t('schedule.add')} onClick={() => { setDraft(EMPTY_DRAFT) }} />
       ) : (
-        <div className="mt-2 space-y-3 rounded-lg border border-fg/10 p-3">
-          <input
-            value={draft.name}
-            onChange={(e) => { setDraft({ ...draft, name: e.target.value }); }}
-            placeholder={t('schedule.namePlaceholder')}
-            className={`${inputClass} w-full`}
-          />
-
+        <RuleEditor
+          name={draft.name}
+          action={draft.action}
+          screen={draft.screen}
+          onChange={(patch) => { setDraft({ ...draft, ...patch }) }}
+          onSave={() => void save()}
+          onCancel={() => { setDraft(null) }}
+        >
           <div className="flex flex-wrap items-center gap-2 text-sm text-gray-300">
             <CalendarClock size={14} />
             <select
@@ -240,77 +195,7 @@ export default function ScheduleSettings() {
               <span className="self-center text-xs text-gray-600">{t('schedule.noneEveryDay')}</span>
             </div>
           )}
-
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={draft.action.type}
-              onChange={(e) => {
-                const type = e.target.value as ScheduleAction['type']
-                setAction(
-                  type === 'wallpaper'
-                    ? { type, wallpaperId: '' }
-                    : type === 'playlist'
-                      ? { type, playlistId: playlists[0]?.id ?? '' }
-                      : { type }
-                )
-              }}
-              className={inputClass}
-            >
-              <option value="wallpaper">{t('schedule.showWallpaper')}</option>
-              <option value="playlist">{t('schedule.playPlaylist')}</option>
-              <option value="stop">{t('schedule.stop')}</option>
-            </select>
-            {perScreen && (
-              <ScreenSelect targets={targets} value={draft.screen} onChange={(screen) => { setDraft({ ...draft, screen }); }} />
-            )}
-          </div>
-
-          {draft.action.type === 'playlist' && (
-            <select
-              value={draft.action.playlistId}
-              onChange={(e) => { setAction({ type: 'playlist', playlistId: e.target.value }); }}
-              className={`${inputClass} w-full`}
-            >
-              {playlists.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title}
-                </option>
-              ))}
-            </select>
-          )}
-
-          {draft.action.type === 'wallpaper' && (
-            <div className="space-y-1.5">
-              <input
-                value={wallpaperFilter}
-                onChange={(e) => { setWallpaperFilter(e.target.value) }}
-                placeholder={t('schedule.searchLibrary')}
-                className={`${inputClass} w-full`}
-              />
-              <select
-                value={draft.action.wallpaperId}
-                onChange={(e) => { setAction({ type: 'wallpaper', wallpaperId: e.target.value }); }}
-                size={6}
-                className={`${inputClass} w-full`}
-              >
-                {wallpaperOptions.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.title}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <button onClick={() => void save()} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500">
-              {t('common.save')}
-            </button>
-            <button onClick={() => { setDraft(null) }} className="rounded-lg bg-fg/5 px-4 py-2 text-sm text-gray-300 hover:bg-fg/10">
-              {t('common.cancel')}
-            </button>
-          </div>
-        </div>
+        </RuleEditor>
       )}
     </div>
   )

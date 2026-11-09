@@ -11,7 +11,7 @@ type Pending = {
 
 let openPrompt: ((targets: ScreenTarget[]) => Promise<ScreenTarget | null>) | null = null
 
-/** null means cancel. The default is every screen, which is what card Play used to do. */
+// null means cancel
 export function askPlayScreen(targets: ScreenTarget[]): Promise<ScreenTarget | null> {
   if (!openPrompt) return Promise.resolve(CARD_PLAY_DEFAULT_SCREEN)
   return openPrompt(targets)
@@ -21,21 +21,55 @@ export default function PlayScreenPrompt() {
   const [pending, setPending] = useState<Pending | null>(null)
   const [value, setValue] = useState<ScreenTarget>(CARD_PLAY_DEFAULT_SCREEN)
   const dialogRef = useRef<HTMLDivElement>(null)
+  const pendingRef = useRef<Pending | null>(null)
+  const returnFocus = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     openPrompt = (targets) => new Promise((resolve) => {
+      if (!pendingRef.current && document.activeElement instanceof HTMLElement) returnFocus.current = document.activeElement
+      pendingRef.current?.resolve(null)
+      const next = { targets, resolve }
+      pendingRef.current = next
       setValue(CARD_PLAY_DEFAULT_SCREEN)
-      setPending({ targets, resolve })
+      setPending(next)
     })
-    return () => { openPrompt = null }
+    return () => {
+      openPrompt = null
+      pendingRef.current?.resolve(null)
+      pendingRef.current = null
+    }
   }, [])
 
+  useEffect(() => {
+    if (!pending) return
+    const onKey = (e: KeyboardEvent) => {
+      const root = dialogRef.current
+      if (!root || (e.target instanceof Node && root.contains(e.target))) return
+      e.stopImmediatePropagation()
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        finish(null)
+      } else if (e.key === 'Tab') {
+        e.preventDefault()
+        root.querySelector<HTMLElement>('button, select, input')?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => { window.removeEventListener('keydown', onKey, true) }
+  }, [pending])
+
   function finish(screen: ScreenTarget | null) {
-    pending?.resolve(screen)
+    const current = pendingRef.current
+    pendingRef.current = null
+    current?.resolve(screen)
     setPending(null)
+    returnFocus.current?.focus()
+    returnFocus.current = null
   }
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    // the grid behind the modal has shortcuts of its own
+    e.stopPropagation()
     if (e.key === 'Escape') {
       e.preventDefault()
       finish(null)
@@ -61,7 +95,12 @@ export default function PlayScreenPrompt() {
   if (!pending) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-8">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-8"
+      onMouseDown={(e) => {
+        if (e.button === 0 && e.target === e.currentTarget) finish(null)
+      }}
+    >
       <div
         ref={dialogRef}
         role="dialog"

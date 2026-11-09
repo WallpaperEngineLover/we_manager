@@ -34,6 +34,7 @@ const {
   nodeDevelPackage,
   parsePacmanRepos,
   parseCustomArgs,
+  parseAudioInputList,
   parseOsReleaseIds
 } = await import('./lwe.service')
 
@@ -108,6 +109,24 @@ describe('buildLweArgs', () => {
   })
 })
 
+describe('audio input', () => {
+  it('writes the hotswap keys', () => {
+    expect(buildHotswapLines({ audioInput: 'default', audioInputVolume: 50, audioInputThreshold: 0 })).toEqual([
+      'audio-input=default',
+      'audio-input-volume=50',
+      'audio-input-threshold=0'
+    ])
+  })
+
+  it('reads the engine list', () => {
+    const out = 'a.monitor\tmonitor\tMonitor of A\nmic\tinput\tUSB\tMic\n\nbroken line\nx\tother\ty\n'
+    expect(parseAudioInputList(out)).toEqual([
+      { name: 'a.monitor', description: 'Monitor of A', monitor: true },
+      { name: 'mic', description: 'USB\tMic', monitor: false }
+    ])
+  })
+})
+
 describe('buildHotswapLines', () => {
   it('writes only the fields that were given', () => {
     expect(buildHotswapLines({ volume: 40, xray: 'normal' })).toEqual(['volume=40', 'xray=off'])
@@ -172,6 +191,10 @@ describe('buildHotswapLines', () => {
       'disable-object=12',
       'enable-object=fog'
     ])
+  })
+
+  it('resets to the engine default volume when the swapped wallpaper has none', () => {
+    expect(buildHotswapLines(hotswapOptionsFor('/w/loud', {}))).toContain('volume=15')
   })
 
   it('keeps a muted wallpaper muted when the swap is built', () => {
@@ -303,5 +326,15 @@ describe('parsePacmanRepos', () => {
   it('lists the repositories and leaves [options] out', () => {
     const conf = '[options]\nHoldPkg = pacman\n\n[core]\nInclude = /etc/pacman.d/mirrorlist\n  [extra]  \n#[testing]\n[garuda]\nServer = x\n'
     expect(parsePacmanRepos(conf)).toEqual(['core', 'extra', 'garuda'])
+  })
+})
+
+describe('launches while the app quits', () => {
+  it('start no engine', async () => {
+    vi.resetModules()
+    const fresh = await import('./lwe.service')
+    fresh.blockLaunches()
+
+    await expect(fresh.launchLweAsync('/w/a', { screen: 'DP-1' })).rejects.toThrow('quitting')
   })
 })

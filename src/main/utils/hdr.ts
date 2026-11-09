@@ -1,12 +1,9 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import type { WallpaperMeta } from '@shared/types'
 import { isCommandAvailable } from './platform'
 import { findWallpaperVideoFile } from './video'
-
-const execFileAsync = promisify(execFile)
+import { execFileAsync } from './exec'
 
 // .pkg files can be huge, read only the entry table (64KB covers most) and one entry
 const PKG_HEADER_CHUNK = 64 * 1024

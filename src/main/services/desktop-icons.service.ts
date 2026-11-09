@@ -5,11 +5,12 @@ import { openStore } from '../utils/safeStore'
 import { app } from 'electron'
 import { detectDesktopEnv, getWaylandDisplay, getXdgRuntimeDir, isCommandAvailable, isWaylandSession } from '../utils/platform'
 import { hostCommand, isFlatpak, isHostCommandAvailable } from '../utils/flatpak'
-import { distroFromIds, getActiveScreens, isOstreeSystem, parseOsReleaseIds, onLweLaunched } from './lwe.service'
+import { distroFromIds, getActiveScreens, getRunningInstances, isLweRunning, isOstreeSystem, parseOsReleaseIds, onLweLaunched } from './lwe.service'
 import type { DesktopIconsStatus, LinuxDistro } from '@shared/types'
 
 interface DesktopIconsStoreSchema {
   desktopIconsEnabled: boolean
+  desktopIconsAuto?: boolean
 }
 
 const store = openStore<DesktopIconsStoreSchema>({
@@ -121,7 +122,7 @@ export function installDesktopIconsDependencies(): Promise<{ ok: boolean; error?
         resolve({ ok: false, error: stderr.trim().split('\n').slice(-4).join('\n') || err.message }); return;
       }
       startFailure = null
-      if (getDesktopIconsEnabled()) startDesktopIconsOverlay()
+      if (overlayWanted()) startDesktopIconsOverlay()
       resolve({ ok: true })
     })
   })
@@ -280,7 +281,7 @@ function startDesktopIconsOverlay(): void {
       if (code === EXIT_MONITORS_CHANGED) {
         clearTimeout(restartTimer)
         restartTimer = setTimeout(() => {
-          if (getDesktopIconsEnabled()) startDesktopIconsOverlay()
+          if (overlayWanted()) startDesktopIconsOverlay()
         }, 500)
         return
       }
@@ -308,7 +309,9 @@ function stopDesktopIconsOverlay(): void {
 
 export function setDesktopIconsEnabled(enabled: boolean): void {
   store.set('desktopIconsEnabled', enabled)
-  if (enabled) {
+  lastRunning = getDesktopIconsEnabled() && getDesktopIconsAuto() && isLweRunning()
+  syncRunningPoll()
+  if (overlayWanted()) {
     startDesktopIconsOverlay()
   } else {
     startFailure = null
@@ -316,9 +319,59 @@ export function setDesktopIconsEnabled(enabled: boolean): void {
   }
 }
 
+export function getDesktopIconsAuto(): boolean {
+  return store.get('desktopIconsAuto', true)
+}
+
+export function setDesktopIconsAuto(auto: boolean): void {
+  store.set('desktopIconsAuto', auto)
+  lastRunning = isLweRunning()
+  syncRunningPoll()
+  if (overlayWanted()) {
+    if (overlayProcesses.length === 0) startDesktopIconsOverlay()
+  } else {
+    stopDesktopIconsOverlay()
+  }
+}
+
+/** With the auto mode on the overlay only lives while an engine runs, otherwise it draws the icons over a bare desktop */
+function overlayWanted(): boolean {
+  if (!getDesktopIconsEnabled()) return false
+  return !getDesktopIconsAuto() || isLweRunning()
+}
+
+let lastRunning = false
+let runningPoll: NodeJS.Timeout | undefined
+
+// an engine this app launched itself is handled by onLweLaunched once its surface is up
+const LAUNCH_HOOK_GRACE_MS = 15_000
+
+function syncRunningPoll(): void {
+  const needed = getDesktopIconsEnabled() && getDesktopIconsAuto()
+  if (needed && !runningPoll) {
+    runningPoll = setInterval(pollEngineState, 2000)
+    runningPoll.unref()
+  } else if (!needed && runningPoll) {
+    clearInterval(runningPoll)
+    runningPoll = undefined
+  }
+}
+
+function pollEngineState(): void {
+  const running = isLweRunning()
+  if (running === lastRunning) return
+  lastRunning = running
+  if (!running) {
+    stopDesktopIconsOverlay()
+    return
+  }
+  const adopted = getRunningInstances().some((i) => Date.now() - i.startedAt > LAUNCH_HOOK_GRACE_MS)
+  if (adopted) startDesktopIconsOverlay()
+}
+
 /** The engine and the overlay share the bottom layer and the later surface is drawn on top, so the overlay has to map after the wallpaper */
 function raiseDesktopIconsOverlay(): void {
-  if (getDesktopIconsEnabled()) startDesktopIconsOverlay()
+  if (overlayWanted()) startDesktopIconsOverlay()
 }
 
 export function getDesktopIconsEnabled(): boolean {
@@ -326,12 +379,18 @@ export function getDesktopIconsEnabled(): boolean {
 }
 
 export function initDesktopIcons(): void {
+  // an overlay that was on before the option existed keeps drawing without an engine of this app
+  if (store.get('desktopIconsAuto') === undefined) store.set('desktopIconsAuto', !getDesktopIconsEnabled())
   onLweLaunched(raiseDesktopIconsOverlay)
-  if (getDesktopIconsEnabled()) {
+  lastRunning = isLweRunning()
+  syncRunningPoll()
+  if (overlayWanted()) {
     startDesktopIconsOverlay()
   }
 }
 
 export function cleanupDesktopIcons(): void {
+  clearInterval(runningPoll)
+  runningPoll = undefined
   stopDesktopIconsOverlay()
 }
