@@ -117,7 +117,8 @@ npm run lint
 - The optional desktop icons overlay
   (`src/main/services/desktop-icons-overlay.py`) draws KDE Folder View icons
   on a transparent layer-shell surface above the wallpaper. It needs python3,
-  GTK4, gtk4-layer-shell and pycairo, and only works on Wayland.
+  GTK4, gtk4-layer-shell and pycairo, and only works on Wayland. On KDE Wayland
+  a config still on the factory defaults is turned on once.
 - On GNOME Wayland the engine needs its Shell extension, WE Manager offers to install and update it (a first install needs
   one log out and back in).
 - KDE blur needs X11: with blur on in a Plasma Wayland session the app restarts itself through XWayland.

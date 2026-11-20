@@ -3,14 +3,16 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { openStore } from '../utils/safeStore'
 import { app } from 'electron'
-import { detectDesktopEnv, getWaylandDisplay, getXdgRuntimeDir, isCommandAvailable, isWaylandSession } from '../utils/platform'
+import { detectDesktopEnv, getWaylandDisplay, getXdgRuntimeDir, isCommandAvailable, isWaylandSession, stripAppImageEntries } from '../utils/platform'
 import { hostCommand, isFlatpak, isHostCommandAvailable } from '../utils/flatpak'
 import { distroFromIds, getActiveScreens, getRunningInstances, isLweRunning, isOstreeSystem, parseOsReleaseIds, onLweLaunched } from './lwe.service'
+import { adoptDesktopIcons } from './desktop-icons-choice'
 import type { DesktopIconsStatus, LinuxDistro } from '@shared/types'
 
 interface DesktopIconsStoreSchema {
   desktopIconsEnabled: boolean
   desktopIconsAuto?: boolean
+  desktopIconsMigrated?: boolean
 }
 
 const store = openStore<DesktopIconsStoreSchema>({
@@ -179,12 +181,25 @@ function flatpakOverlayCommand(scriptPath: string, envVars: string[], screen?: s
   return ['flatpak-spawn', args]
 }
 
+/** AppRun's library path and preload point into the mount. The overlay's GTK is the host's. */
+function overlayProcessEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env }
+  const libs = stripAppImageEntries(env.LD_LIBRARY_PATH)
+  if (libs) env.LD_LIBRARY_PATH = libs
+  else delete env.LD_LIBRARY_PATH
+  delete env.LD_PRELOAD
+  return env
+}
+
 /** Env vars for the overlay; Electron runs under XWayland so the Wayland env must be passed explicitly. */
 function buildOverlayEnvVars(layerShellLib: string | undefined): string[] {
   const vars: string[] = []
 
   const linkDir = isFlatpak() ? undefined : ensureWaylandClientLink()
-  if (linkDir) vars.push(`LD_LIBRARY_PATH=${linkDir}${process.env.LD_LIBRARY_PATH ? `:${process.env.LD_LIBRARY_PATH}` : ''}`)
+  // the flatpak host finds its own libraries; the sandbox path must not be forwarded
+  const inherited = isFlatpak() ? undefined : stripAppImageEntries(process.env.LD_LIBRARY_PATH)
+  const libraryPath = [linkDir, inherited].filter((part): part is string => !!part).join(':')
+  if (libraryPath) vars.push(`LD_LIBRARY_PATH=${libraryPath}`)
 
   if (layerShellLib) vars.push(`LD_PRELOAD=${layerShellLib}`)
 
@@ -262,7 +277,8 @@ function startDesktopIconsOverlay(): void {
       : ['env', [...envVars, ...args]]
     const child = spawn(command, commandArgs, {
       stdio: ['ignore', 'ignore', 'pipe'],
-      detached: true
+      detached: true,
+      env: isFlatpak() ? undefined : overlayProcessEnv()
     })
     const errors: string[] = []
     child.stderr?.on('data', (chunk: Buffer) => {
@@ -277,7 +293,13 @@ function startDesktopIconsOverlay(): void {
         return
       }
       if (!mine || signal || code === 0 || code === null) return
-      if (code === EXIT_NO_MONITOR) return
+      if (code === EXIT_NO_MONITOR) {
+        // one screen can miss while another stays up; a miss of every screen used to look like success
+        if (overlayProcesses.length === 0) {
+          startFailure = { problem: 'failed', detail: errors.join('\n') || `no monitor ${screen ?? ''}`.trim() }
+        }
+        return
+      }
       if (code === EXIT_MONITORS_CHANGED) {
         clearTimeout(restartTimer)
         restartTimer = setTimeout(() => {
@@ -378,9 +400,21 @@ export function getDesktopIconsEnabled(): boolean {
   return store.get('desktopIconsEnabled', false)
 }
 
+function adoptFactoryDesktopIcons(): void {
+  const state = {
+    migrated: store.get('desktopIconsMigrated') === true,
+    enabled: getDesktopIconsEnabled(),
+    auto: getDesktopIconsAuto()
+  }
+  const next = adoptDesktopIcons(state, unsupportedReason() === null)
+  if (next.migrated && !state.migrated) store.set('desktopIconsMigrated', true)
+  if (next.enabled !== state.enabled) store.set('desktopIconsEnabled', next.enabled)
+}
+
 export function initDesktopIcons(): void {
   // an overlay that was on before the option existed keeps drawing without an engine of this app
   if (store.get('desktopIconsAuto') === undefined) store.set('desktopIconsAuto', !getDesktopIconsEnabled())
+  adoptFactoryDesktopIcons()
   onLweLaunched(raiseDesktopIconsOverlay)
   lastRunning = isLweRunning()
   syncRunningPoll()

@@ -7,6 +7,7 @@ linux-wallpaperengine wallpaper, which would otherwise cover them. The surface t
 wl_region), clicks go to the desktop underneath.
 
 Launch with: LD_PRELOAD=<libgtk4-layer-shell.so.0> GDK_BACKEND=wayland python3 this.py [CONNECTOR]
+A connector GDK does not name (HDMI-1 against HDMI-A-1) is matched by the output's position and size.
 Exit codes: 2 a Python module or typelib is missing, 3 no layer-shell, 4 no monitor, 5 monitors plugged or unplugged
 (the caller starts the overlays again, one per monitor)
 The overlay quits by itself when its parent process goes away (we_manager crashed or was killed)
@@ -309,6 +310,84 @@ def place(entries, saved, general, m, view_w, view_h):
     return cells, right, per_row
 
 
+def same_output(a, b):
+    """HDMI-1 and HDMI-A-1 are the same output; kscreen and GDK do not always spell it the same way"""
+    if a == b:
+        return True
+    return a.lower().replace('-a-', '-') == b.lower().replace('-a-', '-')
+
+
+def parse_kscreen_outputs(text):
+    """kscreen-doctor -j: [(name, (x, y, width, height)), ...] for enabled, connected outputs"""
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    outputs = data.get('outputs') if isinstance(data, dict) else None
+    if not isinstance(outputs, list):
+        return []
+    found = []
+    for output in outputs:
+        if not isinstance(output, dict):
+            continue
+        name = output.get('name')
+        if not isinstance(name, str) or not name:
+            continue
+        if output.get('enabled') is False or output.get('connected') is False:
+            continue
+        pos, size = output.get('pos'), output.get('size')
+        if not isinstance(pos, dict) or not isinstance(size, dict):
+            continue
+        try:
+            rect = (int(pos['x']), int(pos['y']), int(size['width']), int(size['height']))
+        except (KeyError, TypeError, ValueError):
+            continue
+        found.append((name, rect))
+    return found
+
+
+def kscreen_outputs():
+    try:
+        out = subprocess.run(['kscreen-doctor', '-j'], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if out.returncode != 0:
+        return []
+    return parse_kscreen_outputs(out.stdout)
+
+
+def pick_monitor_index(monitors, connector, outputs):
+    """Index into monitors [(name or None, (x, y, w, h)), ...] or None when this connector is not there"""
+    if not monitors:
+        return None
+    if connector is None:
+        return 0
+    for i, (name, _rect) in enumerate(monitors):
+        if isinstance(name, str) and same_output(name, connector):
+            return i
+    wanted = None
+    for name, rect in outputs:
+        if same_output(name, connector):
+            wanted = rect
+            break
+    if wanted is None:
+        return None
+    for i, (_name, rect) in enumerate(monitors):
+        if rect == wanted:
+            return i
+    return None
+
+
+def gdk_monitors(monitors):
+    listed = []
+    for i in range(monitors.get_n_items()):
+        mon = monitors.get_item(i)
+        geo = mon.get_geometry()
+        name = mon.get_connector() if hasattr(mon, 'get_connector') else None
+        listed.append((name, (geo.x, geo.y, geo.width, geo.height)))
+    return listed
+
+
 def main():
     connector = sys.argv[1] if len(sys.argv) > 1 else None
     display = Gdk.Display.get_default()
@@ -335,15 +414,15 @@ def main():
             pass
 
     monitors = display.get_monitors()
-    monitor, index = None, 0
-    for i in range(monitors.get_n_items()):
-        mon = monitors.get_item(i)
-        if connector is None or mon.get_connector() == connector:
-            monitor, index = mon, i
-            break
-    if monitor is None:
-        print(f'no monitor {connector}', file=sys.stderr)
+    listed = gdk_monitors(monitors)
+    index = pick_monitor_index(listed, connector, [])
+    if index is None and connector:
+        index = pick_monitor_index(listed, connector, kscreen_outputs())
+    if index is None:
+        names = ', '.join(name or '?' for name, _rect in listed) or 'none'
+        print(f'no monitor {connector} (have {names})', file=sys.stderr)
         sys.exit(4)
+    monitor = monitors.get_item(index)
 
     state = {'window': None, 'layer': None, 'size': (0, 0), 'font_px': 20, 'rebuild': 0, 'leaving': False, 'exit': 0}
     empty = cairo.Region()
