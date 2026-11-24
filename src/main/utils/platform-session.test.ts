@@ -1,4 +1,5 @@
 import * as fs from 'fs'
+import * as net from 'net'
 import * as os from 'os'
 import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,8 +15,20 @@ const platform = await import('./platform')
 const SESSION_VARIABLES = ['WAYLAND_DISPLAY', 'DISPLAY', 'XDG_SESSION_TYPE', 'XDG_CURRENT_DESKTOP', 'XDG_RUNTIME_DIR', 'APPIMAGE', 'APPDIR',
   'HYPRLAND_INSTANCE_SIGNATURE', 'SWAYSOCK', 'NIRI_SOCKET']
 
+let runtimeDir = ''
+
 function clearSession(): void {
   for (const name of SESSION_VARIABLES) vi.stubEnv(name, '')
+  runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wem-wayland-'))
+  vi.stubEnv('XDG_RUNTIME_DIR', runtimeDir)
+}
+
+function waylandSocket(name: string): Promise<net.Server> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.once('error', reject)
+    server.listen(path.join(runtimeDir, name), () => resolve(server))
+  })
 }
 
 function answer(answers: Record<string, string>): void {
@@ -36,6 +49,7 @@ afterEach(() => {
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
   execSync.mockReset()
+  if (runtimeDir) fs.rmSync(runtimeDir, { recursive: true, force: true })
 })
 
 describe('detectDisplayServer', () => {
@@ -107,10 +121,29 @@ describe('Wayland session detection', () => {
     expect(execSync).not.toHaveBeenCalled()
   })
 
-  it('assumes wayland-0 for a Wayland session under XWayland', () => {
+  it('falls back to wayland-0 when the session is Wayland but no socket exists yet', () => {
     vi.stubEnv('XDG_SESSION_TYPE', 'wayland')
+    fs.writeFileSync(path.join(runtimeDir, 'wayland-1.lock'), '')
     expect(platform.getWaylandDisplay()).toBe('wayland-0')
     expect(execSync).not.toHaveBeenCalled()
+  })
+
+  it('uses the live socket when wayland-0 is not there', async () => {
+    vi.stubEnv('XDG_SESSION_TYPE', 'wayland')
+    fs.writeFileSync(path.join(runtimeDir, 'wayland-0'), '')
+    const server = await waylandSocket('wayland-1')
+    expect(platform.getWaylandDisplay()).toBe('wayland-1')
+    expect(execSync).not.toHaveBeenCalled()
+    server.close()
+  })
+
+  it('prefers wayland-0 when that socket exists', async () => {
+    vi.stubEnv('XDG_SESSION_TYPE', 'wayland')
+    const first = await waylandSocket('wayland-0')
+    const second = await waylandSocket('wayland-2')
+    expect(platform.getWaylandDisplay()).toBe('wayland-0')
+    first.close()
+    second.close()
   })
 
   it('asks loginctl as the last resort', () => {
@@ -124,6 +157,24 @@ describe('Wayland session detection', () => {
       throw new Error('no loginctl')
     })
     expect(platform.getWaylandDisplay()).toBeUndefined()
+  })
+})
+
+describe('wayland sockets and AppImage library paths', () => {
+  it('picks wayland-0, else the lowest number, and ignores other names', () => {
+    expect(platform.waylandSocketName([])).toBeUndefined()
+    expect(platform.waylandSocketName(['wayland-1.lock', 'something'])).toBeUndefined()
+    expect(platform.waylandSocketName(['wayland-10', 'wayland-2'])).toBe('wayland-2')
+    expect(platform.waylandSocketName(['wayland-1', 'wayland-0'])).toBe('wayland-0')
+  })
+
+  it('drops an AppImage mount from a library path and keeps the rest', () => {
+    expect(platform.stripAppImageEntries(undefined)).toBeUndefined()
+    expect(platform.stripAppImageEntries('')).toBeUndefined()
+    expect(platform.stripAppImageEntries('/usr/lib::/tmp/.mount_WE-abc/usr/lib:/opt/lib')).toBe('/usr/lib:/opt/lib')
+    expect(platform.stripAppImageEntries('/tmp/.mount_WE-abc/usr/lib')).toBeUndefined()
+    expect(platform.stripAppImageEntries('/opt/app:/opt/app/lib', '/opt/app')).toBeUndefined()
+    expect(platform.stripAppImageEntries('/opt/app-extra:/usr/lib', '/opt/app')).toBe('/opt/app-extra:/usr/lib')
   })
 })
 

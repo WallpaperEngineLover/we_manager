@@ -37,12 +37,58 @@ export function isWaylandSession(): boolean {
   return !!process.env.WAYLAND_DISPLAY || process.env.XDG_SESSION_TYPE === 'wayland'
 }
 
+// AppRun points LD_LIBRARY_PATH into /tmp/.mount_*, which must not reach the overlay's host Python
+const APPIMAGE_MOUNT = /^\/tmp\/\.mount_[^/]+(\/|$)/
+const WAYLAND_SOCKET_NAME = /^wayland-(\d+)$/
+
+/** Drop AppImage mount entries so the overlay loads the host's GTK, not the mount's libraries */
+export function stripAppImageEntries(value: string | undefined, appDir?: string): string | undefined {
+  if (!value) return undefined
+  const root = appDir ?? process.env.APPDIR
+  const kept = value.split(':').filter((entry) => {
+    if (!entry) return false
+    if (root && (entry === root || entry.startsWith(`${root}/`))) return false
+    return !APPIMAGE_MOUNT.test(entry)
+  })
+  return kept.length > 0 ? kept.join(':') : undefined
+}
+
+/** Prefer wayland-0 when that socket exists, otherwise the lowest numbered one */
+export function waylandSocketName(names: string[]): string | undefined {
+  const found = names.filter((name) => WAYLAND_SOCKET_NAME.test(name))
+  if (found.length === 0) return undefined
+  if (found.includes('wayland-0')) return 'wayland-0'
+  found.sort((a, b) => Number(a.slice('wayland-'.length)) - Number(b.slice('wayland-'.length)))
+  return found[0]
+}
+
+function liveWaylandDisplay(): string | undefined {
+  const dir = getXdgRuntimeDir()
+  let names: string[]
+  try {
+    names = fs.readdirSync(dir)
+  } catch {
+    return undefined
+  }
+  const sockets = names.filter((name) => {
+    if (!WAYLAND_SOCKET_NAME.test(name)) return false
+    try {
+      return fs.statSync(path.join(dir, name)).isSocket()
+    } catch {
+      return false
+    }
+  })
+  return waylandSocketName(sockets)
+}
+
 /**
- * WAYLAND_DISPLAY of the user session. Electron often runs under XWayland
- * without it set, so fall back to the session type and loginctl.
+ * WAYLAND_DISPLAY of the user session. Electron under XWayland often has it
+ * unset, and the compositor socket is not always wayland-0.
  */
 export function getWaylandDisplay(): string | undefined {
   if (process.env.WAYLAND_DISPLAY) return process.env.WAYLAND_DISPLAY
+  const live = liveWaylandDisplay()
+  if (live) return live
   if (process.env.XDG_SESSION_TYPE === 'wayland') return 'wayland-0'
 
   try {
